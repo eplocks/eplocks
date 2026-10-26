@@ -6,6 +6,7 @@
 <title>EpLocks AI</title>
 <meta name="description" content="EpLocks AI: NBA game and player-prop estimates built from real box scores, with every pick logged and graded.">
 <meta name="theme-color" content="#0b1f3a">
+<script>try{var t_=localStorage.getItem("eplocks_theme");if(t_==="light"||t_==="dark")document.documentElement.setAttribute("data-theme",t_)}catch(e){}</script>
 <meta property="og:title" content="EpLocks AI">
 <meta property="og:description" content="NBA game and player-prop estimates built from real box scores, with every pick logged and graded.">
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='5' fill='%230b1f3a'/%3E%3Cpath d='M8 11V8a4 4 0 0 1 8 0v3' fill='none' stroke='%2334d399' stroke-width='2' stroke-linecap='round'/%3E%3Crect x='5' y='11' width='14' height='9' rx='2' fill='none' stroke='%2334d399' stroke-width='2'/%3E%3C/svg%3E">
@@ -374,6 +375,156 @@ svg.bars .lt{font:700 9px var(--f-mono);fill:var(--gold);text-anchor:start}
 .lean{margin:0}
 .sc-team .nm{overflow-wrap:anywhere}
 @media (max-width:600px){.sc-team .big{font-size:46px}.sc-team .av{--s:36px}.sc-team .ab{font-size:32px}.sc-head{padding:14px 12px}.pl-name{font-size:28px}}
+
+/* ---- v8: theme switch, Smart Signals, bet slip, Ace, polish ---- */
+:root{--blue:#2563c9;--tier-ink:#2a1c00}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--blue:#6aa8ff}}
+:root[data-theme="dark"]{
+  --bg:#07152b; --surface:#0d2140; --surface2:#15305a; --fg:#e8eef8; --mut:#9db0cb; --line:#223f6b;
+  --acc:#34d399; --on-acc:#04231a; --gold:#e6b02e; --good:#34d399; --warn:#f0a43a; --bad:#ff7a70;
+  --hdr:#050f20; --hdr2:#0a2144; --shadow:0 10px 26px rgba(0,0,0,.55); --blue:#6aa8ff; color-scheme:dark;
+}
+html.tx,html.tx *{transition:background-color .35s ease,color .35s ease,border-color .35s ease,box-shadow .35s ease!important}
+body{background:radial-gradient(900px 420px at 90% -140px,rgba(52,211,153,.10),transparent 60%),var(--bg);background-color:var(--bg)}
+main.in{padding-block:20px 110px}
+.bar-r{display:flex;align-items:center;gap:10px;min-width:0}
+.ibtn{appearance:none;flex:none;width:36px;height:36px;border-radius:50%;border:1px solid rgba(255,255,255,.28);background:rgba(255,255,255,.06);color:var(--hdr-fg);cursor:pointer;display:grid;place-items:center;transition:border-color .15s ease,transform .15s ease,background .15s ease}
+.ibtn:hover{border-color:var(--hdr-acc);color:var(--hdr-acc);transform:rotate(12deg)}
+.ibtn svg{width:18px;height:18px;display:none}
+#themeBtn[data-mode="auto"] .i-auto,#themeBtn[data-mode="light"] .i-light,#themeBtn[data-mode="dark"] .i-dark{display:block}
+@media (max-width:560px){.bar{flex-wrap:wrap}.bar-r{display:contents}.sync{order:3;flex-basis:100%;text-align:left;font-size:11px;margin-top:-6px}.ibtn{margin-left:auto}}
+section.enter{animation:tabIn .32s cubic-bezier(.2,.8,.2,1) both}
+@keyframes tabIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+@keyframes sweep{to{transform:translateX(120%)}}
+.skel{position:relative;overflow:hidden;background:var(--surface);border:1px solid var(--line);border-radius:10px;height:250px}
+.skel::after{content:"";position:absolute;inset:0;background:linear-gradient(100deg,transparent 30%,rgba(127,150,185,.2) 50%,transparent 70%);transform:translateX(-100%);animation:sweep 1.3s ease-in-out infinite}
+.game{position:relative}
+.game::before{content:"";position:absolute;left:0;right:0;top:0;height:3px;border-radius:10px 10px 0 0;background:linear-gradient(90deg,var(--ca,var(--acc)),var(--ch,var(--acc)));opacity:.85;transform-origin:left;transition:transform .35s ease,opacity .2s ease}
+.game:hover::before{opacity:1;transform:scaleY(1.7)}
+.pick{border-left:4px solid var(--line)}
+.pick.c-High{border-left-color:var(--good)}
+.pick.c-Medium{border-left-color:var(--gold)}
+.row-btn{display:block;justify-self:start}
+.btn,.slipbtn,.qchip,.fab,.ibtn{-webkit-tap-highlight-color:transparent}
+
+/* tiers and chips */
+.tier{display:inline-flex;align-items:center;gap:3px;font:700 11px/1 var(--f-body);letter-spacing:.06em;text-transform:uppercase;padding:4px 9px;border-radius:999px;white-space:nowrap}
+.tier.mini{padding:3px 7px;font-size:10px}
+.tier.t-Strong{background:linear-gradient(120deg,#f8cf6a,#e6a017 60%,#f8cf6a);background-size:200% 100%;color:var(--tier-ink);box-shadow:0 0 0 1px rgba(166,111,0,.35),0 3px 12px rgba(230,176,46,.35);animation:gleam 3.2s ease-in-out infinite}
+@keyframes gleam{0%,100%{background-position:0 0}50%{background-position:100% 0}}
+.tier.t-Solid{background:var(--good);color:var(--on-acc)}
+.tier.t-Notable{background:transparent;color:var(--blue);border:1px solid var(--blue)}
+.sigchips{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.sigchip{font:600 11px var(--f-body);padding:2px 8px;border-radius:999px;background:var(--surface2);border:1px solid var(--line);color:var(--fg);cursor:help}
+.siglist{margin:0;padding-left:18px;display:grid;gap:6px;font-size:13px}
+.siglist li{overflow-wrap:anywhere}
+.sigbox{background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:10px 12px;display:grid;gap:8px}
+.sig-h{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.sigban{position:relative;overflow:hidden;appearance:none;width:100%;text-align:left;cursor:pointer;display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:12px;border:1px solid var(--line);background:var(--surface);color:var(--fg);font:inherit;box-shadow:inset 4px 0 0 var(--tc,var(--gold));transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease}
+.sigban.t-Strong{--tc:var(--gold)}.sigban.t-Solid{--tc:var(--good)}.sigban.t-Notable{--tc:var(--blue)}
+.sigban:hover{transform:translateY(-2px);border-color:var(--tc)}
+.sigban::after{content:"";position:absolute;inset:0;background:linear-gradient(110deg,transparent 30%,rgba(255,255,255,.14) 50%,transparent 70%);transform:translateX(-120%);animation:sweep 4s ease-in-out infinite;pointer-events:none}
+.sb-ic{flex:none;width:34px;height:34px;border-radius:50%;display:grid;place-items:center;background:var(--tc);color:var(--tier-ink);font-size:16px}
+.sb-t{flex:1;min-width:0;display:grid;gap:1px;overflow-wrap:anywhere}
+.sb-t b{font:700 11px var(--f-body);letter-spacing:.1em;text-transform:uppercase;color:var(--mut)}
+.sb-t span{font-size:14px;font-weight:600}
+.sigc{--tc:var(--line);background:var(--surface);border:1px solid var(--line);border-left:4px solid var(--tc);border-radius:12px;padding:14px;display:grid;gap:10px;min-width:0;animation:rise .35s ease both;animation-delay:calc(var(--i,0) * 40ms);transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease}
+.sigc.t-Strong{--tc:var(--gold)}.sigc.t-Solid{--tc:var(--good)}.sigc.t-Notable{--tc:var(--blue)}
+.sigc.clk-card{cursor:pointer}
+.sigc:hover{transform:translateY(-2px);box-shadow:var(--shadow);border-color:var(--tc)}
+.sigc.dim{opacity:.6}
+.sc-top{display:flex;gap:12px;align-items:flex-start}
+.sc-top>.av{--s:48px}
+.sc-top>.avs{--s:34px}
+.sc-id{flex:1;min-width:0;display:grid;gap:4px}
+.sc-tags{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.ring{flex:none;width:52px;height:52px;border-radius:50%;display:grid;place-items:center;position:relative;background:conic-gradient(var(--tc) calc(var(--v,0) * 1%),var(--surface2) 0)}
+.ring::before{content:"";position:absolute;inset:5px;border-radius:50%;background:var(--surface)}
+.ring b{position:relative;font:700 18px var(--f-disp)}
+
+/* slip */
+.slipbtn{appearance:none;font:600 12px var(--f-body);padding:6px 13px;min-height:32px;border-radius:999px;border:1px solid var(--acc);color:var(--acc);background:transparent;cursor:pointer;transition:background .15s ease,color .15s ease,transform .15s ease}
+.slipbtn:hover{background:var(--acc);color:var(--on-acc)}
+.slipbtn:active{transform:scale(.94)}
+.slipbtn.on{background:var(--acc);color:var(--on-acc)}
+.slipbtn.mini{padding:2px 9px;min-height:26px;min-width:30px;font-size:13px}
+.slip-leg{display:flex;gap:8px;align-items:stretch}
+.slip-leg .leg{flex:1;min-width:0}
+.ib2{appearance:none;flex:none;width:34px;border:1px solid var(--line);border-radius:8px;background:transparent;color:var(--mut);font:600 14px var(--f-body);cursor:pointer;transition:border-color .15s ease,color .15s ease}
+.ib2:hover{border-color:var(--bad);color:var(--bad)}
+.ult .ib2{border-color:rgba(255,255,255,.3);color:var(--hdr-mut)}
+.wg{display:flex;align-items:center;gap:10px;font-size:14px}
+.wg span{font:600 11px var(--f-body);letter-spacing:.08em;text-transform:uppercase;color:var(--mut);min-width:64px}
+.wg input,.wg select,.ace-form input{font:16px var(--f-body);padding:10px 12px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--fg);min-width:0}
+.wg input{flex:1}.wg select{flex:1}
+.wg input:focus,.ace-form input:focus{outline:2px solid var(--acc);outline-offset:1px}
+.dock{position:fixed;right:max(16px,env(safe-area-inset-right,0px));bottom:calc(16px + env(safe-area-inset-bottom,0px));z-index:40;display:grid;gap:10px;justify-items:end}
+body.noscroll .dock{display:none}
+.fab{appearance:none;border:0;cursor:pointer;display:inline-flex;align-items:center;gap:8px;font:700 14px var(--f-body);padding:0 18px 0 8px;height:48px;border-radius:999px;box-shadow:var(--shadow);transition:transform .15s ease,box-shadow .2s ease}
+.fab:hover{transform:translateY(-2px)}
+.fab:active{transform:scale(.96)}
+.fab.ask{position:relative;background:linear-gradient(135deg,var(--hdr2),var(--hdr));color:var(--hdr-fg);border:1px solid var(--hdr-acc)}
+.fab .sp{width:32px;height:32px;border-radius:50%;background:var(--hdr-acc);color:#04231a;display:grid;place-items:center;font-size:17px;line-height:1}
+.fab.ask.pulse::after{content:"";position:absolute;inset:-4px;border-radius:999px;border:2px solid var(--hdr-acc);opacity:0;animation:ping 2.2s ease-out 3}
+@keyframes ping{0%{opacity:.8;transform:scale(.96)}100%{opacity:0;transform:scale(1.18)}}
+.fab.slip{background:var(--acc);color:var(--on-acc);padding:0 16px}
+.fab.slip b{background:var(--on-acc);color:var(--acc);min-width:24px;height:24px;border-radius:12px;display:grid;place-items:center;font:700 12px var(--f-mono)}
+.fab.bump{animation:bump .42s cubic-bezier(.3,1.6,.5,1)}
+@keyframes bump{0%{transform:scale(1)}40%{transform:scale(1.14)}100%{transform:scale(1)}}
+#toasts{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(84px + env(safe-area-inset-bottom,0px));z-index:90;display:grid;gap:8px;width:min(92vw,420px);pointer-events:none}
+.toast{pointer-events:auto;display:flex;justify-content:space-between;align-items:center;gap:12px;background:var(--hdr);color:var(--hdr-fg);border:1px solid rgba(52,211,153,.5);border-radius:12px;padding:10px 14px;font-size:14px;box-shadow:var(--shadow);animation:toastIn .26s cubic-bezier(.2,.8,.2,1) both;overflow-wrap:anywhere}
+.toast.out{animation:toastOut .26s ease both}
+.tbtn{appearance:none;flex:none;border:0;background:transparent;color:var(--hdr-acc);font:700 13px var(--f-body);cursor:pointer;padding:4px 6px}
+@keyframes toastIn{from{opacity:0;transform:translateY(12px) scale(.96)}to{opacity:1;transform:none}}
+@keyframes toastOut{to{opacity:0;transform:translateY(8px)}}
+
+/* Ace */
+.pn.chat{width:min(520px,100%);display:flex;flex-direction:column;overflow:hidden}
+.pn.chat #shBody{flex:1;min-height:0;display:flex;flex-direction:column}
+.acewin{flex:1;min-height:0;display:flex;flex-direction:column;background:var(--bg)}
+.ace-top{display:flex;align-items:center;gap:10px;padding:10px max(14px,env(safe-area-inset-right,0px)) 10px max(14px,env(safe-area-inset-left,0px));background:var(--surface);border-bottom:1px solid var(--line)}
+.ace-av{flex:none;width:34px;height:34px;border-radius:50%;display:grid;place-items:center;background:linear-gradient(135deg,var(--hdr2),var(--hdr));color:var(--hdr-acc);font:700 18px/1 var(--f-body);border:1px solid var(--hdr-acc)}
+.ace-id{flex:1;min-width:0;display:grid}
+.ace-id b{font:700 20px/1 var(--f-disp);letter-spacing:.06em;text-transform:uppercase}
+.ace-set{padding:12px max(14px,env(safe-area-inset-right,0px)) 12px max(14px,env(safe-area-inset-left,0px));display:grid;gap:10px;background:var(--surface);border-bottom:1px solid var(--line);max-height:55%;overflow-y:auto}
+.ace-log{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:14px max(14px,env(safe-area-inset-right,0px)) 6px max(14px,env(safe-area-inset-left,0px));display:flex;flex-direction:column;gap:12px}
+.ace-log>*{flex:none}
+.msg{display:flex;gap:8px;align-items:flex-end;min-width:0;animation:msgIn .3s cubic-bezier(.2,.8,.2,1) both}
+.msg.me{justify-content:flex-end}
+.msg .ace-av{width:28px;height:28px;font-size:14px}
+.bub{max-width:min(88%,440px);padding:10px 13px;border-radius:16px;font-size:14px;display:grid;gap:6px;overflow-wrap:anywhere;min-width:0}
+.msg.bot .bub{background:var(--surface);border:1px solid var(--line);border-bottom-left-radius:4px}
+.msg.me .bub{background:var(--acc);color:var(--on-acc);border-bottom-right-radius:4px}
+.bub p{margin:0}
+.ai-tag{justify-self:start;font:700 10px var(--f-body);letter-spacing:.1em;text-transform:uppercase;color:var(--mut)}
+.msg-x{display:grid;gap:10px;padding-left:36px;min-width:0;animation:msgIn .35s cubic-bezier(.2,.8,.2,1) .08s both}
+.typing .bub{display:flex;gap:5px;padding:14px 16px}
+.typing i{width:7px;height:7px;border-radius:50%;background:var(--mut);animation:dots 1.1s infinite ease-in-out}
+.typing i:nth-child(2){animation-delay:.15s}.typing i:nth-child(3){animation-delay:.3s}
+@keyframes dots{0%,80%,100%{transform:translateY(0);opacity:.4}40%{transform:translateY(-5px);opacity:1}}
+@keyframes msgIn{from{opacity:0;transform:translateY(10px) scale(.98)}to{opacity:1;transform:none}}
+.ace-chips{display:flex;gap:8px;overflow-x:auto;padding:8px max(14px,env(safe-area-inset-right,0px)) 8px max(14px,env(safe-area-inset-left,0px));scrollbar-width:none;flex:none}
+.ace-chips::-webkit-scrollbar{display:none}
+.qchip{appearance:none;flex:none;white-space:nowrap;font:600 13px var(--f-body);padding:7px 13px;border-radius:999px;border:1px solid var(--line);background:var(--surface);color:var(--fg);cursor:pointer;transition:border-color .15s ease,background .15s ease,transform .15s ease}
+.qchip:hover{border-color:var(--acc);background:var(--surface2)}
+.qchip:active{transform:scale(.96)}
+.ace-form{display:flex;gap:8px;padding:6px max(14px,env(safe-area-inset-right,0px)) 6px max(14px,env(safe-area-inset-left,0px));flex:none}
+.ace-form input{flex:1;border-radius:999px;padding:12px 16px;background:var(--surface)}
+.send{appearance:none;flex:none;width:46px;height:46px;border-radius:50%;border:0;background:var(--acc);color:var(--on-acc);font:700 16px var(--f-body);cursor:pointer;transition:transform .15s ease,opacity .15s ease}
+.send:hover{transform:scale(1.06)}
+.acewin.busy .send{opacity:.45}
+.ace-foot{flex:none;font-size:11px;color:var(--mut);text-align:center;padding:0 14px calc(10px + env(safe-area-inset-bottom,0px))}
+.acet{background:var(--surface);border:1px solid var(--acc);border-radius:14px;padding:12px;display:grid;gap:10px;min-width:0;box-shadow:inset 0 0 0 1px var(--acc)}
+.acet .t-head h3{font:700 22px/1 var(--f-disp);margin:0;letter-spacing:.02em}
+.acet .t-odds{font-size:30px}
+.acel{display:grid;gap:8px}
+.acel-row{display:grid;gap:6px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:8px 10px;justify-items:start}
+.acel-row .leg{width:100%}
+@media (max-width:480px){.hero h1{font-size:30px}.msg-x{padding-left:0}}
+
+.lpick{position:relative}
+.lpick>b{padding-right:38px}
+.lpick>b .slipbtn.mini{position:absolute;right:0;top:0}
 </style>
 </head>
 <body>
@@ -385,10 +536,16 @@ svg.bars .lt{font:700 9px var(--f-mono);fill:var(--gold);text-anchor:start}
         <svg class="mark" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path class="sh" d="M8 11V8a4 4 0 0 1 8 0v3"/><rect x="5" y="11" width="14" height="9" rx="2"/></svg>
         <span class="wm">EP<b>LOCKS</b><i>AI</i></span>
       </div>
-      <span class="sync" id="sync" aria-live="polite">Loading…</span>
+      <div class="bar-r"><span class="sync" id="sync" aria-live="polite">Loading…</span>
+        <button type="button" class="ibtn" id="themeBtn" data-mode="auto" aria-label="Change theme">
+          <svg class="i-auto" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 3v18" /><path d="M12 3a9 9 0 0 1 0 18z" fill="currentColor"/></svg>
+          <svg class="i-light" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+          <svg class="i-dark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+        </button></div>
     </div>
     <nav class="tabs" role="tablist" aria-label="Sections">
       <button role="tab" data-tab="slate" aria-selected="true">Slate</button>
+      <button role="tab" data-tab="signals" class="star" aria-selected="false">Signals<span class="count" id="cnt-sig"></span></button>
       <button role="tab" data-tab="picks" aria-selected="false">Picks<span class="count" id="cnt-picks"></span></button>
       <button role="tab" data-tab="parlays" class="star" aria-selected="false">Parlays</button>
       <button role="tab" data-tab="players" aria-selected="false">Players</button>
@@ -401,7 +558,8 @@ svg.bars .lt{font:700 9px var(--f-mono);fill:var(--gold);text-anchor:start}
   </div>
 </header>
 <main class="in">
-  <section id="slate" role="tabpanel"></section>
+  <section id="slate" role="tabpanel"><div class="cards" aria-hidden="true"><div class="skel"></div><div class="skel"></div><div class="skel"></div></div></section>
+  <section id="signals" role="tabpanel" hidden></section>
   <section id="picks" role="tabpanel" hidden></section>
   <section id="parlays" role="tabpanel" hidden></section>
   <section id="players" role="tabpanel" hidden></section>
@@ -412,6 +570,11 @@ svg.bars .lt{font:700 9px var(--f-mono);fill:var(--gold);text-anchor:start}
   <p class="legal">Estimates, not guarantees. Check lines and injuries before you bet. Bet only where it is legal and only what you can afford to lose. Problem gambling help in the US: 1-800-GAMBLER.</p>
   <p class="legal">Scores, box scores and injury reports from ESPN public data; prop prices from your props.txt or The Odds API; analysis by Claude. Independent project, not affiliated with the NBA, ESPN or any sportsbook. <span id="ver"></span></p>
 </main>
+<div class="dock">
+  <button type="button" class="fab slip" id="fabSlip" hidden aria-label="Open your bet slip"><span>Slip</span><b id="fabN">0</b></button>
+  <button type="button" class="fab ask" id="fabAce" aria-label="Ask Ace, your betting buddy"><span class="sp" aria-hidden="true">♠</span>Ask Ace</button>
+</div>
+<div id="toasts" aria-live="polite"></div>
 <div class="sheet" id="sheet" role="dialog" aria-modal="true" aria-label="Game and player details" hidden>
   <div class="bk"></div>
   <div class="pn" id="shPn">
@@ -502,7 +665,7 @@ function ago(iso){
   var h = Math.round(m / 60); if (h < 36) return h + ' h ago';
   return Math.round(h / 24) + ' days ago';
 }
-var S = {latest:null, history:[], tab:'slate', filter:'all', hideLow:false, err:'', pStyle:'bal', pConf:'any', pProps:true, pAssumed:false};
+var S = {latest:null, history:[], tab:'slate', filter:'all', hideLow:false, err:'', pStyle:'bal', pConf:'any', pProps:true, pAssumed:false, sgTier:'all', sgType:'all', sgLive:false};
 
 function rankKey(p){
   var tier = p.kind === 'priced' ? 2 : p.kind === 'assumed' ? 1 : 0;
@@ -667,14 +830,14 @@ function gameCard(g, idx){
   var ana1 = g.analysis && g.analysis.lean ? el('p', {class:'small lean'}, el('b', {text:'Lean: '}), g.analysis.lean) : null;
   var picks = (g.pick_objs || []).slice().sort(function(x, y){ var a1 = rankKey(x), b1 = rankKey(y); return b1[0] - a1[0] || b1[1] - a1[1]; });
   var pk = picks.map(function(p){
-    return el('div', {class:'lpick ' + p.conf}, el('b', {}, lockSvg(p.conf), ' ', p.label, ' ', el('span', {class:'mono mut', text:fo(p.odds)})),
+    return el('div', {class:'lpick ' + p.conf}, el('b', {}, lockSvg(p.conf), ' ', p.label, ' ', el('span', {class:'mono mut', text:fo(p.odds)}), p.sig && p.sig.tier ? [' ', tierEl(p.sig, true)] : null, ' ', slipBtn(p, true)),
       el('span', {class:'small mut', text:p.conf + ' · est ' + pct(p.est) + ' vs price ' + pct(p.implied) + ' · edge ' + fe(p.edge) + (p.kind === 'assumed' ? ' (at -110)' : '') + ' · ' + p.units + 'u'}),
       p.flag ? el('span', {class:'small', style:'color:var(--warn)', text:p.flag}) : null);
   });
   if (!pk.length && g.state === 'pre') pk.push(el('p', {class:'mut small', text:m ? 'No bet clears the 2-point edge bar on this game.' : 'No line loaded, so nothing can be priced.'}));
   var colors = teamColors(a.abbr, h.abbr);
   var np = (g.prop_rows || []).length;
-  var meta = el('div', {class:'flags'}, np ? el('span', {class:'pill', text:np + ' props'}) : null,
+  var meta = el('div', {class:'flags'}, sigPill(g), np ? el('span', {class:'pill', text:np + ' props'}) : null,
     el('span', {class:'pill' + (g.crew ? ' good' : ''), text:g.crew ? 'Crew posted' : 'Crew pending'}), g.analysis ? el('span', {class:'pill', text:'Analysis'}) : null);
   var openBtn = el('button', {type:'button', class:'btn go', text:(g.state === 'in' ? 'Live game center' : 'Open game center') + ' ›', onclick:function(e){ e.stopPropagation(); openGame(g.id); }});
   var root = el('article', {class:'game clk-card', style:'--ca:' + colors[0] + ';--ch:' + colors[1] + ';--i:' + Math.min(idx, 12)},
@@ -707,6 +870,7 @@ function renderSlate(){
   var eg = L.status && L.status.sources && L.status.sources.espn_games;
   if (eg && !eg.ok) root.append(el('div', {class:'note warn', text:'Game data could not be loaded in the last run (' + eg.msg + '). Open the Status tab.'}));
   else if (!L.games.length) root.append(el('div', {class:'note', text:'No NBA games are scheduled for this date.'}));
+  root.append(sigBanner());
   root.append(el('p', {class:'small mut', text:'Tap any game for the live box score, props, officials and the full breakdown. Tap a player or a prop for his last 10 games and why the number is what it is.'}));
   root.append(el('div', {class:'strip', id:'liveStrip', hidden:true, 'aria-live':'polite', 'aria-label':'Live scores'}));
   var grid = el('div', {class:'cards'}); L.games.forEach(function(g, i){ grid.append(gameCard(g, i)); }); root.append(grid);
@@ -786,10 +950,10 @@ function startLive(){ liveTick(); document.addEventListener('visibilitychange', 
 function pickCard(p, idx){
   var g = S.latest.games.filter(function(x){ return x.id === p.game_id; })[0];
   var av = pickAvatar(p, g);
-  var art = el('article', {class:'pick' + (g ? ' clk-card' : '')},
+  var art = el('article', {class:'pick c-' + p.conf + (g ? ' clk-card' : '')},
     el('div', {class:'p-main'}, av, el('div', {class:'p-body'},
     el('div', {class:'p-head'}, el('span', {class:'rank', text:'#' + (idx + 1)}), lockSvg(p.conf), el('span', {class:'conf ' + p.conf, text:p.conf}), el('span', {class:'pill', text:p.type}),
-      p.kind === 'assumed' ? el('span', {class:'pill warn', text:'no price, -110 assumed'}) : null),
+      p.kind === 'assumed' ? el('span', {class:'pill warn', text:'no price, -110 assumed'}) : null, p.sig && p.sig.tier ? tierEl(p.sig) : null),
     el('h3', {class:'p-title'}, p.label, el('span', {class:'mono', text:fo(p.odds)})),
     el('p', {class:'small mut'}, p.away + ' @ ' + p.home + (g && g.tip ? ' · ' + g.tip : ''), ' ', liveEl(p.away, p.home))
     )),
@@ -799,7 +963,8 @@ function pickCard(p, idx){
       p.type === 'prop' ? el('span', {}, 'Model mean ', el('b', {text:p.mean})) : null, p.type === 'prop' ? el('span', {}, 'L10 over ', el('b', {text:p.hit_l10})) : null),
     p.flag ? el('p', {class:'small', style:'color:var(--warn)', text:p.flag}) : null,
     p.reason ? el('p', {class:'why', text:p.reason}) : null,
-    g ? el('p', {class:'small go-hint', text:'Tap for the full breakdown ›'}) : null);
+    p.sig ? sigChips(p.sig, 4) : null,
+    el('div', {class:'go-row'}, slipBtn(p), g ? el('span', {class:'small go-hint', text:'Tap for the full breakdown ›'}) : null));
   if (g) art.addEventListener('click', function(){ if (p.type === 'prop' && p.pid) openPlayer(g.id, p.pid, p.stat); else openGame(g.id); });
   return art;
 }
@@ -869,7 +1034,7 @@ function mkTicket(legs){
 }
 function legRow(p, core, showCore){
   var d = el('div', {class:'leg ' + p.conf}, pickAvatar(p, null), el('div', {class:'leg-body'},
-    el('b', {}, lockSvg(p.conf), ' ', p.label, ' ', el('span', {class:'mono mut', text:fo(p.odds)}), showCore ? el('span', {class:'core', text:core ? '★ core' : '+ added'}) : null),
+    el('b', {}, lockSvg(p.conf), ' ', p.label, ' ', el('span', {class:'mono mut', text:fo(p.odds)}), showCore ? el('span', {class:'core', text:core ? '★ core' : '+ added'}) : null, p.sig && p.sig.tier ? [' ', tierEl(p.sig, true)] : null),
     el('span', {class:'small mut', text:p.away + ' @ ' + p.home + ' · ' + p.type + ' · ' + p.conf + ' · est ' + pct(p.est) + ' vs price ' + pct(p.implied) + ' · edge ' + fe(p.edge) + (p.kind === 'assumed' ? ' (no price, -110 assumed)' : '')})));
   var gg = gameById(p.game_id);
   if (gg){ d.classList.add('clk'); d.onclick = function(){ if (p.type === 'prop' && p.pid) openPlayer(gg.id, p.pid, p.stat); else openGame(gg.id); }; }
@@ -918,11 +1083,7 @@ function ticketCard(t, ult){
     el('div', {class:'row'}, copyBtn(ticketText(t, t.n + '-leg parlay'))));
   return root;
 }
-function segCtl(label, key, opts){
-  return el('div', {class:'row'}, el('b', {text:label}), el('div', {class:'seg', role:'group', 'aria-label':label}, opts.map(function(o){
-    return el('button', {type:'button', 'aria-pressed':String(S[key] === o[0]), text:o[1], onclick:function(){ S[key] = o[0]; renderParlays(); }});
-  })));
-}
+function segCtl(label, key, opts){ return segCtlFor(label, key, opts, renderParlays); }
 function renderParlays(){
   var root = $('#parlays'); root.textContent = '';
   var L = S.latest; if (!L) return;
@@ -968,7 +1129,6 @@ var MARKETS = [
   {id:'combos', name:'Combos', stats:['pra', 'pts_reb', 'pts_ast', 'reb_ast']},
   {id:'defense', name:'Steals, blocks, turnovers', stats:['steals', 'blocks', 'turnovers']}];
 S.pMarket = 'points';
-function marketOf(stat){ for (var i = 0; i < MARKETS.length; i++) if (MARKETS[i].stats.indexOf(stat) >= 0) return MARKETS[i]; return null; }
 function boardRows(stat){
   var out = [];
   S.latest.games.forEach(function(g){
@@ -1157,24 +1317,28 @@ function openPlayer(gid, pid, stat){ go('player/' + gid + '/' + pid + (stat ? '/
 function routeHash(){
   var h = (location.hash || '').slice(1), p = h.split('/');
   SH.depth = (history.state && history.state.sh) || 0;
-  if (p[0] === 'game' && p[1]) showSheet({kind:'game', gid:p[1]});
+  if (p[0] === 'ace' || p[0] === 'slip') showSheet({kind:p[0]});
+  else if (p[0] === 'game' && p[1]) showSheet({kind:'game', gid:p[1]});
   else if (p[0] === 'player' && p[1] && p[2]) showSheet({kind:'player', gid:p[1], pid:p[2], stat:p[3] || null});
   else closeSheet(true);
 }
 function showSheet(r){
-  var g = gameById(r.gid);
-  if (!g){ closeSheet(true); return; }
+  var withGame = r.kind === 'game' || r.kind === 'player', g = withGame ? gameById(r.gid) : null;
+  if (withGame && !g){ closeSheet(true); return; }
   var sh = $('#sheet'), fresh = sh.hidden;
-  var newGame = SH.gid !== r.gid || fresh;
+  var newGame = withGame && (SH.gid !== r.gid || fresh);
   SH.kind = r.kind; SH.pid = r.pid || null; SH.stat = r.stat || null;
   if (newGame){ SH.gid = r.gid; SH.box = null; SH.err = ''; SH.tok++; SH.loading = false; SH.tab = 'over'; }
+  if (!withGame && SH.gid){ clearTimeout(SH.timer); SH.tok++; SH.gid = null; SH.box = null; SH.err = ''; SH.loading = false; }
   if (fresh){
     SH.opener = document.activeElement;
     sh.hidden = false; document.body.classList.add('noscroll');
   }
+  var tb = $('#toasts'); if (tb && (r.kind === 'slip' || r.kind === 'ace')) tb.textContent = '';
   renderSheet(true);
-  if (newGame) loadBox(); else schedule();
-  if (fresh) setTimeout(function(){ var c = $('#shClose'); if (c) c.focus(); }, 30);
+  if (r.kind === 'ace') aceScroll();
+  if (newGame) loadBox(); else if (withGame) schedule();
+  if (fresh) setTimeout(function(){ var c = $(r.kind === 'ace' ? '#aceIn' : '#shClose'); if (c) c.focus(); }, 30);
 }
 function closeSheet(silent){
   var sh = $('#sheet'); if (!sh) return;
@@ -1196,10 +1360,13 @@ function sheetBack(){
 /* ---- drawing ---- */
 function renderSheet(top){
   var g = gameById(SH.gid), pn = $('#shPn'), body = $('#shBody');
-  if (!g || !pn) return;
+  if (!pn || !SH.kind || ((SH.kind === 'game' || SH.kind === 'player') && !g)) return;
   var keep = pn.scrollTop, title = '', content;
+  pn.classList.toggle('chat', SH.kind === 'ace');
   try {
-    if (SH.kind === 'player'){ var pb = playerBody(g, SH.pid, SH.stat); content = pb.node; title = pb.title; }
+    if (SH.kind === 'ace'){ content = aceNode(); title = 'Ace'; }
+    else if (SH.kind === 'slip'){ content = slipBody(); title = 'Bet slip'; }
+    else if (SH.kind === 'player'){ var pb = playerBody(g, SH.pid, SH.stat); content = pb.node; title = pb.title; }
     else { content = gameBody(g); title = g.away.abbr + ' at ' + g.home.abbr; }
   } catch(e){
     content = el('div', {class:'note warn'}, el('b', {text:'This view could not be drawn. '}), String(e && e.message || e));
@@ -1262,7 +1429,8 @@ function pickLine(g, p){
     el('b', {}, lockSvg(p.conf), ' ', p.label, ' ', el('span', {class:'mono mut', text:fo(p.odds)}), go_ ? el('span', {class:'chev', text:'›'}) : null),
     el('span', {class:'small mut', text:p.conf + ' · est ' + pct(p.est) + ' vs price ' + pct(p.implied) + ' · edge ' + fe(p.edge) + (p.kind === 'assumed' ? ' (at -110)' : '') + ' · ' + p.units + 'u'}),
     p.flag ? el('span', {class:'small', style:'color:var(--warn)', text:p.flag}) : null,
-    p.reason ? el('span', {class:'small', text:p.reason}) : null);
+    p.reason ? el('span', {class:'small', text:p.reason}) : null,
+    p.sig ? sigChips(p.sig, 4) : null, el('span', {class:'row-btn'}, slipBtn(p)));
   if (go_){ d.onclick = go_; d.onkeydown = function(e){ if (e.key === 'Enter' || e.key === ' '){ e.preventDefault(); go_(); } }; }
   return d;
 }
@@ -1498,6 +1666,9 @@ function playerBody(g, pid, stat){
       pc.push(el('div', {class:'prog'}, el('div', {class:'bar2'}, el('i', {class:cls, style:'width:' + Math.min(100, row.line > 0 ? v / row.line * 100 : 0).toFixed(0) + '%'}), el('s', {style:'left:100%'})),
         el('p', {class:'small', text:msg})));
     }
+    var sg_ = (pk && pk.sig) || row.sig;
+    if (sg_) pc.push(el('div', {class:'sigbox'}, el('div', {class:'sig-h'}, tierEl(sg_), el('b', {text:'Smart signals for the ' + sg_.side})), sigList(sg_)));
+    pc.push(el('div', {class:'row'}, slipBtn(pk || leanPick(g, row, sg_ ? sg_.side : b.side))));
     kids.push(el('div', {class:'propcard'}, pc));
   }
   /* live line */
@@ -1566,6 +1737,860 @@ function playerBody(g, pid, stat){
   window.addEventListener('popstate', routeHash);
   document.addEventListener('visibilitychange', function(){ if (!document.hidden && !sh.hidden) { var g = gameById(SH.gid); if (g && gameState(g) !== 'post') loadBox(); } });
 })();
+
+/* ---- v8: storage, toasts, theme, number animation ---- */
+var TABS = ['slate', 'signals', 'picks', 'parlays', 'players', 'props', 'track', 'method', 'status'];
+var REDUCE = !!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
+function lsGet(k, d){ try { var v = localStorage.getItem(k); return v == null ? d : v; } catch(e){ return d; } }
+function lsSet(k, v){ try { if (v == null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch(e){} }
+function toast(msg, act){
+  var box = $('#toasts'); if (!box) return;
+  var t = el('div', {class:'toast', role:'status'}, el('span', {text:msg}), act ? el('button', {type:'button', class:'tbtn', text:act.label, onclick:function(){ t.remove(); act.fn(); }}) : null);
+  while (box.children.length >= 1) box.firstChild.remove();
+  box.append(t);
+  setTimeout(function(){ t.classList.add('out'); setTimeout(function(){ t.remove(); }, 260); }, act ? 3300 : 1900);
+}
+function animateNums(root){
+  if (REDUCE || !root) return;
+  root.querySelectorAll('.tile b, .t-odds, .cnt-up').forEach(function(n){
+    if (n.children.length) return;
+    var s = n.textContent, m = /^([+\-]?)(\d+(?:\.\d+)?)(%?)$/.exec(s.trim());
+    if (!m) return;
+    var to = parseFloat(m[2]), d = (m[2].split('.')[1] || '').length, t0 = performance.now();
+    if (!isFinite(to) || to === 0) return;
+    n.textContent = m[1] + (0).toFixed(d) + m[3];
+    (function f(t){ var k = Math.min(1, (t - t0) / 650); n.textContent = k < 1 ? m[1] + (to * (1 - Math.pow(1 - k, 3))).toFixed(d) + m[3] : s; if (k < 1) requestAnimationFrame(f); })(t0);
+  });
+}
+var THEMES = ['auto', 'light', 'dark'];
+function applyTheme(t){
+  var r = document.documentElement;
+  if (t === 'light' || t === 'dark') r.setAttribute('data-theme', t); else r.removeAttribute('data-theme');
+  var b = $('#themeBtn');
+  if (b){ b.dataset.mode = t; var nm = {auto:'matches your device', light:'light', dark:'dark'}[t]; b.setAttribute('aria-label', 'Theme: ' + nm + '. Tap to change.'); b.title = 'Theme: ' + nm; }
+}
+function initTheme(){
+  var t = lsGet('eplocks_theme', 'auto'); if (THEMES.indexOf(t) < 0) t = 'auto';
+  applyTheme(t);
+  $('#themeBtn').onclick = function(){
+    var cur = lsGet('eplocks_theme', 'auto'), nx = THEMES[(THEMES.indexOf(cur) + 1) % 3];
+    lsSet('eplocks_theme', nx);
+    var r = document.documentElement; r.classList.add('tx'); applyTheme(nx); setTimeout(function(){ r.classList.remove('tx'); }, 450);
+    toast('Theme: ' + {auto:'matches your device', light:'light', dark:'dark'}[nx]);
+  };
+}
+
+/* ---- the board: every leg Ace, the slip and the Signals tab can use ---- */
+var LBL = {points:'points', rebounds:'rebounds', assists:'assists', threes:'3-pointers', pra:'pts+reb+ast', pts_reb:'pts+reb', pts_ast:'pts+ast', reb_ast:'reb+ast', steals:'steals', blocks:'blocks', turnovers:'turnovers'};
+function legKey(p){ return p.type === 'prop' ? [p.game_id, 'prop', p.pid, p.stat, p.side].join('|') : [p.game_id, p.type, p.side, p.line == null ? '' : p.line].join('|'); }
+function calProp(p, odds){
+  var lam = ((S.latest.params || {}).calibration || {}).prop;
+  if (lam == null || Math.abs(lam - 1) < 1e-9) return p;
+  var q = impl(odds); return Math.max(.01, Math.min(.99, q + lam * (p - q)));
+}
+/* a prop row the engine did not turn into a logged pick, read the same way (calibrated), so Ace can still talk about it */
+function leanPick(g, r, side){
+  var m = r.model, over = side === 'over', priced = r[side] != null, o = priced ? r[side] : -110;
+  var est = calProp(over ? m.p_over : m.p_under, o), imp = impl(o), nm = r.player || r.name || 'Player';
+  return {type:'prop', side:side, label:nm + ' ' + side + ' ' + r.line + ' ' + (LBL[r.stat] || r.stat), line:r.line, odds:o, est:Math.round(est * 1000) / 1000, implied:Math.round(imp * 1000) / 1000,
+    edge:Math.round((est - imp) * 1000) / 1000, kind:priced ? 'priced' : 'assumed', conf:'Low', units:0, player:nm, stat:r.stat, pid:r.pid, mean:m.mean,
+    hit_l10:(over ? m.hit_l10 : m.n_l10 - m.hit_l10) + '/' + m.n_l10, flag:'Lean: a model reading that did not make the logged pick list (thin edge or low confidence). It is not tracked on the Tracker.',
+    reason:'', sig:r.sig && r.sig.side === side ? r.sig : null, game_id:g.id, away:g.away.abbr, home:g.home.abbr, lean:true, date:S.latest.for_date};
+}
+var POOL = null;
+function acePool(){
+  var L = S.latest; if (!L) return [];
+  if (POOL && POOL.at === L.generated_at) return POOL.list;
+  var out = [], seen = {};
+  (L.picks || []).forEach(function(p){ if (p.odds == null || p.est == null || !p.game_id) return; seen[legKey(p)] = 1; out.push(p); });
+  L.games.forEach(function(g){ (g.prop_rows || []).forEach(function(r){
+    if (r.skipped || !r.model || r.pid == null) return;
+    var b = bestSide(r), p = leanPick(g, r, b.side);
+    if (seen[legKey(p)] || p.edge < .02 || p.edge > .2) return;
+    seen[legKey(p)] = 1; out.push(p);
+  }); });
+  POOL = {at:L.generated_at, list:out};
+  return out;
+}
+
+/* ---- smart signals ---- */
+var SIGL = {hit:'Hit rate', form:'Form', cushion:'Cushion', matchup:'Matchup', role:'Role', pace:'Pace', opp:'Vs opponent', mins:'Minutes', gap:'Model gap', tform:'Team form', rest:'Rest', shots:'Shot quality', crew:'Crew'};
+var TIERS = ['Strong', 'Solid', 'Notable'];
+function tierEl(sig, mini){
+  if (!sig || !sig.tier) return null;
+  return el('span', {class:'tier t-' + sig.tier + (mini ? ' mini' : ''), title:sig.tier + ' signal, ' + sig.score + ' out of 100: ' + sig.items.length + ' pattern' + (sig.items.length === 1 ? '' : 's') + ' line up'}, '✦ ', sig.tier);
+}
+function sigChips(sig, max){
+  var items = (sig.items || []).slice().sort(function(a, b){ return b.w - a.w; }).slice(0, max || 4);
+  return el('div', {class:'sigchips'}, tierEl(sig), items.map(function(i){ return el('span', {class:'sigchip', title:i.t, text:SIGL[i.k] || i.k}); }));
+}
+var SR = null;
+function sigStats(){
+  if (SR && SR.n === S.history.length) return SR;
+  var by = {}, tier = {};
+  S.history.forEach(function(p){
+    if (!p.sig || !p.sig.length || (p.result !== 'W' && p.result !== 'L') || (p.kind != null && p.kind !== 'priced')) return;
+    function add(m, k){ var b = m[k] || (m[k] = {w:0, l:0, net:0}); if (p.result === 'W') b.w++; else b.l++; b.net += p.profit || 0; }
+    p.sig.forEach(function(k){ add(by, k); });
+    if (p.sig_tier) add(tier, p.sig_tier);
+  });
+  SR = {n:S.history.length, by:by, tier:tier};
+  return SR;
+}
+function recTxt(b){
+  if (!b) return '';
+  var n = b.w + b.l;
+  return b.w + '-' + b.l + (n >= 20 ? ' (' + Math.round(100 * b.w / n) + '%)' : ', too few to judge');
+}
+function sigList(sig){
+  var by = sigStats().by;
+  return el('ul', {class:'siglist'}, sig.items.map(function(i){
+    var r = by[i.k];
+    return el('li', {}, el('b', {text:(SIGL[i.k] || i.k) + ': '}), i.t, r ? el('span', {class:'small mut', text:' · past picks with this pattern: ' + recTxt(r)}) : null);
+  }));
+}
+/* everything on the board that has a pattern, strongest first */
+var SB = null;
+function sigBoard(){
+  var L = S.latest;
+  if (!L) return [];
+  if (SB && SB.l === L) return SB.list;
+  var out = [], pk = {};
+  (L.picks || []).forEach(function(p){ pk[legKey(p)] = p; });
+  L.games.forEach(function(g){
+    (g.prop_rows || []).forEach(function(r){
+      if (r.skipped || !r.sig || !r.sig.tier) return;
+      var lp = leanPick(g, r, r.sig.side), p = pk[legKey(lp)] || lp;
+      if (p.edge <= 0) return;
+      out.push({p:p, sig:p.sig && p.sig.tier ? p.sig : r.sig, g:g, kind:'prop'});
+    });
+  });
+  (L.picks || []).forEach(function(p){
+    if (p.type === 'prop' || !p.sig || !p.sig.tier) return;
+    var g = gameById(p.game_id); if (g) out.push({p:p, sig:p.sig, g:g, kind:'game'});
+  });
+  var seen = {};
+  out = out.filter(function(x){ var k = legKey(x.p); if (seen[k]) return false; seen[k] = 1; return true; });
+  out.sort(function(a, b){ return b.sig.score - a.sig.score || b.p.edge - a.p.edge; });
+  SB = {l:L, list:out};
+  return out;
+}
+function sigCount(){ return sigBoard().filter(function(x){ return !started(x.p) && x.sig.tier !== 'Notable'; }).length; }
+function sigPill(g){
+  var n = sigBoard().filter(function(x){ return x.g.id === g.id; }), top = n[0];
+  if (!top) return null;
+  return el('span', {class:'tier t-' + top.sig.tier + ' mini', title:n.length + ' pattern' + (n.length === 1 ? '' : 's') + ' worth a look in this game. Best: ' + top.p.label}, '✦ ', n.length + (n.length === 1 ? ' signal' : ' signals'));
+}
+function openLeg(p){ var g = gameById(p.game_id); if (!g) return; if (p.type === 'prop' && p.pid) openPlayer(g.id, p.pid, p.stat); else openGame(g.id); }
+function sigBanner(){
+  var b = sigBoard().filter(function(x){ return !started(x.p); })[0];
+  if (!b) return null;
+  var d = el('button', {type:'button', class:'sigban t-' + b.sig.tier, onclick:function(){ showTab('signals'); }},
+    el('span', {class:'sb-ic', text:'✦'}), el('span', {class:'sb-t'}, el('b', {text:'Standout on the board'}), el('span', {text:b.p.label + ' · ' + fo(b.p.odds) + ' · ' + b.sig.tier + ' signal, ' + b.sig.items.length + ' pattern' + (b.sig.items.length === 1 ? '' : 's')})), el('span', {class:'chev', text:'See all ›'}));
+  return d;
+}
+function sigCard(it, i){
+  var p = it.p, sig = it.sig, g = it.g, live = started(p);
+  var art = el('article', {class:'sigc t-' + sig.tier + ' clk-card' + (live ? ' dim' : ''), style:'--i:' + Math.min(i, 12) + ';--v:' + sig.score},
+    el('div', {class:'sc-top'}, pickAvatar(p, g), el('div', {class:'sc-id'}, el('h3', {class:'p-title'}, p.label, el('span', {class:'mono', text:fo(p.odds)})),
+      el('p', {class:'small mut'}, p.away + ' @ ' + p.home + (g.tip ? ' · ' + g.tip : ''), ' ', liveEl(p.away, p.home))),
+      el('div', {class:'ring', style:'--v:' + sig.score, title:'Signal strength ' + sig.score + ' out of 100'}, el('b', {text:String(sig.score)}))),
+    el('div', {class:'sc-tags'}, tierEl(sig), el('span', {class:'pill', text:p.type}), p.lean ? el('span', {class:'pill', text:'lean, not logged'}) : el('span', {class:'conf ' + p.conf, text:p.conf}),
+      p.kind === 'assumed' ? el('span', {class:'pill warn', text:'no price, -110 assumed'}) : null, live ? el('span', {class:'pill warn', text:'started'}) : null),
+    sigList(sig),
+    el('div', {class:'nums'}, el('span', {}, 'Est ', el('b', {text:pct(p.est)})), el('span', {}, 'Price ', el('b', {text:pct(p.implied)})),
+      el('span', {}, 'Edge ', el('b', {class:p.edge >= 0 ? 'pos' : 'neg', text:fe(p.edge)})), p.units ? el('span', {}, 'Stake ', el('b', {text:p.units + 'u'})) : null),
+    el('div', {class:'go-row'}, slipBtn(p), el('span', {class:'small go-hint', text:'Tap for the full breakdown ›'})));
+  art.addEventListener('click', function(e){ if (e.target.closest('button,a')) return; openLeg(p); });
+  return art;
+}
+function renderSignals(){
+  var root = $('#signals'); root.textContent = '';
+  var L = S.latest; if (!L) return;
+  var all = sigBoard(), st = sigStats();
+  var cnt = {Strong:0, Solid:0, Notable:0}; all.forEach(function(x){ if (!started(x.p)) cnt[x.sig.tier]++; });
+  root.append(el('div', {class:'hero'}, el('div', {}, el('h1', {text:'Smart Signals'}),
+    el('p', {text:'Where several independent patterns line up on the same bet: a hot hit rate, a real cushion over the line, a favorable matchup, a role change, pace. The more that agree, the higher the tier. Signals sort the board for you. They never change the model\'s chance or the stake.'})),
+    el('div', {class:'tiles'}, tileEl('Strong', String(cnt.Strong), 'Four or more points of agreeing patterns.'), tileEl('Solid', String(cnt.Solid), 'Two and a half or more points of agreeing patterns.'),
+      tileEl('Notable', String(cnt.Notable), 'One and a half or more points of agreeing patterns.'), tileEl('On the board', String(all.length), 'Every bet with at least a Notable signal, started games included.'))));
+  root.append(el('div', {class:'ctl'},
+    segCtlFor('Strength', 'sgTier', [['all', 'All'], ['Strong', 'Strong'], ['Solid', 'Solid'], ['Notable', 'Notable']], renderSignals),
+    segCtlFor('Show', 'sgType', [['all', 'Everything'], ['prop', 'Props'], ['game', 'Games']], renderSignals),
+    segCtlFor('Started games', 'sgLive', [[false, 'Hide'], [true, 'Show']], renderSignals)));
+  var list = all.filter(function(x){ return (S.sgTier === 'all' || x.sig.tier === S.sgTier) && (S.sgType === 'all' || x.kind === S.sgType) && (S.sgLive || !started(x.p)); });
+  if (!list.length){
+    root.append(el('div', {class:'empty'}, el('b', {text:all.length ? 'Nothing matches' : 'No standout patterns yet'}),
+      all.length ? 'Change a filter above.' : 'Signals need props priced in props.txt (or the Odds API) and games with a line. Early in the season few bets have enough games behind them to line up.'));
+  } else {
+    var grid = el('div', {class:'cards'}); list.forEach(function(x, i){ grid.append(sigCard(x, i)); }); root.append(grid);
+  }
+  /* record: how bets with each pattern have actually done */
+  var tr = TIERS.filter(function(t){ return st.tier[t]; }).map(function(t){ var b = st.tier[t], n = b.w + b.l; return [t, b.w + '-' + b.l, n >= 20 ? Math.round(100 * b.w / n) + '%' : 'n/a', (b.net >= 0 ? '+' : '') + b.net.toFixed(2)]; });
+  var kr = Object.keys(st.by).sort(function(a, b){ return (st.by[b].w + st.by[b].l) - (st.by[a].w + st.by[a].l); }).map(function(k){ var b = st.by[k], n = b.w + b.l; return [SIGL[k] || k, b.w + '-' + b.l, n >= 20 ? Math.round(100 * b.w / n) + '%' : 'n/a', (b.net >= 0 ? '+' : '') + b.net.toFixed(2)]; });
+  root.append(el('h2', {text:'Do signals actually work? The record'}));
+  if (tr.length || kr.length){
+    root.append(el('div', {class:'cards'}, tr.length ? table(['Tier', 'W-L', 'Win %', 'Units'], tr, 1) : null, kr.length ? table(['Pattern', 'W-L', 'Win %', 'Units'], kr, 1) : null));
+    root.append(el('p', {class:'small mut', text:'Only settled picks with a real price count. A win percentage is shown once a row has 20 settled picks; before that the sample is too small to mean anything. Compare these with the overall record on the Tracker tab: signals earn their place only if they beat it.'}));
+  } else {
+    root.append(el('div', {class:'note'}, 'No settled picks carry a signal yet. From today every pick is logged with its patterns, and this table fills in as games finish. Until a row has 20 settled picks, treat the tiers as a way to sort the board, not as proof.'));
+  }
+  root.append(el('div', {class:'note'}, el('b', {text:'How to use this'}), el('p', {class:'small', text:'A signal says "several things point the same way", not "this will hit". Check the injury report and the line before you bet, keep stakes small, and never treat a tier as a guarantee. Tap a card for the full breakdown and the last 10 games.'})));
+  animateNums(root);
+}
+function segCtlFor(label, key, opts, rerender){
+  return el('div', {class:'row'}, el('b', {text:label}), el('div', {class:'seg', role:'group', 'aria-label':label}, opts.map(function(o){
+    return el('button', {type:'button', 'aria-pressed':String(S[key] === o[0]), text:o[1], onclick:function(){ S[key] = o[0]; rerender(); }});
+  })));
+}
+
+/* ---- bet slip ---- */
+var SLIP = {legs:[]};
+function slipLoad(){
+  try { var a = JSON.parse(lsGet('eplocks_slip_v1', '[]')); if (Array.isArray(a)) SLIP.legs = a.filter(function(p){ return p && p.game_id && p.label && p.odds != null && p.est != null; }).slice(0, 12); } catch(e){ SLIP.legs = []; }
+}
+function slipSave(){ lsSet('eplocks_slip_v1', SLIP.legs.length ? JSON.stringify(SLIP.legs) : null); }
+/* after new data arrives: refresh each saved leg from the current board, drop any that are gone */
+function slipSync(){
+  if (!SLIP.legs.length || !S.latest) return;
+  var pool = {}; acePool().forEach(function(p){ pool[legKey(p)] = p; });
+  var before = SLIP.legs.length;
+  SLIP.legs = SLIP.legs.map(function(p){ return pool[legKey(p)] || null; }).filter(Boolean);
+  slipSave();
+  if (SLIP.legs.length < before) toast((before - SLIP.legs.length) + ' leg' + (before - SLIP.legs.length === 1 ? '' : 's') + ' left your slip because it is no longer on the board.');
+}
+function slipIdx(p){ var k = legKey(p), r = -1; SLIP.legs.forEach(function(x, j){ if (legKey(x) === k) r = j; }); return r; }
+function slipToggle(p){
+  var i = slipIdx(p);
+  if (i >= 0){ SLIP.legs.splice(i, 1); toast('Removed from your slip'); }
+  else {
+    if (SLIP.legs.length >= 12){ toast('Your slip is full (12 legs).'); return; }
+    SLIP.legs.push(JSON.parse(JSON.stringify(p)));
+    toast('Added ' + p.label, {label:'View slip', fn:function(){ go('slip'); }});
+  }
+  slipSave(); slipUi(true);
+}
+function slipSet(legs){ SLIP.legs = legs.slice(0, 12).map(function(p){ return JSON.parse(JSON.stringify(p)); }); slipSave(); slipUi(true); }
+function syncBtn(b){
+  var on = slipIdx(b._p) >= 0, mini = b.classList.contains('mini');
+  b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on));
+  b.textContent = on ? (mini ? '✓' : '✓ On slip') : (mini ? '+' : '+ Slip');
+  b.setAttribute('aria-label', (on ? 'Remove from slip: ' : 'Add to slip: ') + b._p.label);
+}
+function slipBtn(p, mini){
+  var b = el('button', {type:'button', class:'slipbtn' + (mini ? ' mini' : '')});
+  b._p = p; syncBtn(b);
+  b.onclick = function(e){ e.stopPropagation(); slipToggle(b._p); };
+  return b;
+}
+function slipUi(bump){
+  var n = SLIP.legs.length, f = $('#fabSlip');
+  if (f){ f.hidden = !n; $('#fabN').textContent = String(n); if (bump && n){ f.classList.remove('bump'); void f.offsetWidth; f.classList.add('bump'); } }
+  document.querySelectorAll('.slipbtn').forEach(syncBtn);
+  if (SH.kind === 'slip' && !$('#sheet').hidden) renderSheet(false);
+}
+function slipBody(){
+  var wrap = el('div', {class:'sh-in'}), legs = SLIP.legs;
+  if (!legs.length){
+    wrap.append(el('div', {class:'empty'}, el('b', {text:'Your slip is empty'}), 'Tap "+ Slip" on any pick, signal or prop, or ask Ace to build one for you.'),
+      el('button', {type:'button', class:'btn go', text:'Ask Ace for a parlay ›', onclick:function(){ go('ace'); }}));
+    return wrap;
+  }
+  var t = mkTicket(legs), games = {};
+  legs.forEach(function(p){ games[p.game_id] = (games[p.game_id] || 0) + 1; });
+  var warns = [];
+  if (Object.keys(games).some(function(k){ return games[k] > 1; })) warns.push('Legs from the same game are linked (a blowout moves several of them at once). The chance above multiplies the legs as if they were independent, and sportsbooks price same-game parlays their own way, so the real payout and chance can differ.');
+  if (legs.some(started)) warns.push('At least one of these games has already started. Live prices will have moved.');
+  if (legs.some(function(p){ return p.kind === 'assumed'; })) warns.push('Some legs have no posted price, so -110 is assumed. Check the real price.');
+  if (legs.some(function(p){ return p.lean; })) warns.push('A lean is a model reading that did not make the logged pick list. It is not tracked on the Tracker.');
+  if (t.evc <= 0) warns.push('If only half of each edge is real, this slip loses money over time. Treat it as a pass or a very small bet.');
+  wrap.append(el('div', {class:'ult slipu'},
+    el('span', {class:'badge', text:'Your slip'}),
+    el('div', {class:'head'}, el('div', {}, el('h3', {text:t.n === 1 ? 'Single' : t.n + '-leg parlay'}), el('p', {class:'small', text:'Confidence ' + t.conf + ' · ' + Object.keys(games).length + ' game' + (Object.keys(games).length === 1 ? '' : 's')})), el('div', {class:'big', text:fo(t.odds)})),
+    el('div', {class:'legs'}, legs.map(function(p){
+      return el('div', {class:'slip-leg'}, legRow(p, false, false), el('button', {type:'button', class:'ib2', 'aria-label':'Remove ' + p.label, text:'✕', onclick:function(){ slipToggle(p); }}));
+    })),
+    ticketNums(t)));
+  var inp = el('input', {type:'number', inputmode:'decimal', min:'0', step:'1', id:'wager', value:lsGet('eplocks_wager', '10'), 'aria-label':'Wager in dollars'});
+  var out = el('p', {class:'small', id:'wagerOut'});
+  function upd(){
+    var w = parseFloat(inp.value);
+    if (!isFinite(w) || w <= 0){ out.textContent = 'Enter a wager to see what it pays.'; return; }
+    lsSet('eplocks_wager', String(w));
+    out.textContent = 'A $' + w.toFixed(2).replace(/\.00$/, '') + ' bet wins $' + (w * t.profit).toFixed(2) + ' and returns $' + (w * t.D).toFixed(2) + '. Model-expected result: ' + (t.ev >= 0 ? '+' : '-') + '$' + Math.abs(w * t.ev).toFixed(2) + ' (' + (t.evc >= 0 ? '+' : '-') + '$' + Math.abs(w * t.evc).toFixed(2) + ' if only half the edge is real). Estimates, not promises.';
+  }
+  inp.oninput = upd; upd();
+  wrap.append(el('div', {class:'blk'}, el('h3', {text:'What it pays'}), el('label', {class:'wg'}, el('span', {text:'Wager $'}), inp), out));
+  warns.forEach(function(w){ wrap.append(el('div', {class:'note warn small', text:w})); });
+  var clr = el('button', {type:'button', class:'btn', text:'Clear slip'}), armed = false;
+  clr.onclick = function(){
+    if (!armed){ armed = true; clr.textContent = 'Tap again to clear'; setTimeout(function(){ armed = false; clr.textContent = 'Clear slip'; }, 2500); return; }
+    SLIP.legs = []; slipSave(); slipUi(false); toast('Slip cleared');
+  };
+  wrap.append(el('div', {class:'row'}, copyBtn(ticketText(t, 'Slip')), el('button', {type:'button', class:'btn go', text:'Ask Ace to review ›', onclick:function(){ go('ace'); aceSend('Review my slip'); }}), clr));
+  wrap.append(el('p', {class:'small mut', text:'Your slip is saved in this browser only. This site does not place bets or hold money. Place the bet with a licensed sportsbook where it is legal.'}));
+  return wrap;
+}
+
+
+/* ---- Ace: the betting buddy. Built-in brain works offline from today's board; an optional key adds Claude ---- */
+var ACE = {node:null, log:null, input:null, chips:null, set:null, busy:false, ctx:null, hist:[], pend:null, model:lsGet('eplocks_ace_model', 'claude-sonnet-5-5')};
+var ACE_MODELS = [['claude-haiku-5-5', 'Haiku 5.5: fastest and cheapest'], ['claude-sonnet-5-5', 'Sonnet 5.5: balanced'], ['claude-opus-5-5', 'Opus 5.5: most thorough']];
+var NICK = {knicks:'NYK', sixers:'PHI', '76ers':'PHI', cavs:'CLE', cavaliers:'CLE', mavs:'DAL', mavericks:'DAL', wolves:'MIN', timberwolves:'MIN', blazers:'POR', dubs:'GSW', warriors:'GSW',
+  nugs:'DEN', nuggets:'DEN', pels:'NOP', pelicans:'NOP', grizz:'MEM', grizzlies:'MEM', clips:'LAC', clippers:'LAC', lakers:'LAL', hawks:'ATL', celtics:'BOS', celts:'BOS', nets:'BKN',
+  hornets:'CHA', bulls:'CHI', pistons:'DET', pacers:'IND', heat:'MIA', bucks:'MIL', magic:'ORL', raptors:'TOR', wizards:'WAS', suns:'PHX', kings:'SAC', jazz:'UTA',
+  thunder:'OKC', spurs:'SAS', rockets:'HOU'};
+var LOWER_OK = /^(HOU|OKC|LAL|LAC|NYK|GSW|NOP|SAS|PHX|SAC|UTA|POR|ATL|BOS|CLE|DAL|DET|MIA|MIL|ORL|PHI|TOR|CHI|CHA|BKN|MEM)$/;
+var RG_RX = /\b(all in|all-in|chas(e|ing)|win it back|win back|rent money|mortgage|borrow\w*|last \$?\d+|loan|can'?t afford|cannot afford|need to win|desperate|addict\w*|gambling problem|can'?t stop)\b/;
+var CITY_STOP = {new:1, state:1, city:1, golden:1, trail:1, york:1, salt:1, lake:1, san:1, los:1, angeles:1, north:1, west:1, east:1};
+var STAT_RX = [[/\b(points?|pts|scor\w*|buckets)\b/, 'points'], [/\b(rebounds?|rebs?|boards)\b/, 'rebounds'], [/\b(assists?|asts|dimes)\b/, 'assists'], [/\b(threes|3s|3 ?pointers?|3pt|triples|3pm)\b/, 'threes'],
+  [/\b(pra|points rebounds assists|pts reb ast)\b/, 'pra'], [/\bsteals?\b/, 'steals'], [/\bblocks?\b/, 'blocks'], [/\bturnovers?\b/, 'turnovers']];
+var NUMW = {one:1, two:2, three:3, four:4, five:5, six:6, seven:7, eight:8, single:1, double:2, triple:3, quad:4};
+var GLOSS = {
+  edge:'Edge is the model\'s chance minus the chance the price implies. If the model says 58% and the price implies 52%, the edge is +6 points. It is an estimate, and most of the work is not trusting it too much, so the site shrinks it toward the price using how past picks actually did.',
+  implied:'Implied chance is what a price says in percent. -110 means you risk 110 to win 100, which is about 52.4%. The book\'s cut (the vig) is baked in, so the two sides add to a bit over 100%.',
+  unit:'A unit is a fixed slice of your bankroll, so stakes stay comparable. The site sizes stakes at about a quarter of the Kelly amount, which is deliberately cautious. Pick your own unit size and keep it small.',
+  kelly:'Kelly is the stake that grows a bankroll fastest if your edge is real. Because edges are estimates, the site uses a quarter of it and caps parlays at 1 unit.',
+  parlay:'A parlay ties legs together, and every leg has to win. The payout multiplies, but so does the chance of losing. That is why I use one leg per game by default and show you what happens if only half the edge is real.',
+  signal:'A Smart Signal fires when several independent patterns point at the same bet: a hot hit rate, a real cushion, a matchup, a role change, pace. Strong needs the most agreement. It sorts the board, it does not change the model\'s chance. Past results for each pattern are on the Signals tab once 20 picks have settled.',
+  confidence:'Confidence (High, Medium, Low) comes from fixed rules: how many games are behind the number, how big the edge is, whether injuries and lines are covered. Early in the season most picks are Low or Medium on purpose.',
+  vig:'The vig (or juice) is the book\'s commission built into the prices. It is why a coin-flip bet pays -110 instead of +100.',
+  moneyline:'Moneyline is a bet on who wins, no spread. -190 means risk 190 to win 100; +160 means risk 100 to win 160.',
+  spread:'The spread levels the game with a head start. HOU -4.5 wins only if Houston wins by 5 or more.',
+  total:'The total (over/under) is the combined score line. Over wins if both teams together score more than the number.',
+  lock:'There is no such thing as a lock. Even a 75% bet loses one time in four. I can tell you which bets the numbers like best and why, and that\'s the honest version of a lock.'
+};
+
+function aceKey(){ return lsGet('eplocks_ace_key', ''); }
+
+/* ---- reading what the person typed ---- */
+function aceIndex(){
+  var teams = [], players = [];
+  (S.latest ? S.latest.games : []).forEach(function(g){
+    [g.away, g.home].forEach(function(t){ teams.push({abbr:t.abbr, name:t.name, gid:g.id}); });
+    var seen = {};
+    function add(pid, name, team){ if (pid == null || seen[pid] || !name) return; seen[pid] = 1; players.push({pid:String(pid), name:name, team:team, gid:g.id}); }
+    (g.player_board || []).forEach(function(b){ add(b.pid, b.name, b.team); });
+    (g.prop_rows || []).forEach(function(r){ add(r.pid, r.player || r.name, r.team); });
+    Object.keys(g.plogs || {}).forEach(function(pid){ add(pid, g.plogs[pid].name, g.plogs[pid].team); });
+  });
+  return {teams:teams, players:players};
+}
+function aceParse(q, ix){
+  var raw = q, t = ' ' + q.toLowerCase().replace(/[^a-z0-9+\-$.%@\/ ]/g, ' ').replace(/\s+/g, ' ') + ' ';
+  var o = {raw:raw, n:null, style:null, target:null, props:null, types:[], stats:[], side:null, minConf:null, gids:[], pids:[], teams:[], sgp:false, sigOnly:false, multi:false,
+    safer:false, bigger:false, add:0, fewer:false, again:false, swap:false, stake:null, parlay:false, single:false, exclude:{}, must:null};
+  var m = /(\d)\s*[- ]?\s*(leg|legs|pick|picks|team|man|way|play|plays|fold)\b/.exec(t);
+  if (m) o.n = parseInt(m[1], 10);
+  else { m = /\b(one|two|three|four|five|six|seven|eight|single|double|triple|quad)[- ](leg|legs|pick|picks|team|man|way|play|fold|parlay)\b/.exec(t); if (m) o.n = NUMW[m[1]]; }
+  if (/\b(parlays?|legs?|ticket|tickets|accumulator|acca|combo|slip)\b/.test(t) && !/\bmy slip\b/.test(t)) o.parlay = true;
+  if (/\b(single|straight bet|one pick|one bet|just one|best bet|top play|top pick|best pick|only one|one play|lock of the night|pick of the night)\b/.test(t)){ o.single = true; if (o.n == null) o.n = 1; }
+  if (o.n != null) o.n = Math.max(1, Math.min(6, o.n));
+  if (o.n > 1) o.parlay = true;
+  if (/\b(safe|safest|safer|conservative|most likely|high prob\w*|sure thing|banker|low risk|least risky|likeliest|best chance)\b/.test(t)) o.style = 'safe';
+  else if (/\b(value|best edge|biggest edge|plus ev|\+ev|most edge|sharpest)\b/.test(t)) o.style = 'value';
+  else if (/\b(long ?shots?|moon ?shots?|lotto|lottery|big payout|big payday|high payout|big odds|upside|degen|swing for|home run|juiced|juice it)\b/.test(t)) o.style = 'long';
+  if (/\b(safer|less risk\w*|more safe)\b/.test(t)) o.safer = true;
+  if (/\b(bigger|more payout|higher payout|riskier|more upside|more risk|bigger payout|juice it|spicier|spice it)\b/.test(t)) o.bigger = true;
+  m = /(?:^|[\s(])\+\s?(\d{3,4})\b/.exec(t); if (m) o.target = parseInt(m[1], 10);
+  if (!o.target){ m = /\b(\d+(?:\.\d+)?)\s?(?:x|to 1|to one)\b/.exec(t); if (m && parseFloat(m[1]) >= 2) o.target = amer(parseFloat(m[1]) + (/to (1|one)/.test(m[0]) ? 1 : 0)); }
+  if (/\bprops?\b|\bplayers?\b/.test(t) && !/\b(no|without|skip|except) props?\b/.test(t)) o.props = true;
+  if (/\b(no|without|skip) props?\b|\bgames? only\b|\bgame bets?\b/.test(t)) o.props = false;
+  if (/\b(spreads?|against the spread|ats)\b/.test(t)) o.types.push('spread');
+  if (/\b(moneylines?|ml|straight up|outright)\b/.test(t)) o.types.push('moneyline');
+  if (/\b(totals?|over under|o\/u|game total)\b/.test(t)) o.types.push('total');
+  STAT_RX.forEach(function(s){ if (s[0].test(t) && o.stats.indexOf(s[1]) < 0) o.stats.push(s[1]); });
+  if (/points rebounds assists|pts reb ast|\bpra\b/.test(t)) o.stats = ['pra'];
+  var hasO = /\bovers?\b/.test(t), hasU = /\bunders?\b/.test(t);
+  if (hasU && !hasO) o.side = 'under'; else if (hasO && !hasU) o.side = 'over';
+  if (/\bhigh confidence\b|\bhigh only\b|\bonly high\b/.test(t)) o.minConf = 'High'; else if (/\bmedium (or better|\+|and up)\b|\bat least medium\b|\bmedium\+/.test(t)) o.minConf = 'Medium';
+  if (/\b(same game|sgp|one game parlay)\b/.test(t)) o.sgp = true;
+  if (/\b(signals?|patterns?|stands? out|standouts?|smart)\b/.test(t)) o.sigOnly = true;
+  if (/\b(options|ideas|some|few|couple|several|variety|a bunch)\b/.test(t) || /\bparlays\b/.test(t)) o.multi = true;
+  if (/\b(add (a |one |another )?(leg|pick|more)|one more|more legs?|extra leg)\b/.test(t)) o.add = 1;
+  if (/\b(fewer|one less|less legs|remove a leg|drop a leg|smaller)\b/.test(t)) o.fewer = true;
+  if (/\b(another|different|something else|again|new one|re-?roll|next one|else)\b/.test(t)) o.again = true;
+  if (/\b(swap|replace|change|ditch|get rid of|take out|remove|drop)\b/.test(t)) o.swap = true;
+  m = /\$\s?(\d+(?:\.\d+)?)/.exec(t) || /\b(\d+(?:\.\d+)?)\s?(?:bucks|dollars)\b/.exec(t); if (m) o.stake = parseFloat(m[1]);
+  /* teams */
+  var hit = {};
+  ix.teams.forEach(function(tm){
+    var ok = new RegExp('\\b' + tm.abbr + '\\b').test(raw) || (LOWER_OK.test(tm.abbr) && new RegExp('\\b' + tm.abbr.toLowerCase() + '\\b').test(t));
+    if (!ok) Object.keys(NICK).forEach(function(k){ if (NICK[k] === tm.abbr && new RegExp('\\b' + k + '\\b').test(t)) ok = true; });
+    if (!ok) tm.name.toLowerCase().split(/\s+/).forEach(function(w){ if (w.length >= 5 && !CITY_STOP[w] && new RegExp('\\b' + w + '\\b').test(t)) ok = true; });
+    if (ok && !hit[tm.abbr]){ hit[tm.abbr] = 1; o.teams.push(tm.abbr); if (o.gids.indexOf(tm.gid) < 0) o.gids.push(tm.gid); }
+  });
+  /* players */
+  var lastCount = {};
+  ix.players.forEach(function(p){ var w = lastName(p.name); lastCount[w] = (lastCount[w] || 0) + 1; });
+  ix.players.forEach(function(p){
+    var full = p.name.toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim(), ln = lastName(p.name);
+    if (t.indexOf(' ' + full + ' ') >= 0 || (ln.length >= 4 && lastCount[ln] === 1 && new RegExp('\\b' + ln + '(\'?s)?\\b').test(t))){ if (o.pids.indexOf(p.pid) < 0) o.pids.push(p.pid); }
+  });
+  o.low = t;
+  return o;
+}
+function lastName(n){
+  var w = String(n).toLowerCase().replace(/[^a-z0-9 ]/g, ' ').split(/\s+/).filter(Boolean);
+  while (w.length > 1 && /^(jr|sr|ii|iii|iv|v)$/.test(w[w.length - 1])) w.pop();
+  return w[w.length - 1] || '';
+}
+
+/* ---- picking legs and building tickets ---- */
+function aceScore(p, style){
+  var w = CW[p.conf] || .4, g = (p.sig && p.sig.w) || 0;
+  if (style === 'safe') return p.est - (p.flag && !p.lean ? .06 : 0) - (p.conf === 'Low' ? .03 : 0) + .02 * g;
+  if (style === 'value') return p.edge + .004 * g;
+  if (style === 'long') return p.edge * w + (p.odds > 0 ? .03 : 0) + .004 * g;
+  return p.edge * w + .004 * g;
+}
+function aceCands(o, pool){
+  var rk = {Low:1, Medium:2, High:3}, minC = o.minConf ? rk[o.minConf] : 0;
+  var allow;
+  if (o.types.length) allow = o.types.slice();
+  else if (o.props === false) allow = ['spread', 'moneyline', 'total'];
+  else if (o.props === true || o.stats.length || o.pids.length) allow = ['prop'];
+  else allow = ['spread', 'moneyline', 'total', 'prop'];
+  if ((o.props === true || o.stats.length || o.pids.length) && allow.indexOf('prop') < 0) allow.push('prop');
+  var list = pool.filter(function(p){
+    if (started(p) || !(p.edge > 0) || allow.indexOf(p.type) < 0) return false;
+    if (o.stats.length && p.type === 'prop' && o.stats.indexOf(p.stat) < 0) return false;
+    if (o.side && (p.type === 'prop' || p.type === 'total') && p.side !== o.side) return false;
+    if (minC && (rk[p.conf] || 1) < minC) return false;
+    if (o.gids.length && o.gids.indexOf(p.game_id) < 0) return false;
+    if (o.pids.length && !(p.type === 'prop' && o.pids.indexOf(String(p.pid)) >= 0)) return false;
+    if (o.sigOnly && !(p.sig && p.sig.tier)) return false;
+    if (o.exclude[legKey(p)]) return false;
+    return true;
+  });
+  var style = o.style || 'bal';
+  if (style === 'safe'){ var s55 = list.filter(function(p){ return p.est >= .55; }); if (s55.length >= 2) list = s55; }
+  return list.sort(function(a, b){ return aceScore(b, style) - aceScore(a, style); });
+}
+function aceObj(t, o){
+  if (o.target) return -Math.abs(Math.log(t.D / dec(o.target))) * 2 + t.evc + .3 * t.P;
+  var s = o.style;
+  if (s === 'safe') return t.P + .3 * t.evc;
+  if (s === 'value') return t.ev;
+  if (s === 'long') return t.evc * 2 + .2 * Math.log(t.D);
+  return t.g + .05 * t.P;
+}
+function mkey(p){ return p.game_id + '|' + (p.type === 'prop' ? p.pid + '|' + p.stat : p.type); }
+function aceBest(cands, n, o){
+  var top = cands.slice(0, 15), must = o.must || [], need = Math.max(0, n - must.length), best = null, cnt = 0;
+  var ug = {}, uk = {}; must.forEach(function(p){ ug[p.game_id] = 1; uk[mkey(p)] = 1; });
+  top = top.filter(function(p){ return !uk[mkey(p)]; });
+  (function rec(start, cur, g2, k2){
+    if (cur.length === need){
+      var t = mkTicket(must.concat(cur)), v = aceObj(t, o);
+      if (!best || v > best.v) best = {v:v, t:t};
+      cnt++; return;
+    }
+    for (var i = start; i < top.length && cnt < 20000; i++){
+      var p = top[i];
+      if (k2[mkey(p)] || (!o.sgp && g2[p.game_id])) continue;
+      var g3 = Object.create(g2), k3 = Object.create(k2); g3[p.game_id] = 1; k3[mkey(p)] = 1;
+      rec(i + 1, cur.concat([p]), g3, k3);
+    }
+  })(0, [], ug, uk);
+  return best && best.t;
+}
+function aceMaxLegs(cands, o){
+  if (o.sgp) return Math.min(6, cands.length + (o.must ? o.must.length : 0));
+  var g = {}; cands.forEach(function(p){ g[p.game_id] = 1; }); (o.must || []).forEach(function(p){ g[p.game_id] = 1; });
+  return Math.min(6, Object.keys(g).length);
+}
+function aceTicket(cands, o){
+  var max = aceMaxLegs(cands, o), n = o.n;
+  if (!max) return null;
+  if (n == null){
+    if (o.target || o.style === 'long'){
+      var best = null; for (var k = 2; k <= Math.min(6, max); k++){ var t = aceBest(cands, k, o); if (t){ var v = aceObj(t, o); if (!best || v > best.v) best = {v:v, t:t}; } }
+      return best && best.t;
+    }
+    n = {safe:2, value:3, long:4}[o.style] || 3;
+  }
+  n = Math.min(n, max);
+  return aceBest(cands, n, o);
+}
+
+/* ---- words ---- */
+function pick_(arr){ ACE.k = (ACE.k || 0) + 1; return arr[ACE.k % arr.length]; }
+function legWhy(p){
+  var bits = [];
+  if (p.sig && p.sig.items && p.sig.items.length){ var it = p.sig.items.slice().sort(function(a, b){ return b.w - a.w; })[0]; bits.push(it.t); }
+  if (p.reason && p.reason.length < 140 && !/^note p\d+$/.test(p.reason)) bits.push(p.reason);
+  bits.push('the model has it at ' + pct(p.est) + ' against a price that implies ' + pct(p.implied) + ' (edge ' + fe(p.edge) + ' points)');
+  return bits.join('; ') + '.';
+}
+function money(w, t){ var x = w * t.profit; return '$' + (x >= 100 ? Math.round(x) : x.toFixed(2).replace(/\.00$/, '')); }
+function ticketWords(t, o){
+  var n = t.n, w = parseFloat(lsGet('eplocks_wager', '10')) || 10, wager = o.stake || w;
+  var how = o.target ? 'a payout near ' + fo(o.target) : ({safe:'the best chance of cashing', value:'the biggest edge over the price', long:'a bigger payout while the numbers stay positive'}[o.style] || 'the best mix of chance and edge');
+  var s = (n === 1 ? 'Here\'s a single' : 'Here\'s a ' + n + '-leg parlay') + ' built for ' + how + '. The model gives it about ' + pct(t.P) + ' to hit and it pays ' + fo(t.odds) + ', so $' + wager + ' wins ' + money(wager, t) + '.';
+  var top = t.legs.slice().sort(function(a, b){ return ((b.sig && b.sig.score) || 0) - ((a.sig && a.sig.score) || 0); })[0];
+  if (top && top.sig && top.sig.tier) s += ' Strongest pattern: ' + top.label + ' (' + top.sig.tier + ' signal).';
+  var weak = t.legs.slice().sort(function(a, b){ return a.est - b.est; })[0];
+  if (n > 1 && weak) s += ' Shakiest leg: ' + weak.label + ' at ' + pct(weak.est) + '.';
+  var fl = t.legs.filter(function(p){ return p.flag && !p.lean; })[0];
+  if (fl) s += ' Note on ' + fl.label + ': ' + fl.flag;
+  if (t.legs.some(function(p){ return p.lean; })) s += ' Some legs are leans, readings that did not make the logged pick list.';
+  if (t.evc <= 0) s += ' Heads up: if only half the edge is real, this one loses money over time, so it is a tiny-stake or pass.';
+  else if (t.conf === 'Low') s += ' Confidence is Low (small samples this early), so keep the stake small.';
+  if (o.sgp && new Set(t.legs.map(function(p){ return p.game_id; })).size < t.n) s += ' Same-game legs are linked, so a sportsbook may price this lower than my multiplied odds.';
+  return s;
+}
+function chipsFor(kind){
+  return ({
+    ticket:['Make it safer', 'Bigger payout', 'Add a leg', 'Another one', 'Why these?'],
+    list:['Build a parlay from these', 'Safest play tonight', 'Strong signals'],
+    start:['Best 3-leg parlay', 'Safest play tonight', 'Strong signals', 'Longshot +800', 'How are we doing?'],
+    none:['Safest play tonight', 'Strong signals', 'Best 3-leg parlay']
+  })[kind] || [];
+}
+
+/* ---- the built-in brain ---- */
+function glossHit(low){
+  var s = low.trim().replace(/[?!.]+$/, '');
+  return Object.keys(GLOSS).filter(function(k){
+    var key = k === 'signal' ? '(?:smart )?signals?' : k + 's?';
+    return new RegExp('^(?:(?:what(?:\'?s| is| are| does)?|whats)\\s+(?:an?\\s+|the\\s+)?' + key + '(?:\\s+mean|\\s+work)?|(?:explain|define)\\s+(?:an?\\s+|the\\s+)?' + key + '|' + key + '\\s+(?:means?|meaning))$').test(s);
+  })[0];
+}
+function aceLocal(q, o, ix){
+  var L = S.latest, low = o.low.trim();
+  if (!L) return {text:'The slate has not loaded yet. Give it a second and ask again.'};
+  if (RG_RX.test(low))
+    return {text:'Hold up. If this money matters for bills, or you are trying to win back a loss, the right bet is no bet tonight. No model beats variance on a short run, and I would rather you keep the money. If gambling is getting hard to control, free confidential help is open all day in the US at 1-800-GAMBLER. If you still want to look at the board for fun, I can show small, sensible plays.', chips:['Safest play tonight', 'How are we doing?']};
+  if (/^(hi|hey|yo|sup|hello|howdy|help|what can you do|how do(es)? (this|it) work|who are you|what are you)\b/.test(low) && low.split(' ').length < 9)
+    return {text:'I\'m Ace, your betting buddy. I read tonight\'s whole board (every pick, prop, signal and injury note) and build plays around what you ask for. Try "safest 2-leg parlay", "best prop on the Rockets", "longshot +800", "a 3-leg using only strong signals", or just tell me a player. I show the model\'s chance and the price for every leg, because the numbers matter more than my opinion, and none of it is a guarantee.', chips:chipsFor('start')};
+  if (/^(thanks|thank you|thx|ty|cool|nice|great|awesome|perfect|got it|ok|okay)\b/.test(low) && low.split(' ').length < 6)
+    return {text:pick_(['Anytime. Keep stakes small and have fun with it.', 'You got it. Want another angle on tonight\'s board?', 'Glad to help. Check injuries again right before tip.']), chips:chipsFor(ACE.ctx && ACE.ctx.last ? 'ticket' : 'start')};
+  var gk = glossHit(low);
+  if (gk) return {text:GLOSS[gk], chips:chipsFor('start')};
+  if (/\block\b/.test(low) && /\b(any|is there|are there|sure|guarantee\w*|certain)\b/.test(low)) return {text:GLOSS.lock, chips:['Safest play tonight', 'Strong signals']};
+  if (/\b(record|track record|how (are|have) (we|you|the picks?)|how'?s? (the )?(site|model|bot)|win rate|roi|are (you|the picks) (any good|good|legit|hitting)|is this legit)\b/.test(low) && !o.parlay) return aceRecord();
+  if (/\b(review|check|rate|grade|look at)\b.*\b(slip|ticket)\b|\bmy slip\b|\bmy ticket\b/.test(low)) return aceReview(o);
+  if (/^(why|explain|reason|how come|justify|break (it )?down)\b|\bwhy these\b|\bwhy (did|do) you\b/.test(low) && ACE.ctx && ACE.ctx.last && !o.pids.length && !o.gids.length) return aceWhy(ACE.ctx.last);
+  if (/\b(what games|which games|tonight'?s? (games|slate)|the slate|who'?s playing|games (today|tonight)|schedule)\b/.test(low)) return aceSlate();
+  if (/\b(injur\w*|who'?s out|questionable|doubtful)\b/.test(low) && !o.parlay) return aceInjuries(o);
+  /* "Safest play tonight", "best prop on the Rockets": one bet */
+  var plural = /\b(plays|picks|bets|props|legs|options|ideas)\b/.test(low);
+  if (o.n == null && !o.parlay && !o.multi && !plural && /\b(play|pick|bet|prop|lock|leg|one)\b/.test(low)) o.single = true;
+  /* a tweak of the last ticket */
+  var prev = ACE.ctx && ACE.ctx.last;
+  var follow = prev && !o.pids.length && !o.gids.length && !o.stats.length && !o.types.length && o.props == null && !o.target && !o.single &&
+    (o.safer || o.bigger || o.add || o.fewer || o.again || o.swap || (o.style && !o.parlay && o.n == null));
+  if (follow){
+    var q2 = JSON.parse(JSON.stringify(prev.o)); q2.exclude = q2.exclude || {}; q2.must = null; q2.target = null;
+    if (o.safer) q2.style = 'safe'; else if (o.bigger) q2.style = 'long'; else if (o.style) q2.style = o.style;
+    if (o.n != null) q2.n = o.n; else if (o.add) q2.n = Math.min(6, prev.t.n + 1); else if (o.fewer) q2.n = Math.max(1, prev.t.n - 1); else q2.n = prev.t.n;
+    var tag = 'tweak';
+    if (o.again){ tag = 'again'; prev.t.legs.forEach(function(p){ q2.exclude[legKey(p)] = 1; }); }
+    if (o.swap){
+      tag = 'swap';
+      var drop = null, m = /\bleg (\d)\b|\b(first|second|third|fourth|fifth|last)\b/.exec(low);
+      if (m){ var ord = {first:0, second:1, third:2, fourth:3, fifth:4}; drop = m[1] ? parseInt(m[1], 10) - 1 : (m[2] === 'last' ? prev.t.legs.length - 1 : ord[m[2]]); }
+      else prev.t.legs.forEach(function(p, i){ var ln = lastName(p.player || ''); if ((ln.length >= 4 && low.indexOf(ln) >= 0) || (p.type !== 'prop' && (new RegExp('\\b' + p.away.toLowerCase() + '\\b').test(low) || new RegExp('\\b' + p.home.toLowerCase() + '\\b').test(low)))) drop = i; });
+      if (drop == null || !prev.t.legs[drop]) drop = prev.t.legs.map(function(p, i){ return [p.est, i]; }).sort(function(a, b){ return a[0] - b[0]; })[0][1];
+      q2.exclude[legKey(prev.t.legs[drop])] = 1;
+      q2.must = prev.t.legs.filter(function(p, i){ return i !== drop; });
+      q2.n = prev.t.n;
+    }
+    return aceBuild(q2, ix, tag);
+  }
+  var wantsBuild = o.parlay || o.single || o.style || o.target || o.stats.length || o.types.length || o.props != null || o.side;
+  if (o.pids.length && !o.parlay && !o.single && !o.style && !o.target && !o.multi) return acePlayers(o, ix);
+  if (o.gids.length && !wantsBuild && !o.sigOnly) return aceGame(o);
+  if (o.sigOnly && !o.parlay && !o.single && !o.style) return aceSignals(o);
+  var buildy = wantsBuild || o.pids.length || o.gids.length || plural || /\b(bet|bets|pick|picks|play|plays|lock|prop|props|odds|payout|best|top|recommend|suggest|give me|build|make me|got any|what do you like|what'?s good|who do you like|favorite|tonight|should i)\b/.test(low);
+  if (!buildy) return {text:pick_(['I did not catch a bet in that. Try "safest 2-leg parlay", "best prop on a team", or a player\'s name.', 'Not sure what you want me to build there. Ask me for a parlay, a single, a player, or a team and I will work from tonight\'s board.']), chips:chipsFor('start')};
+  if (o.n == null && !o.parlay && !o.multi && !o.target && o.style !== 'long'){
+    if (plural) return aceTop(o);
+    o.n = 1;
+  }
+  if (o.parlay && o.n == null && !o.multi && !o.style && !o.target) o.n = 3;
+  return aceBuild(o, ix, null);
+}
+function aceTop(o){
+  var pool = acePool(), seen = {}, list = aceCands(o, pool).filter(function(p){ if (seen[p.game_id]) return false; seen[p.game_id] = 1; return true; }).slice(0, 4);
+  if (!list.length) return {text:'Nothing on tonight\'s board fits that with a positive edge. I would rather say that than force a bet.', chips:chipsFor('none')};
+  return {text:'The numbers like these the most right now (one per game, best first). Tap a card to see why, or ask me to build a ticket from them:', legs:list, chips:['Build a parlay from these', 'Safest play tonight', 'Strong signals'], ctx:{listLegs:list}};
+}
+function aceBuild(o, ix, tag){
+  var pool = acePool(), note = '';
+  if (o.gids.length === 1 && (o.n || 0) > 1) o.sgp = true;
+  if (o.pids.length && (o.parlay || o.single) && !o.must){
+    var must = [], miss = [];
+    o.pids.forEach(function(pid){
+      var c = pool.filter(function(p){ return p.type === 'prop' && String(p.pid) === pid && p.edge > 0 && !started(p) && (!o.stats.length || o.stats.indexOf(p.stat) >= 0); }).sort(function(a, b){ return aceScore(b, o.style || 'bal') - aceScore(a, o.style || 'bal'); })[0];
+      if (c) must.push(c); else { var pl = ix.players.filter(function(x){ return x.pid === pid; })[0]; if (pl) miss.push(pl.name); }
+    });
+    o = JSON.parse(JSON.stringify(o)); o.pids = []; o.must = must;
+    if (miss.length) note = 'The model does not see an edge on ' + miss.join(' or ') + ' tonight, so I left ' + (miss.length > 1 ? 'them' : 'him') + ' out. ';
+  }
+  var cands = aceCands(o, pool), asked = [];
+  if (o.teams.length) asked.push(o.teams.join('/'));
+  if (o.stats.length) asked.push(o.stats.map(function(s){ return LBL[s]; }).join('/'));
+  if (o.side) asked.push(o.side + 's');
+  if (o.sigOnly) asked.push('strong patterns');
+  if (!cands.length && !(o.must && o.must.length)){
+    var why = !pool.length ? 'There are no priced bets on the board right now.' : 'Nothing on tonight\'s board with a positive edge fits that' + (asked.length ? ' (' + asked.join(', ') + ')' : '') + ', or those games have started.';
+    var near = aceCands({types:[], stats:[], gids:[], pids:[], props:null, exclude:{}, side:null, minConf:null, sigOnly:false}, pool).slice(0, 3);
+    return {text:note + why + ' I would rather say "no" than force a bet.' + (near.length ? ' The closest things I have are below.' : ''), legs:near, chips:chipsFor('none')};
+  }
+  var variants = [];
+  if (o.multi && o.n == null && !o.style && !o.target){
+    [['safe', 'Safer'], ['bal', 'Balanced'], ['long', 'Bigger payout']].forEach(function(v){
+      var o2 = JSON.parse(JSON.stringify(o)); o2.style = v[0]; o2.n = {safe:2, bal:3, long:4}[v[0]];
+      var t = aceTicket(aceCands(o2, pool), o2); if (t) variants.push({t:t, o:o2, title:v[1]});
+    });
+    var seen = {}; variants = variants.filter(function(v){ var k = v.t.legs.map(legKey).sort().join(); if (seen[k]) return false; seen[k] = 1; return true; });
+  } else {
+    var t1 = aceTicket(cands, o);
+    if (t1) variants.push({t:t1, o:o, title:null});
+  }
+  if (!variants.length) return {text:note + 'I could not put together a ticket that fits that. Try fewer filters or a different number of legs.', chips:chipsFor('none')};
+  var first = variants[0], text;
+  if (variants.length > 1) text = 'Here are ' + variants.length + ' ways to play tonight\'s board, from safest to biggest payout. Each is one leg per game, positive edge only.';
+  else {
+    text = ticketWords(first.t, first.o);
+    if (o.n && first.t.n < o.n) text = 'Only ' + first.t.n + ' qualifying ' + (first.t.n === 1 ? 'leg fits' : 'legs fit') + ' on different games, so I built ' + (first.t.n === 1 ? 'a single' : 'a ' + first.t.n + '-legger') + ' instead of ' + o.n + '. ' + text;
+    if (tag === 'again') text = 'Fresh take. ' + text; else if (tag === 'swap') text = 'Swapped it out. ' + text;
+  }
+  return {tickets:variants, text:note + text, chips:chipsFor('ticket'), ctx:{t:first.t, o:first.o}};
+}
+function aceWhy(prev){
+  var lines = prev.t.legs.map(function(p, i){ return (i + 1) + '. ' + p.label + ' (' + fo(p.odds) + '): ' + legWhy(p); });
+  return {text:'Here\'s why each leg is in:\n' + lines.join('\n') + '\n\nThese are model estimates. Check the injury report and the line again before you bet.', chips:chipsFor('ticket')};
+}
+function aceRecord(){
+  var st = stats(S.history), dec_ = st.w + st.l;
+  if (!dec_) return {text:'No picks have settled yet, so there is no record to brag about. Every pick is logged and graded automatically from real final scores, and the Tracker tab will fill in as games finish. Until then, treat everything as unproven.', chips:chipsFor('start')};
+  var sg_ = sigStats().tier, sx = TIERS.filter(function(t){ return sg_[t]; }).map(function(t){ return t + ' signals ' + recTxt(sg_[t]); });
+  return {text:'Settled picks with a real price: ' + st.w + '-' + st.l + (st.pu ? '-' + st.pu : '') + ' (' + Math.round(100 * st.w / dec_) + '%), ' + (st.net >= 0 ? '+' : '') + st.net.toFixed(2) + ' units, ' + (st.stake ? (100 * st.net / st.stake).toFixed(1) + '% ROI' : 'no ROI yet') + '. ' + (dec_ < 100 ? 'That is a small sample, so luck still swamps skill; give it a few hundred picks before reading much into it. ' : '') + (sx.length ? sx.join('; ') + '. ' : '') + 'The full breakdown, including how often "70%" picks actually hit, is on the Tracker tab.', chips:chipsFor('start')};
+}
+function aceSlate(){
+  var L = S.latest, rows = L.games.map(function(g){
+    var m = g.market, n = (g.pick_objs || []).length;
+    return '• ' + g.away.abbr + ' @ ' + g.home.abbr + ' · ' + (g.tip || '') + (m && m.spread_home != null ? ' · ' + g.home.abbr + ' ' + sg(m.spread_home) : '') + (m && m.total != null ? ' · total ' + m.total : '') + (n ? ' · ' + n + ' pick' + (n === 1 ? '' : 's') : '');
+  });
+  return {text:L.games.length ? L.games.length + ' game' + (L.games.length === 1 ? '' : 's') + ' on ' + dayLabel(L.for_date) + ':\n' + rows.join('\n') : 'No NBA games on this date.', chips:chipsFor('start')};
+}
+function aceInjuries(o){
+  var L = S.latest, rows = [];
+  L.games.forEach(function(g){
+    if (o.gids.length && o.gids.indexOf(g.id) < 0) return;
+    (g.player_board || []).forEach(function(b){ if (b.inj) rows.push('• ' + b.name + ' (' + b.team + '): ' + b.inj); });
+  });
+  return {text:rows.length ? 'Players with an injury tag on tonight\'s board:\n' + rows.slice(0, 14).join('\n') + (rows.length > 14 ? '\n…and ' + (rows.length - 14) + ' more.' : '') + '\nStatuses change right up to tip, so check again before betting. Props on tagged players are skipped.' : 'No injury tags on tonight\'s board that I can see' + (o.gids.length ? ' for that game' : '') + '. The report updates through the day, so check again near tip.', chips:chipsFor('start')};
+}
+function aceSignals(o){
+  var all = sigBoard().filter(function(x){ return !started(x.p) && (!o.gids.length || o.gids.indexOf(x.g.id) >= 0); }).slice(0, 5);
+  if (!all.length) return {text:'No standout patterns on tonight\'s board yet. Signals need priced props and enough games behind each player, which takes a few weeks to build up.', chips:chipsFor('start')};
+  return {text:'These stand out the most right now (several patterns lining up on the same bet). A pattern is not a promise, so check the numbers on each:', legs:all.map(function(x){ return x.p; }), chips:['Build a parlay from these', 'Safest play tonight', 'Best 3-leg parlay'], ctx:{listLegs:all.map(function(x){ return x.p; })}};
+}
+function acePlayers(o, ix){
+  var L = S.latest, legs = [], lines = [];
+  o.pids.slice(0, 3).forEach(function(pid){
+    var pl = ix.players.filter(function(p){ return p.pid === pid; })[0]; if (!pl) return;
+    var g = gameById(pl.gid), mine = (g.prop_rows || []).filter(function(r){ return String(r.pid) === pid && r.model && (!o.stats.length || o.stats.indexOf(r.stat) >= 0); });
+    var rows = mine.filter(function(r){ return !r.skipped; });
+    var bd = (g.player_board || []).filter(function(b){ return String(b.pid) === pid; })[0];
+    if (bd && bd.inj) lines.push(pl.name + ' is tagged ' + bd.inj + ' tonight, so check his status before anything else.');
+    if (!rows.length && mine.length){
+      lines.push('I have a line for ' + pl.name + ' but the model ruled it out tonight (injury tag or the analysis flagged a problem), so there is no play there.');
+      return;
+    }
+    if (!rows.length){
+      var pj = bd && bd.proj;
+      lines.push('I have no posted line for ' + pl.name + ' tonight' + (pj && pj.points ? ', so there is nothing to price. Model projection: ' + pj.points[0] + ' pts, ' + pj.rebounds[0] + ' reb, ' + pj.assists[0] + ' ast (season pts ' + pj.points[1] + ', last 5 ' + pj.points[2] + ').' : '.') + ' Add his line to props.txt and I can price it.');
+      return;
+    }
+    rows.forEach(function(r){
+      var b = bestSide(r), p = leanPick(g, r, b.side), pk = (S.latest.picks || []).filter(function(x){ return legKey(x) === legKey(p); })[0] || p;
+      legs.push(pk);
+      lines.push(pk.label + ': ' + (pk.edge > 0 ? 'the model likes it, ' + pct(pk.est) + ' vs ' + pct(pk.implied) + ' implied (edge ' + fe(pk.edge) + ' points).' : 'no edge here, the better side is only ' + pct(pk.est) + ' against ' + pct(pk.implied) + ' implied (' + fe(pk.edge) + ' points). I would pass.'));
+    });
+  });
+  if (!lines.length) return {text:'I did not find that player on tonight\'s slate.', chips:chipsFor('start')};
+  return {text:lines.join('\n') + (legs.length ? '\nTap a card for his last 10 games and the full breakdown.' : ''), legs:legs, chips:['Build a parlay from these', 'Safest play tonight', 'Strong signals']};
+}
+function aceGame(o){
+  var L = S.latest, g = gameById(o.gids[0]); if (!g) return {text:'I could not find that game.', chips:chipsFor('start')};
+  var pool = acePool().filter(function(p){ return p.game_id === g.id && !started(p); }).sort(function(a, b){ return aceScore(b, 'bal') - aceScore(a, 'bal'); }).slice(0, 4);
+  var m = g.market, bits = [g.away.abbr + ' @ ' + g.home.abbr + (g.tip ? ' · ' + g.tip : '')];
+  if (m && m.spread_home != null) bits.push(g.home.abbr + ' ' + sg(m.spread_home) + ', total ' + m.total);
+  if (g.final) bits.push('model: ' + g.home.abbr + ' ' + sg(-g.final.margin) + ', total ' + g.final.total + ', ' + g.home.abbr + ' win chance ' + pct(g.final.home_win));
+  var t = bits.join(' · ') + (g.analysis && g.analysis.lean ? '\nLean: ' + g.analysis.lean : '');
+  if (!pool.length) t += '\nNo bet in this game clears the edge bar right now.';
+  return {text:t, legs:pool, chips:['Open that game', 'Safest play tonight', 'Strong signals'], ctx:{openGame:g.id}};
+}
+function aceReview(){
+  var legs = SLIP.legs;
+  if (!legs.length) return {text:'Your slip is empty. Tap "+ Slip" on any card, or ask me to build something and add it from here.', chips:chipsFor('start')};
+  var t = mkTicket(legs), weak = legs.slice().sort(function(a, b){ return a.est - b.est; })[0], strong = legs.slice().sort(function(a, b){ return b.edge - a.edge; })[0];
+  var s = 'Your ' + (legs.length === 1 ? 'single' : legs.length + '-leg slip') + ' pays ' + fo(t.odds) + ' and the model gives it about ' + pct(t.P) + '. Best edge: ' + strong.label + ' (' + fe(strong.edge) + ' points). ';
+  if (legs.length > 1){
+    var rest = mkTicket(legs.filter(function(p){ return p !== weak; }));
+    s += 'Weakest link: ' + weak.label + ' at ' + pct(weak.est) + '. Without it you would have ' + fo(rest.odds) + ' and about ' + pct(rest.P) + '. ';
+  }
+  var gm = {}; legs.forEach(function(p){ gm[p.game_id] = (gm[p.game_id] || 0) + 1; });
+  if (Object.keys(gm).some(function(k){ return gm[k] > 1; })) s += 'You have more than one leg in the same game, which are linked, so the multiplied odds are rough. ';
+  if (legs.some(started)) s += 'At least one game has started, so prices have moved. ';
+  if (legs.some(function(p){ return p.conf === 'Low'; })) s += 'Low-confidence legs mean thin samples, so keep the stake small. ';
+  s += t.evc > 0 ? 'If only half the edge is real this still has a small positive expectation.' : 'If only half the edge is real this loses money over time, so I would trim it or pass.';
+  return {text:s, chips:legs.length > 1 ? ['Swap the weakest leg', 'Make it safer', 'Strong signals'] : chipsFor('start'), ctx:{last:{t:t, o:{n:t.n, style:null, exclude:{}, types:[], stats:[], gids:[], pids:[], props:null, sgp:Object.keys(gm).length < legs.length}}}};
+}
+
+/* ---- Claude mode: your own key, called straight from this browser ---- */
+function aceBoard(){
+  var L = S.latest, pool = acePool().filter(function(p){ return !started(p); }).sort(function(a, b){ return aceScore(b, 'bal') - aceScore(a, 'bal'); }).slice(0, 70);
+  var st = stats(S.history);
+  return {date:L.for_date, record:{w:st.w, l:st.l, units:Math.round(st.net * 100) / 100},
+    games:L.games.map(function(g){ var m = g.market || {}; return {g:g.away.abbr + '@' + g.home.abbr, tip:g.tip, state:g.state, spread:m.spread_home != null ? g.home.abbr + ' ' + m.spread_home : null, total:m.total, lean:g.analysis && g.analysis.lean ? String(g.analysis.lean).slice(0, 180) : undefined}; }),
+    legs:pool.map(function(p, i){ return {id:'L' + (i + 1), game:p.away + '@' + p.home, type:p.type, label:p.label, odds:p.odds, est:p.est, edge:p.edge, conf:p.conf, priced:p.kind === 'priced', lean:p.lean || undefined,
+      signal:p.sig && p.sig.tier ? p.sig.tier + ': ' + p.sig.items.map(function(x){ return x.k; }).join(',') : undefined, mean:p.mean, l10:p.hit_l10}; }),
+    _pool:pool};
+}
+var ACE_SYS = 'You are Ace, the betting buddy inside EpLocks AI, an NBA picks site. Talk like a sharp, friendly friend: short, plain, confident, never hype. ' +
+  'You may only recommend legs that appear in BOARD.legs, referenced by their id (L1, L2, ...). Never invent a player, line, price, injury or statistic. ' +
+  'Odds, est (the model\'s chance) and edge come from the site\'s model and are estimates, not guarantees; there is no such thing as a lock. Do not state combined odds or combined hit chances yourself, the site computes those. ' +
+  'Use at most one leg per game in a parlay unless the person asks for a same-game parlay (then say the legs are linked). Prefer legs that have a signal when asked for strong patterns. ' +
+  'If nothing fits, say so and offer the nearest alternative. If the person sounds like they are chasing losses or betting money they cannot afford to lose, respond with care, mention 1-800-GAMBLER, and build no ticket. ' +
+  'Reply with ONLY a JSON object: {"reply": string (max 90 words, plain text), "tickets": [{"title": string, "legs": ["L3","L7"]}], "chips": [string, string, string]}. "tickets" may be empty. "chips" are short follow-up suggestions of at most 4 words each.';
+function aceClaude(q, o){
+  var key = aceKey(), board = aceBoard(), pool = board._pool; delete board._pool;
+  var ctl = new AbortController(), to = setTimeout(function(){ ctl.abort(); }, 45000);
+  var msgs = ACE.hist.slice(-8).concat([{role:'user', content:q}]);
+  return fetch('https://api.anthropic.com/v1/messages', {method:'POST', signal:ctl.signal,
+    headers:{'content-type':'application/json', 'x-api-key':key, 'anthropic-version':'2023-06-01', 'anthropic-dangerous-direct-browser-access':'true'},
+    body:JSON.stringify({model:ACE.model, max_tokens:800, system:ACE_SYS + '\n\nBOARD:\n' + JSON.stringify(board), messages:msgs})
+  }).then(function(r){
+    clearTimeout(to);
+    if (!r.ok) return r.text().then(function(tx){ var e = new Error(r.status === 401 ? 'The key was rejected' : r.status === 429 ? 'Rate limited by Anthropic, try again in a minute' : r.status === 400 && /credit|billing/i.test(tx) ? 'The account is out of credit' : 'Anthropic returned ' + r.status); e.http = r.status; throw e; });
+    return r.json();
+  }).then(function(js){
+    var txt = (js.content || []).map(function(c){ return c.text || ''; }).join(''), a = txt.indexOf('{'), b = txt.lastIndexOf('}'), d = null;
+    try { d = JSON.parse(txt.slice(a, b + 1)); } catch(e){}
+    if (!d || typeof d.reply !== 'string') d = {reply:txt.trim().slice(0, 600) || 'I had trouble with that one. Try rephrasing.', tickets:[], chips:[]};
+    var tickets = [];
+    (d.tickets || []).slice(0, 3).forEach(function(tk){
+      var legs = [], seen = {};
+      (tk.legs || []).forEach(function(id){ var m = /^L(\d+)$/.exec(String(id)), p = m && pool[parseInt(m[1], 10) - 1]; if (p && !seen[legKey(p)]){ seen[legKey(p)] = 1; legs.push(p); } });
+      if (!o.sgp){ var g = {}; legs = legs.filter(function(p){ if (g[p.game_id]) return false; g[p.game_id] = 1; return true; }); }
+      if (legs.length) tickets.push({t:mkTicket(legs.slice(0, 6)), o:{n:legs.length, style:o.style, exclude:{}, types:[], stats:[], gids:[], pids:[], props:null, sgp:o.sgp}, title:tk.title ? String(tk.title).slice(0, 40) : null});
+    });
+    return {text:String(d.reply).slice(0, 900), tickets:tickets, chips:(d.chips || []).slice(0, 4).map(function(c){ return String(c).slice(0, 30); }), ctx:tickets[0] ? {t:tickets[0].t, o:tickets[0].o} : null, ai:true};
+  });
+}
+
+/* ---- the chat window ---- */
+function aceAvatar(){ return el('span', {class:'ace-av', 'aria-hidden':'true'}, '♠'); }
+function bubble(who, kids){
+  return el('div', {class:'msg ' + who}, who === 'bot' ? aceAvatar() : null, el('div', {class:'bub'}, kids));
+}
+function para(text){ return String(text).split('\n').map(function(l){ return el('p', {text:l}); }); }
+function aceTicketCard(v){
+  var t = v.t, o = v.o || {};
+  var card = el('article', {class:'acet'},
+    el('div', {class:'t-head'}, el('div', {}, el('h3', {text:(v.title ? v.title + ': ' : '') + (t.n === 1 ? 'Single' : t.n + '-leg parlay')}), el('p', {class:'small mut', text:'Confidence ' + t.conf + ' · hits about ' + pct(t.P)})), el('div', {class:'t-odds', text:fo(t.odds)})),
+    el('div', {class:'legs'}, t.legs.map(function(p){ return legRow(p, false, false); })),
+    ticketNums(t),
+    el('div', {class:'row'}, el('button', {type:'button', class:'btn go', text:'Add all to slip', onclick:function(){ slipSet(t.legs); toast(t.n + ' leg' + (t.n === 1 ? '' : 's') + ' on your slip', {label:'View slip', fn:function(){ go('slip'); }}); }}), copyBtn(ticketText(t, t.n === 1 ? 'Single' : t.n + '-leg parlay'))));
+  return card;
+}
+function aceLegList(legs){
+  return el('div', {class:'acel'}, legs.map(function(p){ return el('div', {class:'acel-row'}, legRow(p, false, false), slipBtn(p)); }));
+}
+function aceScroll(){ var l = ACE.log; if (l) requestAnimationFrame(function(){ l.scrollTop = l.scrollHeight; }); }
+function aceShow(res){
+  var m = bubble('bot', res.text ? para(res.text) : []);
+  if (res.ai) m.querySelector('.bub').append(el('span', {class:'ai-tag', text:'Claude'}));
+  ACE.log.append(m);
+  var extra = el('div', {class:'msg-x'});
+  (res.tickets || []).forEach(function(v){ extra.append(aceTicketCard(v)); });
+  if (res.legs && res.legs.length) extra.append(aceLegList(res.legs));
+  if (extra.children.length) ACE.log.append(extra);
+  if (res.ctx){
+    ACE.ctx = ACE.ctx || {};
+    if (res.ctx.t) ACE.ctx.last = res.ctx; else if (res.ctx.last) ACE.ctx.last = res.ctx.last;
+    if ('listLegs' in res.ctx) ACE.ctx.listLegs = res.ctx.listLegs;
+    if ('openGame' in res.ctx) ACE.ctx.openGame = res.ctx.openGame;
+  }
+  aceChips(res.chips && res.chips.length ? res.chips : chipsFor('start'));
+  aceScroll();
+}
+function aceChips(list){
+  var c = ACE.chips; c.textContent = '';
+  list.forEach(function(x){ c.append(el('button', {type:'button', class:'qchip', text:x, onclick:function(){ aceSend(x); }})); });
+}
+function aceSend(text){
+  text = String(text || '').trim();
+  if (!text || ACE.busy) return;
+  if (!ACE.node) aceNode();
+  if (text.length > 400) text = text.slice(0, 400);
+  ACE.input.value = '';
+  ACE.log.append(bubble('me', para(text)));
+  aceScroll();
+  var wait = el('div', {class:'msg bot typing'}, aceAvatar(), el('div', {class:'bub'}, el('i'), el('i'), el('i')));
+  ACE.log.append(wait); aceScroll();
+  ACE.busy = true; ACE.node.classList.add('busy');
+  var ix = aceIndex(), o = aceParse(text, ix), started_ = Date.now();
+  function finish(res){
+    var d = Math.max(0, (REDUCE ? 0 : 520) - (Date.now() - started_));
+    setTimeout(function(){
+      wait.remove();
+      try {
+        aceShow(res);
+        ACE.hist.push({role:'user', content:text}, {role:'assistant', content:res.text || ''}); ACE.hist = ACE.hist.slice(-12);
+      } finally { ACE.busy = false; ACE.node.classList.remove('busy'); ACE.input.focus(); }
+    }, d);
+  }
+  /* shortcuts that open things instead of talking */
+  var low = text.toLowerCase();
+  if (/^open that game$/.test(low) && ACE.ctx && ACE.ctx.openGame){ wait.remove(); ACE.busy = false; ACE.node.classList.remove('busy'); openGame(ACE.ctx.openGame); return; }
+  if (/^build a parlay from these$/.test(low) && ACE.ctx && ACE.ctx.listLegs && ACE.ctx.listLegs.length){
+    var legs = ACE.ctx.listLegs.filter(function(p){ return !started(p); }), seen = {}; legs = legs.filter(function(p){ if (seen[p.game_id]) return false; seen[p.game_id] = 1; return true; }).slice(0, 4);
+    if (legs.length > 1){ var t = mkTicket(legs), o2 = {n:t.n, style:null, exclude:{}, types:[], stats:[], gids:[], pids:[], props:null}; finish({text:ticketWords(t, o2), tickets:[{t:t, o:o2}], chips:chipsFor('ticket'), ctx:{t:t, o:o2}}); return; }
+  }
+  if (aceKey() && !RG_RX.test(low)){
+    aceClaude(text, o).then(finish, function(e){
+      var why = e && e.name === 'AbortError' ? 'Claude took too long' : e && e.http ? e.message : 'I could not reach Claude from this browser';
+      var res = aceLocal(text, o, ix); res.text = '(' + why + ', so this one is from my built-in brain.)\n' + (res.text || '');
+      finish(res);
+    });
+  } else {
+    var res; try { res = aceLocal(text, o, ix); } catch(e){ res = {text:'Something tripped me up on that one (' + (e && e.message || e) + '). Try rephrasing, or ask for a "safest 2-leg parlay".', chips:chipsFor('start')}; }
+    finish(res);
+  }
+}
+function aceSettings(){
+  var box = ACE.set; box.textContent = '';
+  var has = !!aceKey(), inp = el('input', {type:'password', id:'aceKey', autocomplete:'off', spellcheck:'false', placeholder:has ? 'A key is saved in this browser' : 'sk-ant-…', 'aria-label':'Anthropic API key'});
+  var sel = el('select', {id:'aceModel', 'aria-label':'Claude model'}, ACE_MODELS.map(function(m){ return el('option', {value:m[0], text:m[1], selected:ACE.model === m[0] ? true : null}); }));
+  sel.onchange = function(){ ACE.model = sel.value; lsSet('eplocks_ace_model', sel.value); };
+  box.append(el('p', {class:'small'}, el('b', {text:has ? 'Claude mode is on.' : 'Built-in brain is on.'}), has ? ' Your questions go to Anthropic with tonight\'s board so Claude can reason about it. All odds and chances are still computed here from the real numbers, and any leg Claude names that is not on the board is thrown out.' : ' It works offline from the board and costs nothing. Add your own Anthropic API key to let Claude answer in natural language.'),
+    el('label', {class:'wg'}, el('span', {text:'API key'}), inp), el('label', {class:'wg'}, el('span', {text:'Model'}), sel),
+    el('div', {class:'row'}, el('button', {type:'button', class:'btn go', text:'Save key', onclick:function(){ var v = inp.value.trim(); if (!/^sk-ant-/.test(v)){ toast('That does not look like an Anthropic key (it starts with sk-ant-).'); return; } lsSet('eplocks_ace_key', v); toast('Claude mode on'); aceSettings(); aceHead(); }}),
+      has ? el('button', {type:'button', class:'btn', text:'Remove key', onclick:function(){ lsSet('eplocks_ace_key', null); toast('Key removed'); aceSettings(); aceHead(); }}) : null),
+    el('p', {class:'small mut', text:'Your key is stored only in this browser and goes only to api.anthropic.com. It is never sent to this site or saved in the repository. Anyone who can use this browser can use the key, so skip this on shared computers, and set a low spend limit on the key in your Anthropic console. You pay Anthropic directly, usually a cent or two per question.'}));
+}
+function aceHead(){ var s = ACE.node && ACE.node.querySelector('#aceMode'); if (s) s.textContent = aceKey() ? 'Claude mode' : 'Built-in brain'; }
+function aceNode(){
+  if (ACE.node) { aceHead(); return ACE.node; }
+  var inp = el('input', {type:'text', id:'aceIn', autocomplete:'off', maxlength:'400', placeholder:'Ask for a parlay, a player, a team…', 'aria-label':'Message Ace'});
+  var form = el('form', {class:'ace-form'}, inp, el('button', {type:'submit', class:'send', 'aria-label':'Send', text:'➤'}));
+  form.onsubmit = function(e){ e.preventDefault(); aceSend(inp.value); };
+  var log = el('div', {class:'ace-log', role:'log', 'aria-live':'polite'}), chips = el('div', {class:'ace-chips'}), set = el('div', {class:'ace-set', hidden:true});
+  var gear = el('button', {type:'button', class:'ib2', 'aria-label':'Ace settings', 'aria-expanded':'false', text:'⚙', onclick:function(){ set.hidden = !set.hidden; gear.setAttribute('aria-expanded', String(!set.hidden)); if (!set.hidden) aceSettings(); }});
+  var top = el('div', {class:'ace-top'}, aceAvatar(), el('div', {class:'ace-id'}, el('b', {text:'Ace'}), el('span', {class:'small mut'}, 'Your betting buddy · ', el('span', {id:'aceMode'}))), gear);
+  var node = el('div', {class:'acewin'}, top, set, log, chips, form, el('p', {class:'ace-foot', text:'Estimates from the model, not guarantees. 21+ and where legal. 1-800-GAMBLER.'}));
+  ACE.node = node; ACE.log = log; ACE.input = inp; ACE.chips = chips; ACE.set = set;
+  var L = S.latest, n = L ? acePool().filter(function(p){ return !started(p); }).length : 0, ns = L ? sigBoard().filter(function(x){ return !started(x.p); }).length : 0;
+  log.append(bubble('bot', para(L ? 'Hey, I\'m Ace. I\'ve read tonight\'s whole board: ' + L.games.length + ' game' + (L.games.length === 1 ? '' : 's') + ', ' + n + ' priced bet' + (n === 1 ? '' : 's') + (ns ? ', ' + ns + ' with a standout pattern' : '') + '. Tell me what you\'re looking for, like "safest 2-leg parlay" or "best prop on the Rockets", and I\'ll build it with the real numbers.' : 'Hey, I\'m Ace. The slate has not loaded yet.')));
+  aceChips(chipsFor('start')); aceHead();
+  return node;
+}
 
 /* ---- tracker ---- */
 function stats(list){
@@ -1640,6 +2665,13 @@ function renderMethod(){
     sec('Officials (referees)', [
       el('p', {text:'When the NBA posts the crew for a game, it shows in that game\'s Overview with each official\'s history. For every official the model compares his games with what the two teams normally produce (total points, fouls, free-throw attempts) and shrinks the result hard, so a few games say almost nothing.'}),
       el('p', {text:'An official needs 10 games before his number counts, at least two of the three must qualify, and even then the crew can move a game total by at most 1 point. Claude sees the same numbers as context. Crews come from ESPN once posted, or from the refs.txt file if you type them in.'})]),
+    sec('Smart Signals', [
+      el('p', {text:'A signal is a pattern that has to be true before it counts. For a prop: he cleared this number in at least 80% of his last ten, his last five are 10% above (or below) his season, the model sits well clear of the line compared with his usual swing, the opponent is weak against his position, his role or minutes are changing, the game is fast or slow, or he has beaten this number against this opponent. For a game bet: our number is far from the market, the team is playing above its season level, the opponent is on a back-to-back, shot quality favors the team, the pace points that way, or the crew leans that way.'}),
+      el('p', {text:'Each pattern has a weight and the tier is the sum: Notable 1.5, Solid 2.5, Strong 4. Signals only sort the board so the plays that stand out are easy to find. They never change the model chance, the edge or the stake. Every pick is logged with its patterns, so the Signals tab shows how each tier and each pattern has really done once 20 picks have settled. A tier is a pattern, not a promise.'})]),
+    sec('Ace and the bet slip', [
+      el('p', {text:'Ace is a betting buddy that reads the whole board: every pick, every priced prop, the signals and the injury tags. Ask for a parlay, a single, a player or a team in plain words, like "safest 2-leg parlay", "longshot +800" or "best prop on the Rockets". The built-in brain builds the ticket from real numbers only, one leg per game unless you ask for a same-game parlay, and it shows the chance, the price and why for each leg.'}),
+      el('p', {text:'You can also give Ace your own Anthropic API key (gear icon in the chat) so Claude answers in natural language. The key stays in your browser, goes only to Anthropic, and is never part of this site. Claude can only choose legs that exist on the board, and the odds and chances you see are always computed here, so it cannot invent a bet or a price.'}),
+      el('p', {text:'The slip collects legs from anywhere on the site, shows the combined price and chance, and keeps itself in your browser. Nothing is bet or stored on a server.'})]),
     sec('Game center and player view', [
       el('p', {text:'Tap any game for the live score by quarter, the live box score (refreshed every 15 seconds while the game is on), the props with their live values, every rotation player, ratings, tendencies, shot maps and how the numbers were built.'}),
       el('p', {text:'Tap any player or prop for his last 10 games on a chart against the line, his season, last-10 and last-5 averages next to tonight\'s projection and his live line, and a plain list of every step that produced the number. The live parts read ESPN directly from your browser, so they only show while ESPN is reachable.'})]),
@@ -1687,6 +2719,7 @@ function renderCounts(){
   $('#cnt-props').textContent = pc ? String(pc) : '';
   $('#sync').textContent = 'Updated ' + ago(L.generated_at);
   var vr = $('#ver'); if (vr && L.engine) vr.textContent = 'Engine v' + L.engine + '.';
+  var cs = $('#cnt-sig'), ns = sigCount(); if (cs) cs.textContent = ns ? String(ns) : '';
 }
 function moveInd(){
   var sel = $('.tabs [aria-selected="true"]'), ind = $('.tabs .ind'); if (!sel || !ind) return;
@@ -1694,17 +2727,26 @@ function moveInd(){
 }
 function showTab(t){
   S.tab = t;
-  ['slate', 'picks', 'parlays', 'players', 'props', 'track', 'method', 'status'].forEach(function(x){
+  TABS.forEach(function(x){
     $('#' + x).hidden = t !== x;
     var b = $('.tabs [data-tab="' + x + '"]'); b.setAttribute('aria-selected', String(t === x));
   });
   moveInd();
-  ({slate:renderSlate, picks:renderPicks, parlays:renderParlays, players:renderPlayers, props:renderProps, track:renderTracker, method:renderMethod, status:renderStatus})[t]();
+  ({slate:renderSlate, signals:renderSignals, picks:renderPicks, parlays:renderParlays, players:renderPlayers, props:renderProps, track:renderTracker, method:renderMethod, status:renderStatus})[t]();
+  var sec = $('#' + t); sec.classList.remove('enter'); void sec.offsetWidth; sec.classList.add('enter');
+  if (t === 'track' || t === 'parlays' || t === 'slate') animateNums(sec);
   try { if (location.hash.slice(1) !== t) history.replaceState(null, '', '#' + t); } catch(e){}
   applyLive();
 }
 document.querySelectorAll('.tabs button').forEach(function(b){ b.onclick = function(){ showTab(b.getAttribute('data-tab')); }; });
 window.addEventListener('resize', moveInd);
+initTheme(); slipLoad(); slipUi(false);
+(function(){
+  var fa = $('#fabAce');
+  if (!lsGet('eplocks_ace_seen', '')) fa.classList.add('pulse');
+  fa.onclick = function(){ lsSet('eplocks_ace_seen', '1'); fa.classList.remove('pulse'); go('ace'); };
+  $('#fabSlip').onclick = function(){ go('slip'); };
+})();
 if (document.fonts && document.fonts.ready) document.fonts.ready.then(moveInd);
 
 function getJson(url, fallback){
@@ -1712,11 +2754,12 @@ function getJson(url, fallback){
 }
 Promise.all([getJson('data/latest.json'), getJson('data/history.json', [])]).then(function(r){
   S.latest = r[0]; S.history = Array.isArray(r[1]) ? r[1] : [];
+  slipSync(); slipUi(false);
   renderCounts();
   var h = (location.hash || '').slice(1);
-  showTab(['slate', 'picks', 'parlays', 'players', 'props', 'track', 'method', 'status'].indexOf(h) >= 0 ? h : 'slate');
+  showTab(TABS.indexOf(h) >= 0 ? h : 'slate');
   startLive();
-  if (/^(game|player)\//.test(h)) go(h);
+  if (/^(game|player|ace|slip)(\/|$)/.test(h)) go(h);
 }).catch(function(e){
   S.err = 'The first daily run has not published data yet, or the file could not be read. (' + e.message + ')';
   $('#sync').textContent = 'No data yet'; renderSlate(); moveInd();
