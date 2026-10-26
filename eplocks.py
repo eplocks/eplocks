@@ -1,4 +1,3 @@
-Eplocks · PY
 #!/usr/bin/env python3
 """EpLocks AI daily engine.
  
