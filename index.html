@@ -9,10 +9,10 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=IBM+Plex+Mono:wght@500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
 <style>
 :root{
-  --bg:#f1f2f4; --surface:#ffffff; --surface2:#e8eaee; --fg:#14171c; --mut:#596170; --line:#d5d9e0;
-  --red:#c8102e; --on-red:#ffffff; --gold:#a66f00; --good:#12775a; --warn:#9a5600; --bad:#b3261e;
-  --hdr:#12151a; --hdr-fg:#eef0f4; --hdr-mut:#9aa3b2; --hdr-gold:#e6b02e;
-  --shadow:0 8px 22px rgba(20,23,28,.12);
+  --bg:#f3f6fb; --surface:#ffffff; --surface2:#e9eff7; --fg:#0b1f3a; --mut:#53647d; --line:#d7e0ec;
+  --acc:#087f5b; --on-acc:#ffffff; --gold:#a66f00; --good:#087f5b; --warn:#9a5600; --bad:#b3261e;
+  --hdr:#0b1f3a; --hdr2:#10305a; --hdr-fg:#f2f6fc; --hdr-mut:#9fb2cc; --hdr-acc:#34d399;
+  --shadow:0 8px 22px rgba(11,31,58,.14);
   --f-disp:"Barlow Condensed","Arial Narrow","Helvetica Neue",Arial,sans-serif;
   --f-body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
   --f-mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
@@ -20,33 +20,36 @@
 }
 @media (prefers-color-scheme:dark){
   :root:not([data-theme="light"]){
-    --bg:#0e1013; --surface:#171a20; --surface2:#20242c; --fg:#e9ebef; --mut:#9aa3b2; --line:#2a2f39;
-    --red:#ef4a5f; --on-red:#14171c; --gold:#e6b02e; --good:#3fc79a; --warn:#f0a43a; --bad:#ff7a70;
-    --hdr:#0a0c0f; --shadow:0 10px 26px rgba(0,0,0,.55); color-scheme:dark;
+    --bg:#07152b; --surface:#0d2140; --surface2:#15305a; --fg:#e8eef8; --mut:#9db0cb; --line:#223f6b;
+    --acc:#34d399; --on-acc:#04231a; --gold:#e6b02e; --good:#34d399; --warn:#f0a43a; --bad:#ff7a70;
+    --hdr:#050f20; --hdr2:#0a2144; --shadow:0 10px 26px rgba(0,0,0,.55); color-scheme:dark;
   }
 }
 *{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%}
 body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 var(--f-body)}
 body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--hdr)}
-.in{max-width:780px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
-.hdr{position:sticky;top:env(safe-area-inset-top,0px);z-index:9;background:var(--hdr);color:var(--hdr-fg)}
+.in{max-width:1040px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.hdr{position:sticky;top:env(safe-area-inset-top,0px);z-index:9;background:linear-gradient(180deg,var(--hdr),var(--hdr2));color:var(--hdr-fg);border-bottom:1px solid rgba(52,211,153,.4)}
 .bar{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-top:12px}
-.brand{display:flex;align-items:center;gap:8px;color:var(--hdr-gold)}
+.brand{display:flex;align-items:center;gap:8px;color:var(--hdr-acc)}
 .brand svg .sh{transition:transform .25s ease}
 .brand:hover svg .sh{transform:translateY(-2px)}
 .wm{font:700 26px/1 var(--f-disp);letter-spacing:.06em;color:var(--hdr-fg)}
-.wm b{color:var(--hdr-gold);font-weight:700}
+.wm b{color:var(--hdr-acc);font-weight:700}
 .wm i{font-style:normal;color:var(--hdr-mut);margin-left:6px;font-weight:600}
 .sync{font:12px var(--f-body);color:var(--hdr-mut);text-align:right}
 .tabs{display:flex;gap:2px;margin-top:10px;position:relative;overflow-x:auto;scrollbar-width:none}
 .tabs::-webkit-scrollbar{display:none}
-.tabs button{flex:1 0 auto;appearance:none;background:transparent;color:var(--hdr-mut);border:0;padding:10px 10px 11px;font:600 13px var(--f-body);letter-spacing:.05em;text-transform:uppercase;cursor:pointer;min-height:44px;transition:color .15s ease}
+.tabs button{flex:1 0 auto;white-space:nowrap;appearance:none;background:transparent;color:var(--hdr-mut);border:0;padding:10px 10px 11px;font:600 13px var(--f-body);letter-spacing:.05em;text-transform:uppercase;cursor:pointer;min-height:44px;transition:color .15s ease}
 .tabs button:hover,.tabs button[aria-selected="true"]{color:var(--hdr-fg)}
-.tabs .ind{position:absolute;left:0;bottom:0;height:3px;width:0;background:var(--red);border-radius:2px 2px 0 0;transition:transform .28s cubic-bezier(.3,.7,.3,1),width .28s cubic-bezier(.3,.7,.3,1)}
-.count{display:inline-block;min-width:20px;padding:0 6px;margin-left:4px;border-radius:10px;background:var(--red);color:var(--on-red);font:600 11px/18px var(--f-mono);text-align:center}
+.tabs button.star{color:var(--hdr-acc)}
+.tabs .ind{position:absolute;left:0;bottom:0;height:3px;width:0;background:var(--hdr-acc);border-radius:2px 2px 0 0;transition:transform .28s cubic-bezier(.3,.7,.3,1),width .28s cubic-bezier(.3,.7,.3,1)}
+.count{display:inline-block;min-width:20px;padding:0 6px;margin-left:4px;border-radius:10px;background:var(--hdr-acc);color:#04231a;font:600 11px/18px var(--f-mono);text-align:center}
 .count:empty{display:none}
-main.in{padding-block:18px 48px}
+main.in{padding-block:20px 56px}
+section.narrow{max-width:820px;width:100%;margin-inline:auto}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,430px),1fr));gap:14px;align-items:start}
 section{display:grid;gap:14px}
 h2{font:700 13px var(--f-body);letter-spacing:.12em;text-transform:uppercase;color:var(--mut);margin:6px 0 0}
 p{margin:0}
@@ -57,16 +60,16 @@ p{margin:0}
 .btn{appearance:none;font:600 14px var(--f-body);padding:8px 14px;min-height:40px;border-radius:6px;border:1px solid var(--line);background:transparent;color:var(--fg);cursor:pointer;transition:border-color .15s ease,transform .12s ease}
 .btn:hover{border-color:var(--fg)}
 .btn:active{transform:scale(.98)}
-:focus-visible{outline:2px solid var(--red);outline-offset:2px}
+:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
 .seg{display:inline-flex;border:1px solid var(--line);border-radius:6px;overflow:hidden}
 .seg button{appearance:none;background:transparent;color:var(--fg);border:0;padding:8px 12px;font:500 13px var(--f-body);cursor:pointer;min-height:36px;transition:background .15s ease}
 .seg button:hover{background:var(--surface2)}
-.seg button[aria-pressed="true"]{background:var(--surface2);font-weight:600;box-shadow:inset 0 -2px 0 var(--red)}
+.seg button[aria-pressed="true"]{background:var(--surface2);font-weight:600;box-shadow:inset 0 -2px 0 var(--acc)}
 .row{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
 .game,.pick,.tile,.pgroup{transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease}
 .game{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px;display:grid;gap:10px;min-width:0;animation:rise .35s ease both;animation-delay:calc(var(--i,0) * 40ms)}
 @keyframes rise{from{opacity:.35;transform:translateY(8px)}to{opacity:1;transform:none}}
-.game:hover,.pick:hover{transform:translateY(-2px);box-shadow:var(--shadow);border-color:var(--mut)}
+.game:hover,.pick:hover{transform:translateY(-2px);box-shadow:var(--shadow);border-color:var(--acc)}
 .g-top{display:flex;flex-wrap:wrap;gap:6px;align-items:center;justify-content:space-between}
 .tip{font:500 12px var(--f-mono);color:var(--mut)}
 .flags{display:flex;flex-wrap:wrap;gap:6px}
@@ -90,7 +93,7 @@ p{margin:0}
 .wp.pre{grid-template-columns:1fr 1fr}
 .wp i{display:block;transition:opacity .18s ease}
 .wp .a{background:var(--ca,var(--hdr-mut))}
-.wp .h{background:var(--ch,var(--red))}
+.wp .h{background:var(--ch,var(--acc))}
 .game[data-hot="away"] .wp .h,.game[data-hot="home"] .wp .a{opacity:.3}
 .wpl{display:flex;justify-content:space-between;font:500 12px var(--f-mono);color:var(--mut)}
 .lines{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
@@ -128,7 +131,7 @@ tbody tr:hover{background:var(--surface2)}
 .pick:hover .lock .sh,.lpick:hover .lock .sh{transform:translateY(0)}
 .pick{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px;display:grid;gap:8px;min-width:0}
 .p-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-.rank{font:700 22px/1 var(--f-disp);color:var(--red)}
+.rank{font:700 22px/1 var(--f-disp);color:var(--acc)}
 .conf{font:600 11px var(--f-body);letter-spacing:.05em;text-transform:uppercase;padding:2px 7px;border-radius:4px;border:1px solid currentColor}
 .conf.High{color:var(--good)}
 .conf.Medium{color:var(--gold)}
@@ -165,7 +168,46 @@ code{font:500 13px var(--f-mono);background:var(--surface2);padding:1px 5px;bord
 .src{display:grid;grid-template-columns:auto 1fr;gap:4px 10px;align-items:start;font-size:14px}
 .dot{width:10px;height:10px;border-radius:50%;margin-top:6px;background:var(--good)}
 .dot.bad{background:var(--bad)}
-@media (max-width:480px){.ab{font-size:34px}.tiles{grid-template-columns:repeat(2,1fr)}.lines{grid-template-columns:1fr 1fr}}
+
+.hero{display:grid;gap:14px;background:linear-gradient(135deg,var(--hdr),var(--hdr2));color:var(--hdr-fg);border-radius:14px;padding:18px;border:1px solid rgba(52,211,153,.35)}
+.hero h1{font:700 36px/1 var(--f-disp);letter-spacing:.02em;margin:0}
+.hero p{color:var(--hdr-mut);font-size:13px;margin-top:4px}
+.hero .tiles .tile{background:rgba(255,255,255,.07);border-color:rgba(255,255,255,.14);color:var(--hdr-fg)}
+.hero .tiles .tile span{color:var(--hdr-mut)}
+.hero .tiles .tile b{color:var(--hdr-acc)}
+.hero .tiles .tile:hover{border-color:var(--hdr-acc);box-shadow:none}
+.ctl{display:grid;gap:10px;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
+.ctl .row>b{font:600 11px var(--f-body);letter-spacing:.08em;text-transform:uppercase;color:var(--mut);min-width:96px}
+.ult{position:relative;overflow:hidden;display:grid;gap:12px;background:radial-gradient(120% 140% at 100% 0%,rgba(52,211,153,.28),transparent 55%),linear-gradient(135deg,var(--hdr),var(--hdr2));color:var(--hdr-fg);border:1px solid var(--hdr-acc);border-radius:16px;padding:18px;box-shadow:var(--shadow);animation:rise .4s ease both}
+.ult .badge{justify-self:start;font:700 12px var(--f-body);letter-spacing:.14em;text-transform:uppercase;background:var(--hdr-acc);color:#04231a;padding:3px 10px;border-radius:999px}
+.ult h3{font:700 30px/1.05 var(--f-disp);margin:0;letter-spacing:.01em}
+.ult .big{font:700 54px/1 var(--f-disp);color:var(--hdr-acc);font-variant-numeric:tabular-nums}
+.ult .head{display:flex;flex-wrap:wrap;gap:6px 18px;align-items:flex-end;justify-content:space-between}
+.ult .mut,.ult .small{color:var(--hdr-mut)}
+.ult .nums{color:var(--hdr-mut)}
+.ult .nums b{color:var(--hdr-fg)}
+.ult .nums b.pos{color:var(--hdr-acc)}
+.ult .nums b.neg{color:#ff9d94}
+.legs{display:grid;gap:8px}
+.leg{display:grid;gap:2px;min-width:0;border-left:3px solid var(--line);padding:6px 0 6px 12px;background:rgba(127,150,185,.08);border-radius:0 8px 8px 0}
+.leg.High{border-left-color:var(--good)}
+.leg.Medium{border-left-color:var(--gold)}
+.leg.Low{border-left-color:var(--mut)}
+.leg b{font-weight:600;overflow-wrap:anywhere}
+.leg .core{font:700 10px var(--f-body);letter-spacing:.08em;text-transform:uppercase;color:var(--acc);margin-left:6px}
+.ult .leg .core{color:var(--hdr-acc)}
+.ult .leg{background:rgba(255,255,255,.06)}
+.ult .btn{color:var(--hdr-fg);border-color:rgba(255,255,255,.4)}
+.ult .btn:hover{border-color:var(--hdr-acc);color:var(--hdr-acc)}
+.ticket{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px;display:grid;gap:10px;min-width:0;transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease}
+.ticket:hover{transform:translateY(-2px);box-shadow:var(--shadow);border-color:var(--acc)}
+.ticket.is-ult{border-color:var(--acc);box-shadow:inset 0 0 0 1px var(--acc)}
+.t-head{display:flex;align-items:flex-end;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.t-head h3{font:700 24px/1 var(--f-disp);margin:0;letter-spacing:.02em}
+.t-odds{font:700 34px/1 var(--f-disp);color:var(--acc);font-variant-numeric:tabular-nums}
+.chip{font:600 11px var(--f-body);letter-spacing:.06em;text-transform:uppercase;padding:2px 8px;border-radius:999px;background:var(--acc);color:var(--on-acc)}
+.ctl .seg{max-width:100%;flex-wrap:wrap}
+@media (max-width:480px){.hero h1{font-size:30px}.ult .big{font-size:44px}.ab{font-size:34px}.tiles{grid-template-columns:repeat(2,1fr)}.lines{grid-template-columns:1fr 1fr}}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{transition:none!important;animation:none!important}}
 </style>
 </head>
@@ -182,6 +224,7 @@ code{font:500 13px var(--f-mono);background:var(--surface2);padding:1px 5px;bord
     <nav class="tabs" role="tablist" aria-label="Sections">
       <button role="tab" data-tab="slate" aria-selected="true">Slate</button>
       <button role="tab" data-tab="picks" aria-selected="false">Picks<span class="count" id="cnt-picks"></span></button>
+      <button role="tab" data-tab="parlays" class="star" aria-selected="false">Parlays</button>
       <button role="tab" data-tab="props" aria-selected="false">Props<span class="count" id="cnt-props"></span></button>
       <button role="tab" data-tab="track" aria-selected="false">Tracker</button>
       <button role="tab" data-tab="status" aria-selected="false">Status</button>
@@ -192,9 +235,10 @@ code{font:500 13px var(--f-mono);background:var(--surface2);padding:1px 5px;bord
 <main class="in">
   <section id="slate" role="tabpanel"></section>
   <section id="picks" role="tabpanel" hidden></section>
-  <section id="props" role="tabpanel" hidden></section>
-  <section id="track" role="tabpanel" hidden></section>
-  <section id="status" role="tabpanel" hidden></section>
+  <section id="parlays" role="tabpanel" hidden></section>
+  <section id="props" class="narrow" role="tabpanel" hidden></section>
+  <section id="track" class="narrow" role="tabpanel" hidden></section>
+  <section id="status" class="narrow" role="tabpanel" hidden></section>
   <p class="legal">Estimates, not guarantees. Check lines and injuries before you bet. Bet only where it is legal and only what you can afford to lose. Problem gambling help in the US: 1-800-GAMBLER.</p>
 </main>
 <script>
@@ -230,7 +274,7 @@ function hue(h){
 }
 function teamColors(a, h){
   var ca = TC[a] || '#9aa3b2', ch = TC[h] || '#ef4a5f', dh = Math.abs(hue(ca) - hue(ch)), d = Math.min(dh, 360 - dh);
-  return d < 28 ? [ca, 'var(--red)'] : [ca, ch];
+  return d < 28 ? [ca, 'var(--acc)'] : [ca, ch];
 }
 function lockSvg(level){
   var l = ['High', 'Medium', 'Low'].indexOf(level) >= 0 ? level : 'Medium';
@@ -251,7 +295,7 @@ function ago(iso){
   var h = Math.round(m / 60); if (h < 36) return h + ' h ago';
   return Math.round(h / 24) + ' days ago';
 }
-var S = {latest:null, history:[], tab:'slate', filter:'all', hideLow:false, err:''};
+var S = {latest:null, history:[], tab:'slate', filter:'all', hideLow:false, err:'', pStyle:'bal', pConf:'any', pProps:true, pAssumed:false};
 
 function rankKey(p){
   var tier = p.kind === 'priced' ? 2 : p.kind === 'assumed' ? 1 : 0;
@@ -265,6 +309,7 @@ function meterEl(p){
       el('i', {class:'mk px', style:'left:' + px.toFixed(1) + '%'}), el('i', {class:'mk ex', style:'left:' + est.toFixed(1) + '%'})),
     el('div', {class:'mlab'}, el('span', {text:'Price ' + Math.round(px) + '%'}), el('span', {text:'Est ' + Math.round(est) + '%'})));
 }
+function tileEl(k, v, tip){ return el('div', {class:'tile', 'data-tip':tip, tabindex:'0'}, el('span', {text:k}), el('b', {text:v})); }
 function table(head, rows, numFrom){
   return el('div', {class:'tscroll'}, el('table', {}, el('thead', {}, el('tr', {}, head.map(function(h, i){ return el('th', {class:i >= (numFrom == null ? 1 : numFrom) ? 'num' : '', text:h}); }))),
     el('tbody', {}, rows.map(function(r){ return el('tr', {}, r.map(function(c, i){ return el('td', {class:i >= (numFrom == null ? 1 : numFrom) ? 'num' : '', text:c == null ? 'n/a' : String(c)}); })); }))));
@@ -355,14 +400,18 @@ function renderSlate(){
   var L = S.latest;
   if (!L){ root.append(el('div', {class:'empty'}, el('b', {text:S.err ? 'Could not load data' : 'Loading'}), S.err || 'Getting today\'s slate.')); return; }
   var stale = Date.now() - Date.parse(L.generated_at) > 30 * 3600 * 1000;
-  root.append(el('div', {class:'note'}, el('b', {text:dayLabel(L.for_date) + ' · ' + L.games.length + ' game' + (L.games.length === 1 ? '' : 's')}),
-    el('span', {class:'mut', text:' · updated ' + ago(L.generated_at)}),
-    el('p', {class:'small mut', text:'Built from ' + L.league.games + ' finished games\' box scores. League average: ' + L.league.ortg + ' points per 100 possessions, pace ' + L.league.pace + '. Check the Status tab for what loaded.'})));
+  var pc = 0; L.games.forEach(function(g){ pc += (g.prop_rows || []).length; });
+  var nh = L.picks.filter(function(p){ return p.conf === 'High'; }).length;
+  root.append(el('div', {class:'hero'},
+    el('div', {}, el('h1', {text:dayLabel(L.for_date)}),
+      el('p', {text:'Updated ' + ago(L.generated_at) + ' · built from ' + L.league.games + ' finished games · league average ' + L.league.ortg + ' points per 100 possessions, pace ' + L.league.pace + '. See the Status tab for what loaded.'})),
+    el('div', {class:'tiles'}, tileEl('Games', String(L.games.length), 'NBA games on this date.'), tileEl('Picks', String(L.picks.length), 'Bets that clear the edge bar today.'),
+      tileEl('High confidence', String(nh), 'Picks the fixed confidence rules rate High.'), tileEl('Props priced', String(pc), 'Player props from your board that were priced.'))));
   if (stale) root.append(el('div', {class:'note warn', text:'This data is more than a day old. The daily run may have failed; open the Status tab.'}));
   var eg = L.status && L.status.sources && L.status.sources.espn_games;
   if (eg && !eg.ok) root.append(el('div', {class:'note warn', text:'Game data could not be loaded in the last run (' + eg.msg + '). Open the Status tab.'}));
   else if (!L.games.length) root.append(el('div', {class:'note', text:'No NBA games are scheduled for this date.'}));
-  L.games.forEach(function(g, i){ root.append(gameCard(g, i)); });
+  var grid = el('div', {class:'cards'}); L.games.forEach(function(g, i){ grid.append(gameCard(g, i)); }); root.append(grid);
   setTimeout(function(){ document.querySelectorAll('.wp.pre').forEach(function(x){ x.classList.remove('pre'); }); }, 80);
 }
 
@@ -397,7 +446,126 @@ function renderPicks(){
     root.append(el('div', {class:'empty'}, el('b', {text:all.length ? 'Nothing matches' : 'No picks yet'}), all.length ? 'Change the filter above.' : 'No bet clears the edge bar today, or the lines have not loaded.'));
     return;
   }
-  list.forEach(function(p, i){ root.append(pickCard(p, i)); });
+  var pg = el('div', {class:'cards'}); list.forEach(function(p, i){ pg.append(pickCard(p, i)); }); root.append(pg);
+}
+
+
+/* ---- parlays ---- */
+function dec(o){ return o > 0 ? 1 + o / 100 : 1 + 100 / -o; }
+function amer(D){ return D >= 2 ? Math.round((D - 1) * 100) : -Math.round(100 / (D - 1)); }
+function legScore(p){
+  if (S.pStyle === 'safe') return p.est;
+  if (S.pStyle === 'val') return p.edge;
+  return p.edge * (CW[p.conf] || .4);
+}
+function legPool(){
+  var minC = {any:0, med:2, high:3}[S.pConf] || 0, rk = {Low:1, Medium:2, High:3};
+  return S.latest.picks.filter(function(p){
+    return p.edge > 0 && p.odds != null && p.est != null && p.game_id && (S.pAssumed || p.kind === 'priced') && (S.pProps || p.type !== 'prop') && (rk[p.conf] || 1) >= minC;
+  }).sort(function(a, b){ return legScore(b) - legScore(a); });
+}
+function orderLegs(pool){
+  var used = {}, legs = [], skip = {};
+  pool.forEach(function(p){
+    if (used[p.game_id]){ skip[p.label + '|' + p.game_id] = used[p.game_id]; return; }
+    used[p.game_id] = p.label; legs.push(p);
+  });
+  return {legs:legs, skip:skip};
+}
+function mkTicket(legs){
+  var D = 1, P = 1, Pc = 1;
+  legs.forEach(function(p){ D *= dec(p.odds); P *= p.est; Pc *= Math.max(.01, p.est - .5 * p.edge); });
+  var b = D - 1, ev = P * D - 1, evc = Pc * D - 1, f = evc > 0 ? evc / b : 0;
+  var g = evc > 0 ? Pc * Math.log(1 + f * b) + (1 - Pc) * Math.log(1 - f) : evc;
+  var stake = f > 0 ? Math.max(.25, Math.min(1, Math.round(f * 100 * .25 * 4) / 4)) : 0;
+  var conf = legs.every(function(p){ return p.conf === 'High'; }) ? 'High' : legs.some(function(p){ return p.conf === 'Low'; }) ? 'Low' : 'Medium';
+  return {legs:legs, n:legs.length, D:D, odds:amer(D), P:P, Pc:Pc, ev:ev, evc:evc, g:g, stake:stake, conf:conf, profit:b};
+}
+function legRow(p, core, showCore){
+  return el('div', {class:'leg ' + p.conf},
+    el('b', {}, lockSvg(p.conf), ' ', p.label, ' ', el('span', {class:'mono mut', text:fo(p.odds)}), showCore ? el('span', {class:'core', text:core ? '★ core' : '+ added'}) : null),
+    el('span', {class:'small mut', text:p.away + ' @ ' + p.home + ' · ' + p.type + ' · ' + p.conf + ' · est ' + pct(p.est) + ' vs price ' + pct(p.implied) + ' · edge ' + fe(p.edge) + (p.kind === 'assumed' ? ' (no price, -110 assumed)' : '')}));
+}
+function ticketNums(t){
+  return el('div', {class:'nums'},
+    el('span', {}, 'Hits about ', el('b', {text:pct(t.P)})),
+    el('span', {}, '1u wins ', el('b', {text:'+' + (t.profit).toFixed(2) + 'u'})),
+    el('span', {}, 'Edge ', el('b', {class:t.ev >= 0 ? 'pos' : 'neg', text:(t.ev >= 0 ? '+' : '') + (t.ev * 100).toFixed(1) + '%'})),
+    el('span', {}, 'If half the edge is real ', el('b', {class:t.evc >= 0 ? 'pos' : 'neg', text:(t.evc >= 0 ? '+' : '') + (t.evc * 100).toFixed(1) + '%'})),
+    el('span', {}, 'Stake ', el('b', {text:t.stake ? t.stake + 'u' : 'pass'})));
+}
+function ticketText(t, title){
+  return ['EpLocks AI ' + title + ' (' + t.n + '-leg, ' + fo(t.odds) + ')'].concat(t.legs.map(function(p){ return '- ' + p.label + ' ' + fo(p.odds) + ' (' + p.away + ' @ ' + p.home + ')'; })).concat(['Model chance ' + pct(t.P) + ', stake ' + (t.stake ? t.stake + 'u' : 'pass')]).join('\n');
+}
+function copyBtn(text){
+  var b = el('button', {class:'btn', type:'button', text:'Copy ticket'});
+  b.onclick = function(){
+    var done = function(m){ b.textContent = m; setTimeout(function(){ b.textContent = 'Copy ticket'; }, 1800); };
+    try { navigator.clipboard.writeText(text).then(function(){ done('Copied'); }, function(){ done('Copy failed'); }); } catch(e){ done('Copy failed'); }
+  };
+  return b;
+}
+function ultCard(u){
+  var best = u.legs.slice().sort(function(a, b){ return a.est - b.est; })[0];
+  var why = 'This ticket has the best long-run growth of the ' + '2 to 5 leg tickets built from today\'s strongest legs, after assuming only half of each edge is real. Its shakiest leg is ' + best.label + ' (model chance ' + pct(best.est) + ').';
+  var root = el('article', {class:'ult'},
+    el('span', {class:'badge', text:'Ultimate pick'}),
+    el('div', {class:'head'}, el('div', {}, el('h3', {text:u.n + '-leg parlay'}), el('p', {class:'small', text:'Confidence ' + u.conf + ' · ' + new Set(u.legs.map(function(p){ return p.game_id; })).size + ' different games'})),
+      el('div', {class:'big', text:fo(u.odds)})),
+    el('div', {class:'legs'}, u.legs.map(function(p){ return legRow(p, true, false); })),
+    ticketNums(u),
+    el('p', {class:'small', text:why}),
+    el('div', {class:'row'}, copyBtn(ticketText(u, 'Ultimate Pick'))));
+  if (!u.stake) root.append(el('p', {class:'small', style:'color:#ffd08a', text:'Thin edge: if only half of each edge is real, this ticket loses money over time. Treat it as a pass or a tiny stake.'}));
+  return root;
+}
+function ticketCard(t, ult){
+  var isU = t.n === ult.n;
+  var root = el('article', {class:'ticket' + (isU ? ' is-ult' : '')},
+    el('div', {class:'t-head'}, el('div', {}, el('h3', {text:t.n + '-leg parlay'}), el('p', {class:'small mut', text:'Confidence ' + t.conf})),
+      el('div', {style:'display:flex;align-items:center;gap:8px'}, isU ? el('span', {class:'chip', text:'Ultimate'}) : null, el('div', {class:'t-odds', text:fo(t.odds)}))),
+    el('div', {class:'legs'}, t.legs.map(function(p, i){ return legRow(p, i < ult.n, true); })),
+    ticketNums(t),
+    el('div', {class:'row'}, copyBtn(ticketText(t, t.n + '-leg parlay'))));
+  return root;
+}
+function segCtl(label, key, opts){
+  return el('div', {class:'row'}, el('b', {text:label}), el('div', {class:'seg', role:'group', 'aria-label':label}, opts.map(function(o){
+    return el('button', {type:'button', 'aria-pressed':String(S[key] === o[0]), text:o[1], onclick:function(){ S[key] = o[0]; renderParlays(); }});
+  })));
+}
+function renderParlays(){
+  var root = $('#parlays'); root.textContent = '';
+  var L = S.latest; if (!L) return;
+  root.append(el('div', {class:'hero'}, el('div', {}, el('h1', {text:'Parlay builder'}),
+    el('p', {text:'Builds 2 to 5 leg tickets from today\'s positive-edge picks. Each bigger ticket keeps the legs of the one before it and adds the next best one, so every slip agrees with the others. The Ultimate Pick is the one the numbers like best.'}))));
+  root.append(el('div', {class:'ctl'},
+    segCtl('Style', 'pStyle', [['bal', 'Balanced'], ['safe', 'Safest'], ['val', 'Best value']]),
+    segCtl('Minimum confidence', 'pConf', [['any', 'Any'], ['med', 'Medium +'], ['high', 'High only']]),
+    segCtl('Legs from', 'pProps', [[true, 'Games and props'], [false, 'Games only']].map(function(o){ return [o[0], o[1]]; })),
+    segCtl('Unpriced picks', 'pAssumed', [[false, 'Leave out'], [true, 'Include (-110)']]),
+    el('p', {class:'small mut', text:{bal:'Balanced ranks legs by edge, weighted by confidence.', safe:'Safest ranks legs by the model\'s chance of winning.', val:'Best value ranks legs by edge alone.'}[S.pStyle]})));
+  var pool = legPool(), ord = orderLegs(pool), legs = ord.legs;
+  if (legs.length < 2){
+    root.append(el('div', {class:'empty'}, el('b', {text:'Not enough legs yet'}),
+      pool.length ? 'Only one game has a qualifying pick. Loosen the filters above.' : (L.picks.length ? 'No picks pass these filters. Try Confidence: Any, or include unpriced picks.' : 'No bet clears the edge bar today, or the lines have not loaded.')));
+    return;
+  }
+  var tickets = [];
+  for (var n = 2; n <= Math.min(5, legs.length); n++) tickets.push(mkTicket(legs.slice(0, n)));
+  var ult = tickets.slice().sort(function(a, b){ return b.g - a.g || a.n - b.n; })[0];
+  root.append(ultCard(ult));
+  root.append(el('h2', {text:'All tickets'}));
+  var grid = el('div', {class:'cards'}); tickets.forEach(function(t){ grid.append(ticketCard(t, ult)); }); root.append(grid);
+  if (tickets.some(function(t){ return t.conf === 'Low'; })) root.append(el('div', {class:'note warn', text:'Some tickets include Low confidence legs. That is normal early in the season, when teams have few games, but it means the model is unsure. Keep stakes small.'}));
+  var rows = pool.map(function(p, i){
+    var k = p.label + '|' + p.game_id, idx = legs.indexOf(p);
+    var st = idx >= 0 && idx < 5 ? 'in tickets (#' + (idx + 1) + ')' : idx >= 5 ? 'bench' : 'left out: same game as ' + ord.skip[k];
+    return [i + 1, p.label, fo(p.odds), pct(p.est), fe(p.edge), p.conf, st];
+  });
+  root.append(el('details', {}, el('summary', {text:'Every eligible leg (' + pool.length + ') and where it went'}), table(['#', 'Leg', 'Odds', 'Est', 'Edge', 'Conf', 'Status'], rows, 2)));
+  root.append(el('div', {class:'note'}, el('b', {text:'How to read these numbers'}),
+    el('p', {class:'small', text:'"Hits about" multiplies each leg\'s model chance, which treats the legs as independent. The builder uses at most one leg per game to keep that close to true, but sportsbooks can still pay less than the multiplied price. "If half the edge is real" repeats the math after cutting each leg\'s edge in half, since the model\'s numbers are estimates. Stakes are quarter Kelly and capped at 1 unit because parlays lose far more often than single bets. Parlays are not logged to the Tracker yet; each leg is logged and graded on its own.'})));
 }
 
 /* ---- props ---- */
@@ -502,12 +670,12 @@ function moveInd(){
 }
 function showTab(t){
   S.tab = t;
-  ['slate', 'picks', 'props', 'track', 'status'].forEach(function(x){
+  ['slate', 'picks', 'parlays', 'props', 'track', 'status'].forEach(function(x){
     $('#' + x).hidden = t !== x;
     var b = $('.tabs [data-tab="' + x + '"]'); b.setAttribute('aria-selected', String(t === x));
   });
   moveInd();
-  ({slate:renderSlate, picks:renderPicks, props:renderProps, track:renderTracker, status:renderStatus})[t]();
+  ({slate:renderSlate, picks:renderPicks, parlays:renderParlays, props:renderProps, track:renderTracker, status:renderStatus})[t]();
   try { if (location.hash.slice(1) !== t) history.replaceState(null, '', '#' + t); } catch(e){}
 }
 document.querySelectorAll('.tabs button').forEach(function(b){ b.onclick = function(){ showTab(b.getAttribute('data-tab')); }; });
@@ -521,7 +689,7 @@ Promise.all([getJson('data/latest.json'), getJson('data/history.json', [])]).the
   S.latest = r[0]; S.history = Array.isArray(r[1]) ? r[1] : [];
   renderCounts();
   var h = (location.hash || '').slice(1);
-  showTab(['slate', 'picks', 'props', 'track', 'status'].indexOf(h) >= 0 ? h : 'slate');
+  showTab(['slate', 'picks', 'parlays', 'props', 'track', 'status'].indexOf(h) >= 0 ? h : 'slate');
 }).catch(function(e){
   S.err = 'The first daily run has not published data yet, or the file could not be read. (' + e.message + ')';
   $('#sync').textContent = 'No data yet'; renderSlate(); moveInd();
