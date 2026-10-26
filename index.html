@@ -5,13 +5,11 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>EpLocks AI</title>
 <meta name="description" content="EpLocks AI: NBA game and player-prop estimates built from real box scores, with every pick logged and graded.">
-<meta name="theme-color" content="#090C10">
+<meta name="theme-color" content="#0b1f3a">
 <script>try{var t_=localStorage.getItem("eplocks_theme");if(t_==="light"||t_==="dark")document.documentElement.setAttribute("data-theme",t_)}catch(e){}</script>
 <meta property="og:title" content="EpLocks AI">
-<meta property="og:image" content="og.png">
-<meta name="twitter:card" content="summary_large_image">
 <meta property="og:description" content="NBA game and player-prop estimates built from real box scores, with every pick logged and graded.">
-<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23090C10'/%3E%3Cpath d='M10.5 14.2V10.5a5.5 5.5 0 0 1 11 0v3.7' fill='none' stroke='%23FFB224' stroke-width='3' stroke-linecap='round'/%3E%3Crect x='6' y='13.5' width='20' height='14' rx='2.5' fill='%23FFB224'/%3E%3Cpath d='M11 16.6h10v2.2h-7.8v1.5h6.2v2.2h-6.2v1.6H21v2.2H11z' fill='%23090C10'/%3E%3C/svg%3E">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230b1f3a'/%3E%3Cpath d='M10.5 14.2V10.5a5.5 5.5 0 0 1 11 0v3.7' fill='none' stroke='%2334d399' stroke-width='3' stroke-linecap='round'/%3E%3Crect x='6' y='13.5' width='20' height='14' rx='2.5' fill='%2334d399'/%3E%3Cpath d='M11 16.6h10v2.2h-7.8v1.5h6.2v2.2h-6.2v1.6H21v2.2H11z' fill='%230b1f3a'/%3E%3C/svg%3E">
 <link rel="apple-touch-icon" href="logo.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -20,7 +18,7 @@
 :root{
   --bg:#f3f6fb; --surface:#ffffff; --surface2:#e9eff7; --fg:#0b1f3a; --mut:#53647d; --line:#d7e0ec;
   --acc:#087f5b; --on-acc:#ffffff; --gold:#a66f00; --good:#087f5b; --warn:#9a5600; --bad:#b3261e;
-  --hdr:#0b1f3a; --hdr2:#10305a; --hdr-fg:#f2f6fc; --hdr-mut:#9fb2cc; --hdr-acc:#FFB224;
+  --hdr:#0b1f3a; --hdr2:#10305a; --hdr-fg:#f2f6fc; --hdr-mut:#9fb2cc; --hdr-acc:#34d399;
   --shadow:0 8px 22px rgba(11,31,58,.14);
   --f-disp:"Barlow Condensed","Arial Narrow","Helvetica Neue",Arial,sans-serif;
   --f-body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
@@ -30,7 +28,7 @@
 @media (prefers-color-scheme:dark){
   :root:not([data-theme="light"]){
     --bg:#07152b; --surface:#0d2140; --surface2:#15305a; --fg:#e8eef8; --mut:#9db0cb; --line:#223f6b;
-    --acc:#FFB224; --on-acc:#1A1200; --gold:#e6b02e; --good:#FFB224; --warn:#f0a43a; --bad:#ff7a70;
+    --acc:#34d399; --on-acc:#04231a; --gold:#e6b02e; --good:#34d399; --warn:#f0a43a; --bad:#ff7a70;
     --hdr:#050f20; --hdr2:#0a2144; --shadow:0 10px 26px rgba(0,0,0,.55); color-scheme:dark;
   }
 }
@@ -40,7 +38,7 @@ html{-webkit-text-size-adjust:100%}
 body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 var(--f-body)}
 body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--hdr)}
 .in{max-width:1040px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
-.hdr{position:sticky;top:env(safe-area-inset-top,0px);z-index:9;background:linear-gradient(180deg,var(--hdr),var(--hdr2));color:var(--hdr-fg);border-bottom:1px solid rgba(255,178,36,.4)}
+.hdr{position:sticky;top:env(safe-area-inset-top,0px);z-index:9;background:linear-gradient(180deg,var(--hdr),var(--hdr2));color:var(--hdr-fg);border-bottom:1px solid rgba(52,211,153,.4)}
 .bar{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-top:12px}
 .brand{display:flex;align-items:center;gap:8px;color:var(--hdr-acc)}
 .brand svg .sh{transition:transform .25s ease}
@@ -55,7 +53,7 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
 .tabs button:hover,.tabs button[aria-selected="true"]{color:var(--hdr-fg)}
 .tabs button.star{color:var(--hdr-acc)}
 .tabs .ind{position:absolute;left:0;bottom:0;height:3px;width:0;background:var(--hdr-acc);border-radius:2px 2px 0 0;transition:transform .28s cubic-bezier(.3,.7,.3,1),width .28s cubic-bezier(.3,.7,.3,1)}
-.count{display:inline-block;min-width:20px;padding:0 6px;margin-left:4px;border-radius:10px;background:var(--hdr-acc);color:#1A1200;font:600 11px/18px var(--f-mono);text-align:center}
+.count{display:inline-block;min-width:20px;padding:0 6px;margin-left:4px;border-radius:10px;background:var(--hdr-acc);color:#04231a;font:600 11px/18px var(--f-mono);text-align:center}
 .count:empty{display:none}
 main.in{padding-block:20px 56px}
 section.narrow{max-width:820px;width:100%;margin-inline:auto}
@@ -179,7 +177,7 @@ code{font:500 13px var(--f-mono);background:var(--surface2);padding:1px 5px;bord
 .dot{width:10px;height:10px;border-radius:50%;margin-top:6px;background:var(--good)}
 .dot.bad{background:var(--bad)}
 
-.hero{display:grid;gap:14px;background:linear-gradient(135deg,var(--hdr),var(--hdr2));color:var(--hdr-fg);border-radius:14px;padding:18px;border:1px solid rgba(255,178,36,.35)}
+.hero{display:grid;gap:14px;background:linear-gradient(135deg,var(--hdr),var(--hdr2));color:var(--hdr-fg);border-radius:14px;padding:18px;border:1px solid rgba(52,211,153,.35)}
 .hero h1{font:700 36px/1 var(--f-disp);letter-spacing:.02em;margin:0}
 .hero p{color:var(--hdr-mut);font-size:13px;margin-top:4px}
 .hero .tiles .tile{background:rgba(255,255,255,.07);border-color:rgba(255,255,255,.14);color:var(--hdr-fg)}
@@ -188,8 +186,8 @@ code{font:500 13px var(--f-mono);background:var(--surface2);padding:1px 5px;bord
 .hero .tiles .tile:hover{border-color:var(--hdr-acc);box-shadow:none}
 .ctl{display:grid;gap:10px;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
 .ctl .row>b{font:600 11px var(--f-body);letter-spacing:.08em;text-transform:uppercase;color:var(--mut);min-width:96px}
-.ult{position:relative;overflow:hidden;display:grid;gap:12px;background:radial-gradient(120% 140% at 100% 0%,rgba(255,178,36,.28),transparent 55%),linear-gradient(135deg,var(--hdr),var(--hdr2));color:var(--hdr-fg);border:1px solid var(--hdr-acc);border-radius:16px;padding:18px;box-shadow:var(--shadow);animation:rise .4s ease both}
-.ult .badge{justify-self:start;font:700 12px var(--f-body);letter-spacing:.14em;text-transform:uppercase;background:var(--hdr-acc);color:#1A1200;padding:3px 10px;border-radius:999px}
+.ult{position:relative;overflow:hidden;display:grid;gap:12px;background:radial-gradient(120% 140% at 100% 0%,rgba(52,211,153,.28),transparent 55%),linear-gradient(135deg,var(--hdr),var(--hdr2));color:var(--hdr-fg);border:1px solid var(--hdr-acc);border-radius:16px;padding:18px;box-shadow:var(--shadow);animation:rise .4s ease both}
+.ult .badge{justify-self:start;font:700 12px var(--f-body);letter-spacing:.14em;text-transform:uppercase;background:var(--hdr-acc);color:#04231a;padding:3px 10px;border-radius:999px}
 .ult h3{font:700 30px/1.05 var(--f-disp);margin:0;letter-spacing:.01em}
 .ult .big{font:700 54px/1 var(--f-disp);color:var(--hdr-acc);font-variant-numeric:tabular-nums}
 .ult .head{display:flex;flex-wrap:wrap;gap:6px 18px;align-items:flex-end;justify-content:space-between}
@@ -197,7 +195,7 @@ code{font:500 13px var(--f-mono);background:var(--surface2);padding:1px 5px;bord
 .ult .nums{color:var(--hdr-mut)}
 .ult .nums b{color:var(--hdr-fg)}
 .ult .nums b.pos{color:#35D49A}
-.ult .nums b.neg{color:#FF8F8F}
+.ult .nums b.neg{color:#ff9d94}
 .legs{display:grid;gap:8px}
 .leg{display:grid;gap:2px;min-width:0;border-left:3px solid var(--line);padding:6px 0 6px 12px;background:rgba(127,150,185,.08);border-radius:0 8px 8px 0}
 .leg.High{border-left-color:var(--good)}
@@ -296,7 +294,7 @@ body.noscroll{overflow:hidden}
 .sheet .pn{position:relative;width:min(860px,100%);height:100%;overflow-y:auto;overscroll-behavior:contain;background:var(--bg);box-shadow:-14px 0 40px rgba(0,0,0,.35);animation:slideIn .26s cubic-bezier(.2,.8,.2,1) both}
 @keyframes fadeIn{from{opacity:0}to{opacity:1}}
 @keyframes slideIn{from{transform:translateX(40px);opacity:.4}to{transform:none;opacity:1}}
-.sh-bar{position:sticky;top:0;z-index:3;display:flex;align-items:center;gap:10px;padding:calc(10px + env(safe-area-inset-top,0px)) max(14px,env(safe-area-inset-right,0px)) 10px max(14px,env(safe-area-inset-left,0px));background:linear-gradient(180deg,var(--hdr),var(--hdr2));color:var(--hdr-fg);border-bottom:1px solid rgba(255,178,36,.4)}
+.sh-bar{position:sticky;top:0;z-index:3;display:flex;align-items:center;gap:10px;padding:calc(10px + env(safe-area-inset-top,0px)) max(14px,env(safe-area-inset-right,0px)) 10px max(14px,env(safe-area-inset-left,0px));background:linear-gradient(180deg,var(--hdr),var(--hdr2));color:var(--hdr-fg);border-bottom:1px solid rgba(52,211,153,.4)}
 .sh-bar b{flex:1;min-width:0;font:700 20px var(--f-disp);letter-spacing:.05em;text-transform:uppercase;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ib{appearance:none;flex:none;border:1px solid rgba(255,255,255,.3);background:transparent;color:var(--hdr-fg);width:40px;height:40px;border-radius:8px;font:600 18px var(--f-body);cursor:pointer;transition:border-color .15s ease,color .15s ease}
 .ib:hover{border-color:var(--hdr-acc);color:var(--hdr-acc)}
@@ -307,7 +305,7 @@ body.noscroll{overflow:hidden}
 .blk .tscroll{border-radius:8px}
 .blk details{margin:0}
 .chips{display:flex;flex-wrap:wrap;gap:6px}
-.sc-head{display:grid;gap:12px;background:linear-gradient(135deg,var(--hdr),var(--hdr2));color:var(--hdr-fg);border-radius:14px;padding:16px;border:1px solid rgba(255,178,36,.35)}
+.sc-head{display:grid;gap:12px;background:linear-gradient(135deg,var(--hdr),var(--hdr2));color:var(--hdr-fg);border-radius:14px;padding:16px;border:1px solid rgba(52,211,153,.35)}
 .sc-grid{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);gap:10px;align-items:center}
 .sc-team{display:grid;gap:2px;justify-items:start;min-width:0}
 .sc-team.home{justify-items:end;text-align:right}
@@ -320,7 +318,7 @@ body.noscroll{overflow:hidden}
 .sc-head .at{color:var(--hdr-mut)}
 .sc-head .pill{color:var(--hdr-mut);border-color:rgba(255,255,255,.25)}
 .sc-head .lv .st{color:var(--hdr-fg);border-color:rgba(255,255,255,.4)}
-.sc-head .lv.in .st{color:#FF8F8F;border-color:#FF8F8F}
+.sc-head .lv.in .st{color:#ff9d94;border-color:#ff9d94}
 .sc-head .tscroll{background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.18);color:var(--hdr-fg)}
 .sc-head th{color:var(--hdr-mut)}
 .sc-head tr+tr td{border-top-color:rgba(255,255,255,.14)}
@@ -383,11 +381,11 @@ svg.bars .lt{font:700 9px var(--f-mono);fill:var(--gold);text-anchor:start}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--blue:#6aa8ff}}
 :root[data-theme="dark"]{
   --bg:#07152b; --surface:#0d2140; --surface2:#15305a; --fg:#e8eef8; --mut:#9db0cb; --line:#223f6b;
-  --acc:#FFB224; --on-acc:#1A1200; --gold:#e6b02e; --good:#FFB224; --warn:#f0a43a; --bad:#ff7a70;
+  --acc:#34d399; --on-acc:#04231a; --gold:#e6b02e; --good:#34d399; --warn:#f0a43a; --bad:#ff7a70;
   --hdr:#050f20; --hdr2:#0a2144; --shadow:0 10px 26px rgba(0,0,0,.55); --blue:#6aa8ff; color-scheme:dark;
 }
 html.tx,html.tx *{transition:background-color .35s ease,color .35s ease,border-color .35s ease,box-shadow .35s ease!important}
-body{background:radial-gradient(900px 420px at 90% -140px,rgba(255,178,36,.10),transparent 60%),var(--bg);background-color:var(--bg)}
+body{background:radial-gradient(900px 420px at 90% -140px,rgba(52,211,153,.10),transparent 60%),var(--bg);background-color:var(--bg)}
 main.in{padding-block:20px 110px}
 .bar-r{display:flex;align-items:center;gap:10px;min-width:0}
 .ibtn{appearance:none;flex:none;width:36px;height:36px;border-radius:50%;border:1px solid rgba(255,255,255,.28);background:rgba(255,255,255,.06);color:var(--hdr-fg);cursor:pointer;display:grid;place-items:center;transition:border-color .15s ease,transform .15s ease,background .15s ease}
@@ -466,7 +464,7 @@ body.noscroll .dock{display:none}
 .fab:hover{transform:translateY(-2px)}
 .fab:active{transform:scale(.96)}
 .fab.ask{position:relative;background:linear-gradient(135deg,var(--hdr2),var(--hdr));color:var(--hdr-fg);border:1px solid var(--hdr-acc)}
-.fab .sp{width:32px;height:32px;border-radius:50%;background:var(--hdr-acc);color:#1A1200;display:grid;place-items:center;font-size:17px;line-height:1}
+.fab .sp{width:32px;height:32px;border-radius:50%;background:var(--hdr-acc);color:#04231a;display:grid;place-items:center;font-size:17px;line-height:1}
 .fab.ask.pulse::after{content:"";position:absolute;inset:-4px;border-radius:999px;border:2px solid var(--hdr-acc);opacity:0;animation:ping 2.2s ease-out 3}
 @keyframes ping{0%{opacity:.8;transform:scale(.96)}100%{opacity:0;transform:scale(1.18)}}
 .fab.slip{background:var(--acc);color:var(--on-acc);padding:0 16px}
@@ -474,7 +472,7 @@ body.noscroll .dock{display:none}
 .fab.bump{animation:bump .42s cubic-bezier(.3,1.6,.5,1)}
 @keyframes bump{0%{transform:scale(1)}40%{transform:scale(1.14)}100%{transform:scale(1)}}
 #toasts{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(84px + env(safe-area-inset-bottom,0px));z-index:90;display:grid;gap:8px;width:min(92vw,420px);pointer-events:none}
-.toast{pointer-events:auto;display:flex;justify-content:space-between;align-items:center;gap:12px;background:var(--hdr);color:var(--hdr-fg);border:1px solid rgba(255,178,36,.5);border-radius:12px;padding:10px 14px;font-size:14px;box-shadow:var(--shadow);animation:toastIn .26s cubic-bezier(.2,.8,.2,1) both;overflow-wrap:anywhere}
+.toast{pointer-events:auto;display:flex;justify-content:space-between;align-items:center;gap:12px;background:var(--hdr);color:var(--hdr-fg);border:1px solid rgba(52,211,153,.5);border-radius:12px;padding:10px 14px;font-size:14px;box-shadow:var(--shadow);animation:toastIn .26s cubic-bezier(.2,.8,.2,1) both;overflow-wrap:anywhere}
 .toast.out{animation:toastOut .26s ease both}
 .tbtn{appearance:none;flex:none;border:0;background:transparent;color:var(--hdr-acc);font:700 13px var(--f-body);cursor:pointer;padding:4px 6px}
 @keyframes toastIn{from{opacity:0;transform:translateY(12px) scale(.96)}to{opacity:1;transform:none}}
@@ -528,18 +526,18 @@ body.noscroll .dock{display:none}
 .lpick>b{padding-right:38px}
 .lpick>b .slipbtn.mini{position:absolute;right:0;top:0}
 
-/* ===== EpLocks rebrand: Hardwood Terminal (dark pro terminal x bold sports media) =====
+/* ===== EpLocks rebrand: Hardwood Terminal layout and type, original navy + emerald palette =====
    Layer order: primitives -> semantic -> components. Everything below reads tokens. */
 :root{
   /* primitives */
-  --amber:#FFB224; --amber-ink:#1A1200;
+  --amber:#34D399; --amber-ink:#04231A;
   /* semantic, light */
-  --bg:#EEF1F5; --surface:#FFFFFF; --surface2:#E4E9F0; --fg:#0E1319; --mut:#4B5767; --line:#D0D8E3;
-  --acc:#8F5300; --on-acc:#FFFFFF; --acc-fill:var(--amber); --on-fill:var(--amber-ink);
-  --gold:#8F5300; --blue:#2A5BB8; --good:#0B7A52; --warn:#B24A00; --bad:#C0262D;
-  --shadow:0 6px 18px rgba(14,19,25,.12);
-  /* broadcast chrome: ink in both themes */
-  --hdr:#090C10; --hdr2:#131B25; --hdr-fg:#F4F6F9; --hdr-mut:#9AA6B6; --hdr-acc:#FFB224;
+  --bg:#F3F6FB; --surface:#FFFFFF; --surface2:#E9EFF7; --fg:#0B1F3A; --mut:#53647D; --line:#D7E0EC;
+  --acc:#087F5B; --on-acc:#FFFFFF; --acc-fill:var(--amber); --on-fill:var(--amber-ink);
+  --gold:#8F5E00; --strong:#E6B02E; --on-strong:#2A1C00; --blue:#2563C9; --good:#087F5B; --warn:#9A5600; --bad:#B3261E;
+  --shadow:0 6px 18px rgba(11,31,58,.14);
+  /* broadcast chrome: navy in both themes */
+  --hdr:#0B1F3A; --hdr2:#10305A; --hdr-fg:#F2F6FC; --hdr-mut:#9FB2CC; --hdr-acc:#34D399;
   --chamfer:16px;
   --f-disp:"Big Shoulders Display","Barlow Condensed","Arial Narrow","Helvetica Neue",Arial,sans-serif;
   --f-body:"Instrument Sans",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
@@ -548,15 +546,15 @@ body.noscroll .dock{display:none}
 }
 @media (prefers-color-scheme:dark){
   :root:not([data-theme="light"]){
-    --bg:#0E1319; --surface:#151B23; --surface2:#1D252F; --fg:#EDF0F4; --mut:#98A3B3; --line:#2A3441;
-    --acc:#FFB224; --on-acc:#1A1200; --gold:#FFB224; --blue:#8DB4FF; --good:#35D49A; --warn:#FF8A4C; --bad:#FF6B6B;
-    --hdr:#090C10; --hdr2:#131B25; --shadow:0 8px 22px rgba(0,0,0,.5); color-scheme:dark;
+    --bg:#07152B; --surface:#0D2140; --surface2:#15305A; --fg:#E8EEF8; --mut:#9DB0CB; --line:#223F6B;
+    --acc:#34D399; --on-acc:#04231A; --gold:#E6B02E; --blue:#6AA8FF; --good:#34D399; --warn:#F0A43A; --bad:#FF7A70;
+    --hdr:#050F20; --hdr2:#0A2144; --shadow:0 8px 22px rgba(0,0,0,.55); color-scheme:dark;
   }
 }
 :root[data-theme="dark"]{
-  --bg:#0E1319; --surface:#151B23; --surface2:#1D252F; --fg:#EDF0F4; --mut:#98A3B3; --line:#2A3441;
-  --acc:#FFB224; --on-acc:#1A1200; --gold:#FFB224; --blue:#8DB4FF; --good:#35D49A; --warn:#FF8A4C; --bad:#FF6B6B;
-  --hdr:#090C10; --hdr2:#131B25; --shadow:0 8px 22px rgba(0,0,0,.5); color-scheme:dark;
+  --bg:#07152B; --surface:#0D2140; --surface2:#15305A; --fg:#E8EEF8; --mut:#9DB0CB; --line:#223F6B;
+  --acc:#34D399; --on-acc:#04231A; --gold:#E6B02E; --blue:#6AA8FF; --good:#34D399; --warn:#F0A43A; --bad:#FF7A70;
+  --hdr:#050F20; --hdr2:#0A2144; --shadow:0 8px 22px rgba(0,0,0,.55); color-scheme:dark;
 }
 body{background:var(--bg)}
 html.tx,html.tx *{transition-duration:.25s!important}
@@ -574,9 +572,9 @@ html.tx,html.tx *{transition-duration:.25s!important}
 .wm i{font:800 15px/1 var(--f-disp);letter-spacing:.06em;font-style:normal;margin:0;padding:3px 6px 3px 6px;background:var(--hdr-acc);color:var(--amber-ink);clip-path:polygon(0 0,calc(100% - 5px) 0,100% 5px,100% 100%,0 100%)}
 .sync{font:500 12px var(--f-mono);color:var(--hdr-mut)}
 .sync::before{content:"";display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:7px;vertical-align:1px;background:var(--hdr-mut)}
-.sync[data-age="fresh"]::before{background:#35D49A}
-.sync[data-age="stale"]::before{background:#FF8A4C}
-.sync[data-age="old"]::before{background:#FF6B6B}
+.sync[data-age="fresh"]::before{background:#34D399}
+.sync[data-age="stale"]::before{background:#F0A43A}
+.sync[data-age="old"]::before{background:#FF7A70}
 .tabs{margin-top:8px;gap:0}
 .tabs button{font:700 17px/1 var(--f-disp);letter-spacing:.07em;text-transform:uppercase;padding:12px 13px 13px}
 .tabs button.star{color:var(--hdr-acc)}
@@ -612,7 +610,7 @@ th{font:500 11.5px var(--f-mono);letter-spacing:0;text-transform:none;color:var(
 .hero .tiles .tile{background:var(--hdr);border:0;border-radius:0;padding:10px 12px;color:var(--hdr-fg)}
 .hero .tiles .tile span{color:var(--hdr-mut)}
 .hero .tiles .tile b{font:800 38px/1.05 var(--f-disp);color:var(--hdr-acc);letter-spacing:.01em}
-.hero .tiles .tile:hover{border:0;box-shadow:none;background:#0d1117}
+.hero .tiles .tile:hover{border:0;box-shadow:none;background:rgba(255,255,255,.04)}
 .tile{padding:10px 12px}
 .tile b{font:800 26px/1.15 var(--f-disp)}
 
@@ -634,10 +632,10 @@ th{font:500 11.5px var(--f-mono);letter-spacing:0;text-transform:none;color:var(
 .p-title .mono{font:500 14px var(--f-mono);color:var(--mut)}
 .rank{font:900 28px/1 var(--f-disp);color:var(--acc)}
 .pick{border-left-width:4px}
-.pick.c-High,.lpick.High,.leg.High{border-left-color:var(--acc)}
-.pick.c-Medium,.lpick.Medium,.leg.Medium{border-left-color:var(--blue)}
-.lock.High,.conf.High{color:var(--acc)}
-.lock.Medium,.conf.Medium{color:var(--blue)}
+.pick.c-High,.lpick.High,.leg.High{border-left-color:var(--good)}
+.pick.c-Medium,.lpick.Medium,.leg.Medium{border-left-color:var(--gold)}
+.lock.High,.conf.High{color:var(--good)}
+.lock.Medium,.conf.Medium{color:var(--gold)}
 .meter{height:6px;border-radius:0}
 .meter .fill{border-radius:0;opacity:1}
 .meter .mk{border-radius:0}
@@ -658,24 +656,24 @@ th{font:500 11.5px var(--f-mono);letter-spacing:0;text-transform:none;color:var(
 /* ---------- signals: one amber slab, quiet everywhere else ---------- */
 .tier{border-radius:3px;padding:4px 7px 3px}
 .tier.mini{padding:3px 5px 2px;font-size:12px}
-.tier.t-Strong{background:var(--acc-fill);color:var(--on-fill);box-shadow:none;animation:none}
-.tier.t-Solid{background:transparent;color:var(--acc);border:1px solid var(--acc)}
+.tier.t-Strong{background:var(--strong);color:var(--on-strong);box-shadow:none;animation:none}
+.tier.t-Solid{background:var(--acc-fill);color:var(--on-fill)}
 .tier.t-Notable{background:transparent;color:var(--blue);border:1px solid var(--blue)}
 .sigchip{border-radius:3px;font:500 12px var(--f-mono)}
 .sigban{border-radius:0;border:0;padding:14px 16px;background:var(--surface);box-shadow:inset 4px 0 0 var(--tc),inset 0 0 0 1px var(--line);
   clip-path:polygon(0 0,100% 0,100% calc(100% - 14px),calc(100% - 14px) 100%,0 100%)}
 .sigban::after{display:none}
 .sigban:hover{transform:none;border-color:transparent;box-shadow:inset 4px 0 0 var(--tc),inset 0 0 0 1px var(--tc)}
-.sigban.t-Strong{--tc:var(--acc-fill);background:var(--acc-fill);color:var(--on-fill);box-shadow:none}
-.sigban.t-Strong:hover{box-shadow:inset 0 0 0 2px var(--on-fill)}
-.sigban.t-Strong .sb-t b,.sigban.t-Strong .che{color:var(--on-fill)}
-.sigban.t-Strong .sb-ic{background:var(--on-fill);color:var(--acc-fill)}
-.sigban.t-Solid{--tc:var(--acc)}
+.sigban.t-Strong{--tc:var(--strong);background:var(--strong);color:var(--on-strong);box-shadow:none}
+.sigban.t-Strong:hover{box-shadow:inset 0 0 0 2px var(--on-strong)}
+.sigban.t-Strong .sb-t b,.sigban.t-Strong .che{color:var(--on-strong)}
+.sigban.t-Strong .sb-ic{background:var(--on-strong);color:var(--strong)}
+.sigban.t-Solid{--tc:var(--good)}
 .sb-ic{border-radius:4px;width:32px;height:32px;background:var(--tc);color:var(--surface)}
 .sb-t b{font:700 20px/1 var(--f-disp);letter-spacing:.04em;text-transform:uppercase;color:var(--mut)}
 .sb-t span{font-size:15px}
-.sigc.t-Strong,.sigban.t-Strong{--tc:var(--acc-fill)}
-.sigc.t-Solid{--tc:var(--acc)}
+.sigc.t-Strong,.sigban.t-Strong{--tc:var(--strong)}
+.sigc.t-Solid{--tc:var(--good)}
 .ring b{font:800 20px var(--f-disp)}
 
 /* ---------- slip, Ace, dock, toasts ---------- */
@@ -728,6 +726,22 @@ section.enter{animation:tabIn .16s ease both}
   .tabs button{padding:12px 11px 13px}
 }
 @media (prefers-reduced-motion:reduce){.hero::before{animation:none}}
+
+/* ---------- team crests and avatars ---------- */
+.av.crest{border-radius:0;background:none;box-shadow:none;overflow:visible;padding:0;width:var(--s,40px);height:calc(var(--s,40px) * 1.08)}
+.av.crest svg{width:100%;height:100%;display:block;filter:drop-shadow(0 2px 3px rgba(0,0,0,.35))}
+.crest .tx{font:900 21px var(--f-disp);letter-spacing:.01em;paint-order:stroke;stroke:rgba(0,0,0,.18);stroke-width:.6px}
+.crest .emb{display:none}
+.tm-row .crest .tx,.pl-id .crest .tx{display:none}
+.tm-row .crest .emb,.pl-id .crest .emb{display:block}
+.avs .av.crest{--s:32px}.avs .av.crest+.av.crest{margin-left:-6px}
+.av.face{background:linear-gradient(160deg,var(--surface2),var(--bg));color:var(--mut)}
+.av.mono{font:800 13px/1 var(--f-disp);letter-spacing:.04em}
+.av.face.mono{box-shadow:0 0 0 2px var(--line)}
+.av.face:not(.mono){box-shadow:0 0 0 2px var(--acc)}
+
+.best{color:var(--acc);font-weight:700}
+.tracker-h{margin-top:18px}
 </style>
 </head>
 <body>
@@ -837,15 +851,33 @@ function lockSvg(level){
   t.innerHTML = '<svg class="lock ' + l + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path class="sh" d="M8 11V8a4 4 0 0 1 8 0v3"/><rect x="5" y="11" width="14" height="9" rx="2"/></svg>';
   return t.content.firstChild;
 }
-var LOGO = {GSW:'gs', NYK:'ny', SAS:'sa', NOP:'no', UTA:'utah', WAS:'wsh'};
-function logoUrl(ab){ return 'https://a.espncdn.com/i/teamlogos/nba/500/' + (LOGO[ab] || String(ab).toLowerCase()) + '.png'; }
-function imgAv(cls, url, alt, fb){
-  var w = el('span', {class:'av ' + cls, title:alt}), im = document.createElement('img');
-  im.alt = alt; im.loading = 'lazy'; im.referrerPolicy = 'no-referrer';
-  im.onerror = function(){ im.remove(); w.classList.remove('logo'); w.classList.remove('face'); w.textContent = fb; };
-  im.src = url; w.append(im); return w;
+/* Team crests: drawn locally from team colours, so they never depend on a network image and never go blank. */
+var TCOL = {ATL:['#E03A3E','#C1D32F'],BOS:['#007A33','#BA9653'],BKN:['#1F1F1F','#9AA0A6'],CHA:['#1D1160','#00A3B5'],CHI:['#CE1141','#111111'],CLE:['#860038','#FDBB30'],
+  DAL:['#00538C','#B8C4CA'],DEN:['#0E2240','#FEC524'],DET:['#C8102E','#1D42BA'],GSW:['#1D428A','#FFC72C'],HOU:['#CE1141','#C4CED4'],IND:['#002D62','#FDBB30'],
+  LAC:['#C8102E','#1D428A'],LAL:['#552583','#FDB927'],MEM:['#5D76A9','#12173F'],MIA:['#98002E','#F9A01B'],MIL:['#00471B','#EEE1C6'],MIN:['#0C2340','#78BE20'],
+  NOP:['#0C2340','#C8102E'],NYK:['#006BB6','#F58426'],OKC:['#007AC1','#EF3B24'],ORL:['#0077C0','#C4CED4'],PHI:['#006BB6','#ED174C'],PHX:['#1D1160','#E56020'],
+  POR:['#E03A3E','#111111'],SAC:['#5A2D81','#63727A'],SAS:['#C4CED4','#111111'],TOR:['#CE1141','#111111'],UTA:['#002B5C','#F9A01B'],WAS:['#002B5C','#E31837']};
+var CREST_N = 0;
+function lumHex(h){ var n = parseInt(h.slice(1), 16), c = [n >> 16 & 255, n >> 8 & 255, n & 255].map(function(v){ v /= 255; return v <= .03928 ? v / 12.92 : Math.pow((v + .055) / 1.055, 2.4); }); return .2126 * c[0] + .7152 * c[1] + .0722 * c[2]; }
+function logoEl(ab){
+  var code = String(ab || '?').toUpperCase().replace(/[^A-Z]/g, '').slice(0, 4) || '?';
+  var c = TCOL[code] || ['#3A4A66', '#9FB2CC'], P = c[0], S = c[1], T = lumHex(P) > .38 ? '#0B1F3A' : '#FFFFFF', id = 'cr' + (++CREST_N);
+  var SH = 'M8 2h32l6 6v22L24 50 2 30V8z';
+  var w = el('span', {class:'av crest', title:code, role:'img', 'aria-label':code + ' team crest'});
+  w.innerHTML = '<svg viewBox="-2 -2 52 56" aria-hidden="true"><defs><clipPath id="' + id + '"><path d="' + SH + '"/></clipPath></defs>' +
+    '<path d="' + SH + '" fill="' + P + '"/><g clip-path="url(#' + id + ')"><polygon points="0,19.2 24,41 48,19.2 48,60 0,60" fill="' + S + '"/></g>' +
+    '<path d="' + SH + '" fill="none" stroke="#F2F6FC" stroke-width="2.2" stroke-linejoin="round"/>' +
+    '<text class="tx" x="24" y="30" text-anchor="middle" fill="' + T + '">' + code + '</text>' +
+    '<g class="emb" fill="none" stroke="' + T + '" stroke-width="1.8" stroke-linecap="round"><circle cx="24" cy="22" r="10"/><path d="M24 12v20M14 22h20M17 15.2a10 10 0 0 1 0 13.6M31 15.2a10 10 0 0 0 0 13.6"/></g></svg>';
+  return w;
 }
-function logoEl(ab){ return imgAv('logo', logoUrl(ab), ab + ' logo', ab); }
+function imgAv(cls, url, alt, fb){
+  var w = el('span', {class:'av ' + cls + ' mono', title:alt, text:fb}), im = document.createElement('img');
+  im.alt = alt; im.loading = 'lazy'; im.referrerPolicy = 'no-referrer';
+  /* a headshot only replaces the initials once it has really loaded with a sensible size */
+  im.onload = function(){ if (im.naturalWidth >= 60){ w.textContent = ''; w.classList.remove('mono'); w.append(im); } };
+  im.src = url; return w;
+}
 function ini(n){ return String(n || '?').split(/\s+/).map(function(x){ return x[0]; }).slice(0, 2).join('').toUpperCase(); }
 function faceEl(pid, name){ return pid ? imgAv('face', 'https://a.espncdn.com/i/headshots/nba/players/full/' + pid + '.png', name, ini(name)) : null; }
 function whoEl(pid, name){ return el('span', {class:'who'}, faceEl(pid, name), el('span', {text:name})); }
@@ -1170,6 +1202,7 @@ function pickCard(p, idx){
     el('div', {class:'nums'}, el('span', {}, 'Est ', el('b', {text:pct(p.est)})), el('span', {}, 'Price ', el('b', {text:pct(p.implied)})),
       el('span', {}, 'Edge ', el('b', {class:p.edge >= 0 ? 'pos' : 'neg', text:fe(p.edge)})), el('span', {}, 'Stake ', el('b', {text:p.units + 'u'})),
       p.type === 'prop' ? el('span', {}, 'Model mean ', el('b', {text:p.mean})) : null, p.type === 'prop' ? el('span', {}, 'L10 over ', el('b', {text:p.hit_l10})) : null),
+    bookLine(p, 'p'),
     p.flag ? el('p', {class:'small', style:'color:var(--warn)', text:p.flag}) : null,
     p.reason ? el('p', {class:'why', text:p.reason}) : null,
     p.sig ? sigChips(p.sig, 4) : null,
@@ -1632,11 +1665,122 @@ function gameBody(g){
   return wrap;
 }
 
+/* ---- v10: books, Claude's read, closing line value, backtest ---- */
+function bookLine(p, tag){
+  var bits = [];
+  if (p.book) bits.push('Best price ' + fo(p.odds) + ' at ' + p.book + (p.n_books ? ' (' + p.n_books + ' books)' : ''));
+  if (p.fair != null) bits.push('market fair ' + pct(p.fair));
+  if (p.jp != null) bits.push('Claude\'s read ' + pct(p.jp) + ' (model ' + pct(p.est_nj) + ')');
+  return bits.length ? el(tag || 'span', {class:'small mut', text:bits.join(' · ')}) : null;
+}
+function shopPanel(g){
+  var m = g.market; if (!m || !m.books || !m.books.length) return null;
+  var h = g.home, a = g.away, f = m.fair || {}, sh = m.shop || {};
+  var pr = function(x, y){ return x == null ? 'n/a' : fo(x) + (y != null ? ' / ' + fo(y) : ''); };
+  var rows = m.books.map(function(b){
+    return [b.b, b.sp != null ? sg(b.sp) + ' ' + pr(b.sph, b.spa) : 'n/a', b.t != null ? b.t + ' ' + pr(b.o, b.u) : 'n/a', b.mh != null ? pr(b.mh, b.ma) : 'n/a'];
+  });
+  var best = [];
+  if (sh.spread_home) best.push(h.abbr + ' ' + sg(m.spread_home) + ' ' + fo(m.spread_odds_home) + ' at ' + sh.spread_home);
+  if (sh.spread_away) best.push(a.abbr + ' ' + sg(-m.spread_home) + ' ' + fo(m.spread_odds_away) + ' at ' + sh.spread_away);
+  if (sh.over) best.push('Over ' + m.total + ' ' + fo(m.over_odds) + ' at ' + sh.over);
+  if (sh.under) best.push('Under ' + m.total + ' ' + fo(m.under_odds) + ' at ' + sh.under);
+  if (sh.ml_home) best.push(h.abbr + ' ML ' + fo(m.ml_home) + ' at ' + sh.ml_home);
+  if (sh.ml_away) best.push(a.abbr + ' ML ' + fo(m.ml_away) + ' at ' + sh.ml_away);
+  return [table(['Book', h.abbr + ' spread', 'Total', 'Moneyline'], rows, 1),
+    best.length ? el('p', {class:'small'}, el('b', {text:'Best price at the most common line: '}), best.join('; ') + '.') : null,
+    el('p', {class:'small mut', text:'Prices read home / away, over / under. Consensus of ' + m.n_books + ' books. With the bookmaker margin removed the market says: ' + h.abbr + ' covers ' + pct(f.home_cover) + ', over ' + pct(f.over) + ', ' + h.abbr + ' wins ' + pct(f.home_win) + '. Picks are priced at the best number on offer, and the model is pulled toward that fair price, not toward the margin-padded one.'})];
+}
+function propShop(r){
+  if (!r.shop || !r.shop.length) return null;
+  var rows = r.shop.map(function(b){ return [b.b, b.o != null ? fo(b.o) : 'n/a', b.u != null ? fo(b.u) : 'n/a']; });
+  var bits = [];
+  if (r.over_book) bits.push('best over ' + fo(r.over) + ' at ' + r.over_book);
+  if (r.under_book) bits.push('best under ' + fo(r.under) + ' at ' + r.under_book);
+  var alts = (r.alts || []).map(function(a){ return a.line + ' (' + a.n + (a.n === 1 ? ' book' : ' books') + ')'; });
+  return [table(['Book at ' + r.line, 'Over', 'Under'], rows, 1),
+    el('p', {class:'small mut', text:'Line ' + r.line + ' is the most common across ' + (r.n_books || r.shop.length) + ' books; ' + bits.join('; ') + (r.fair_over != null ? '. With the margin removed the market gives the over ' + pct(r.fair_over) : '') + '.' + (alts.length ? ' Other lines on offer: ' + alts.join(', ') + '.' : '')})];
+}
+function judgPanel(g){
+  var j = g.judgment; if (!j) return null;
+  var f = (g.market && g.market.fair) || {}, h = g.home.abbr;
+  var rows = [[h + ' wins', pct(f.home_win), pct(j.home_win)], [h + ' covers the spread', pct(f.home_cover), pct(j.cover_home)], ['Game goes over', pct(f.over), pct(j.over)]];
+  return [table(['Outcome', 'Market (margin removed)', 'Claude\'s own read'], rows, 1),
+    j.why ? el('p', {class:'small', text:j.why}) : null,
+    j.concern ? el('p', {class:'small', style:'color:var(--warn)', text:'Claude flagged a concern on this game, so its picks are one confidence step lower and stakes are trimmed.'}) : null,
+    el('p', {class:'small mut', text:'Claude\'s read counts for ' + Math.round((j.w != null ? j.w : 0.1) * 100) + '% of the final chance on a pick (it can move a chance by at most 4 points) and is scored against the model on every graded pick. It is an estimate written by an AI from the same data plus general basketball knowledge, not inside information.'})];
+}
+function clvStats(H){
+  var rows = H.filter(function(p){ return p.close && p.clv != null; }), by = {}, tot = {n:0, pos:0, sum:0, pts:0, npts:0};
+  rows.forEach(function(p){
+    var k = p.type === 'prop' ? 'props' : p.type, b = by[k] || (by[k] = {n:0, pos:0, sum:0, pts:0, npts:0});
+    [b, tot].forEach(function(x){ x.n++; if (p.clv > 0) x.pos++; x.sum += p.clv; if (p.clv_pts != null){ x.pts += p.clv_pts; x.npts++; } });
+  });
+  return {tot:tot, by:by, n:rows.length};
+}
+function judgStats(H){
+  var r = H.filter(function(p){ return p.jp != null && p.est_nj != null && (p.result === 'W' || p.result === 'L') && (p.kind == null || p.kind === 'priced'); });
+  var bj = 0, bm = 0;
+  r.forEach(function(p){ var y = p.result === 'W' ? 1 : 0; bj += (p.jp - y) * (p.jp - y); bm += (p.est_nj - y) * (p.est_nj - y); });
+  return {n:r.length, bj:r.length ? bj / r.length : null, bm:r.length ? bm / r.length : null};
+}
+function trackExtras(root, H){
+  function tile(k, v, tip){ return el('div', {class:'tile', 'data-tip':tip, tabindex:'0'}, el('span', {text:k}), el('b', {text:v})); }
+  var cv = clvStats(H), L = S.latest || {};
+  root.append(el('h2', {text:'Did we beat the closing line?'}));
+  if (cv.n){
+    var t = cv.tot;
+    root.append(el('div', {class:'tiles'},
+      tile('Beat the close', pct(t.pos / t.n), 'Share of picks whose number was better than the closing number.'),
+      tile('Edge vs close', (t.sum / t.n >= 0 ? '+' : '') + (100 * t.sum / t.n).toFixed(1) + '%', 'Average of (closing no-vig chance, adjusted for any line move) minus the price paid, in percentage points.'),
+      tile('Line gained', t.npts ? sg(t.pts / t.npts, 2) + ' pts' : 'n/a', 'Average points of line the pick got compared with the close (moneylines excluded).'),
+      tile('Picks', String(cv.n), 'Picks with a saved closing line.')));
+    var ks = Object.keys(cv.by);
+    root.append(table(['Market', 'Picks', 'Beat the close', 'Edge vs close', 'Line gained'], ks.map(function(k){ var b = cv.by[k];
+      return [k, b.n, pct(b.pos / b.n), (b.sum / b.n >= 0 ? '+' : '') + (100 * b.sum / b.n).toFixed(1) + '%', b.npts ? sg(b.pts / b.npts, 2) + ' pts' : 'n/a']; })));
+    root.append(el('p', {class:'small mut', text:'The closing line is the market\'s last and sharpest opinion, so picks that regularly beat it are getting better numbers than the market ends up agreeing on. It needs far fewer picks to read than win-loss does: past about 50 picks, beating the close more than half the time is the best early sign the model has real skill. Under that, it is noise.'}));
+  } else {
+    root.append(el('p', {class:'small mut', text:'Not enough yet. A few minutes before each tip-off the engine saves the market\'s closing line next to every pick that is still open; this section fills in after tonight\'s games start.'}));
+  }
+  var js = judgStats(H), JP = (L.params && L.params.judgment) || null;
+  if (JP || js.n){
+    root.append(el('h2', {text:'Claude\'s own read, scored'}));
+    root.append(el('div', {class:'tiles'},
+      tile('Weight in picks', JP ? Math.round(100 * JP.w) + '%' : 'n/a', 'How much of each pick\'s final chance comes from Claude\'s own probability. It can move a chance by 4 points at most.'),
+      tile('Graded picks', String(js.n), 'Settled picks that had a Claude probability logged.'),
+      tile('Claude score', js.bj != null ? js.bj.toFixed(3) : 'n/a', 'Brier score of Claude\'s probability on those picks. Lower is better; 0.250 is a coin flip.'),
+      tile('Model score', js.bm != null ? js.bm.toFixed(3) : 'n/a', 'Brier score of the model\'s probability on the same picks.')));
+    root.append(el('p', {class:'small mut', text:js.n < 40 ? 'The weight stays at its starting value until 40 graded picks exist. After that it moves up (to at most double) if Claude\'s probabilities are the sharper of the two, and down to zero if they are not.' : 'The weight follows these scores: it rises (to at most double) while Claude\'s read is sharper than the model\'s and falls toward zero if it is not.'}));
+  }
+  var bt = S.bt, bs = L.status && L.status.sources && L.status.sources.backtest;
+  if (bt && bt.bets){
+    root.append(el('h2', {text:'Last season, replayed'}));
+    var al = bt.all || {};
+    root.append(el('div', {class:'tiles'},
+      tile('Games replayed', String(bt.games), bt.lined + ' of them had a closing line to price against.'),
+      tile('Bets', String(bt.bets), 'Bets the engine would have listed (edge of 2 points or more), at flat 1 unit.'),
+      tile('Record', (al.w || 0) + '-' + (al.l || 0), 'Wins and losses; pushes are left out.'),
+      tile('ROI', al.roi != null ? (al.roi >= 0 ? '+' : '') + (100 * al.roi).toFixed(1) + '%' : 'n/a', 'Net units divided by units risked, at the price shown by ESPN.')));
+    root.append(table(['Edge size', 'Bets', 'Won', 'Model said', 'ROI'], (bt.by_edge || []).filter(function(b){ return b.n; }).map(function(b){
+      return [b.label, b.n, b.hit != null ? pct(b.hit) : 'n/a', b.est != null ? pct(b.est) : 'n/a', b.roi != null ? (b.roi >= 0 ? '+' : '') + (100 * b.roi).toFixed(1) + '%' : 'n/a']; })));
+    root.append(table(['Market', 'Bets', 'Won', 'ROI'], Object.keys(bt.by_type || {}).filter(function(k){ return bt.by_type[k].n; }).map(function(k){ var b = bt.by_type[k];
+      return [k, b.n, b.hit != null ? pct(b.hit) : 'n/a', b.roi != null ? (b.roi >= 0 ? '+' : '') + (100 * b.roi).toFixed(1) + '%' : 'n/a']; })));
+    var mm = bt.mae_margin || {};
+    if (mm.n) root.append(el('p', {class:'small', text:'Average miss on the final margin: market line ' + mm.market + ' points, our ratings alone ' + mm.model + ', the blend ' + mm.blend + ' (' + mm.n + ' games with 25+ games of data). ' + (bt.best_w_margin != null ? 'The blend weight that fit last season best was ' + Math.round(100 * bt.best_w_margin) + '% on our ratings.' : '')}));
+    if (bt.lambda != null) root.append(el('p', {class:'small', text:'In the replay the model\'s edges were about ' + Math.round(100 * bt.lambda) + '% real, so live game picks start from ' + Math.round(100 * Math.max(0.3, Math.min(1, bt.lambda))) + '% of the raw edge and keep adjusting from graded results.'}));
+    root.append(el('p', {class:'small mut', text:(bt.note || '') + ' Season ' + bt.season + '. A replay uses today\'s method on yesterday\'s games, so it tells you how the approach would have behaved, not what will happen. Props are not replayed because past prop lines are not available.'}));
+  } else if (bs && !bs.ok){
+    root.append(el('h2', {text:'Last season, replayed'}));
+    root.append(el('p', {class:'small mut', text:bs.msg}));
+  }
+}
+
 function pickLine(g, p){
   var go_ = p.type === 'prop' && p.pid ? function(){ openPlayer(g.id, p.pid, p.stat); } : null;
   var d = el('div', {class:'lpick ' + p.conf + (go_ ? ' clk' : ''), tabindex:go_ ? '0' : null, role:go_ ? 'link' : null},
     el('b', {}, lockSvg(p.conf), ' ', p.label, ' ', el('span', {class:'mono mut', text:fo(p.odds)}), go_ ? el('span', {class:'chev', text:'›'}) : null),
     el('span', {class:'small mut', text:p.conf + ' · est ' + pct(p.est) + ' vs price ' + pct(p.implied) + ' · edge ' + fe(p.edge) + (p.kind === 'assumed' ? ' (at -110)' : '') + ' · ' + p.units + 'u'}),
+    bookLine(p, 'span'),
     p.flag ? el('span', {class:'small', style:'color:var(--warn)', text:p.flag}) : null,
     p.reason ? el('span', {class:'small', text:p.reason}) : null,
     p.sig ? sigChips(p.sig, 4) : null, el('span', {class:'row-btn'}, slipBtn(p)));
@@ -1680,7 +1824,9 @@ function overTab(g){
     kids.push(blk('Analysis', el('div', {class:'ana'}, el('p', {}, el('b', {text:'Lean: '}), g.analysis.lean),
       listBlock('Why', g.analysis.why), listBlock('Risks', g.analysis.risks), listBlock('Matchups', g.analysis.matchups), listBlock('Verify before betting', g.analysis.verify))));
   } else kids.push(blk('Analysis', el('p', {class:'small mut', text:g.state === 'pre' ? 'No written analysis for this game (the Claude step did not run or returned nothing). The numbers are still model output.' : 'Game has started, so no new analysis.'})));
+  var jp_ = judgPanel(g); if (jp_) kids.push(blk('Claude\'s own read', jp_));
   kids.push(blk('How the numbers were built', numbersTable(g)));
+  var sp_ = shopPanel(g); if (sp_) kids.push(blk('Line shop', sp_));
   kids.push(crewPanel(g));
   var inj = [g.away, g.home].map(function(t){
     if (!t.injuries || !t.injuries.length) return el('p', {class:'small mut', text:t.abbr + ': none listed'});
@@ -1918,6 +2064,7 @@ function playerBody(g, pid, stat){
     kids.push(blk('', el('p', {class:'small mut', text:'The model has no season data for this player (fewer than 3 games, or not in the rotation), so there is no chart or projection.'})));
   }
   /* breakdown */
+  var ps_ = row ? propShop(row) : null; if (ps_) kids.push(blk('Line shop', ps_));
   if (row) kids.push(blk('Why this number', breakdownList(g, row, (g.pick_objs || []).filter(function(p){ return p.pid === pid && p.stat === row.stat; })[0] || null)));
   /* other props */
   var others = rows.filter(function(r){ return !row || r.stat !== row.stat; });
@@ -2815,6 +2962,35 @@ function stats(list){
   });
   return {w:w, l:l, pu:pu, net:net, stake:stake, by:by, conf:conf, buckets:buckets, n:g.length};
 }
+/* ---- auditor ---- */
+var AUD_LBL = {TRUST_MORE:['Trust more','good'], TRUST_LESS:['Trust less','warn'], NEUTRAL:['Neutral',''], NOT_ENOUGH_DATA:['Learning','']};
+var AUD_KIND = {market:'Markets', signal:'Signals', confidence:'Confidence', edge:'Edge size'};
+function audKey(g){
+  if (g.kind === 'market') return g.key.indexOf('prop:') === 0 ? (STAT[g.key.slice(5)] || g.key.slice(5)) + ' props' : g.key.charAt(0).toUpperCase() + g.key.slice(1);
+  return g.key.charAt(0).toUpperCase() + g.key.slice(1);
+}
+function renderAudit(root){
+  var a = S.latest && S.latest.audit;
+  if (!a) return;
+  var box = el('div', {class:'note', style:'margin:14px 0'});
+  box.append(el('div', {style:'display:flex;gap:8px;align-items:center;flex-wrap:wrap'}, el('b', {text:'What the bot has learned'}),
+    el('span', {class:'pill' + (a.early ? '' : ' good'), text:a.graded + ' graded' + (a.early ? ' · early sample' : '')})));
+  if (a.summary) box.append(el('p', {class:'small', text:a.summary}));
+  if (a.yesterday) box.append(el('p', {class:'small mut', text:a.yesterday}));
+  if (a.lessons && a.lessons.length) box.append(el('ul', {class:'small', style:'margin:8px 0 0;padding-left:18px'}, a.lessons.map(function(t){ return el('li', {text:t}); })));
+  box.append(el('p', {class:'small mut', style:'margin-top:8px', text:'Each morning the auditor reviews every graded pick, rates what is really winning against the break-even of the prices taken, and the bot reads these lessons before it analyzes today\'s games. A market rated "Trust less" on 50+ graded picks gets lower confidence and half the stake until it recovers.'}));
+  root.append(box);
+  var rows = (a.groups || []).filter(function(g){ return g.kind !== 'overall'; });
+  if (!rows.length) return;
+  root.append(el('h2', {text:'What is working'}));
+  root.append(table(['Group', 'W-L-P', 'Win %', 'Break-even', 'Units', 'Rating'], rows.map(function(g){
+    var lb = AUD_LBL[g.rating] || [g.rating, ''];
+    return [(AUD_KIND[g.kind] || g.kind) + ': ' + audKey(g), g.w + '-' + g.l + '-' + g.p, g.win == null ? 'n/a' : pct(g.win), g.breakeven == null ? 'n/a' : pct(g.breakeven),
+      (g.net >= 0 ? '+' : '') + g.net.toFixed(2), el('span', {class:'pill' + (lb[1] ? ' ' + lb[1] : ''), text:lb[0]})];
+  })));
+  root.append(el('p', {class:'small mut', text:'"Learning" means fewer than 20 graded picks in that group, too few to judge. Ratings need a clear gap from break-even, and a bigger one under 50 picks.'}));
+}
+
 function renderTracker(){
   var root = $('#track'); root.textContent = '';
   var H = S.history, st = stats(H), dec = st.w + st.l;
@@ -2825,10 +3001,12 @@ function renderTracker(){
     tile('Units', (st.net >= 0 ? '+' : '') + st.net.toFixed(2), 'Profit in units at the posted price. Picks without a real price are left out.'),
     tile('ROI', st.stake ? (100 * st.net / st.stake).toFixed(1) + '%' : 'n/a', 'Net units divided by units risked.')));
   root.append(el('p', {class:'small mut', text:'Every pick the site publishes is logged here and graded automatically from real final box scores. Player props with a player who did not play are voided. Nothing is hand-picked after the fact.'}));
+  renderAudit(root);
   var open = H.filter(function(p){ return !p.result; }).length, unp = H.filter(function(p){ return p.result && p.result !== 'V' && p.kind === 'assumed'; }).length;
   if (open || unp) root.append(el('p', {class:'small mut', text:[open ? open + ' pick' + (open === 1 ? ' is' : 's are') + ' still open.' : '', unp ? unp + ' graded pick' + (unp === 1 ? ' had' : 's had') + ' no real price and ' + (unp === 1 ? 'is' : 'are') + ' left out of the record and ROI.' : ''].join(' ').trim()}));
   var types = Object.keys(st.by);
   if (types.length) root.append(table(['Market', 'W-L-P', 'Units'], types.map(function(k){ var b = st.by[k]; return [k, b.w + '-' + b.l + '-' + b.p, (b.net >= 0 ? '+' : '') + b.net.toFixed(2)]; })));
+  trackExtras(root, H);
   var cf = Object.keys(st.conf);
   if (cf.length){
     root.append(el('h2', {text:'Is the confidence honest?'}));
@@ -2842,7 +3020,7 @@ function renderTracker(){
   root.append(el('h2', {text:'Pick history'}));
   H.slice().reverse().slice(0, 80).forEach(function(p){
     root.append(el('div', {class:'note'}, el('b', {text:p.label}), el('span', {class:'mono mut', text:' ' + fo(p.odds)}),
-      el('p', {class:'small mut', text:[dayLabel(p.date), p.away + ' @ ' + p.home, p.conf, p.units + 'u', 'est ' + pct(p.est), p.kind === 'assumed' ? 'no real price' : '', p.posted ? 'posted ' + new Date(p.posted).toLocaleTimeString([], {hour:'numeric', minute:'2-digit'}) : '', p.result ? (p.result === 'V' ? 'void' : p.result + (p.profit != null ? ' ' + (p.profit >= 0 ? '+' : '') + p.profit.toFixed(2) + 'u' : '')) + (p.final ? ' · ' + p.final : '') : 'pending'].filter(Boolean).join(' · ')})));
+      el('p', {class:'small mut', text:[dayLabel(p.date), p.away + ' @ ' + p.home, p.conf, p.units + 'u', 'est ' + pct(p.est), p.clv != null ? 'CLV ' + fe(p.clv) + '%' : '', p.kind === 'assumed' ? 'no real price' : '', p.posted ? 'posted ' + new Date(p.posted).toLocaleTimeString([], {hour:'numeric', minute:'2-digit'}) : '', p.result ? (p.result === 'V' ? 'void' : p.result + (p.profit != null ? ' ' + (p.profit >= 0 ? '+' : '') + p.profit.toFixed(2) + 'u' : '')) + (p.final ? ' · ' + p.final : '') : 'pending'].filter(Boolean).join(' · ')})));
   });
 }
 
@@ -2862,10 +3040,12 @@ function renderMethod(){
       li('Collect.', 'Every finished NBA game this season and its box score from ESPN, last season as a starting point, shot locations, the injury report and the betting lines.'),
       li('Rate the teams.', 'Offense, defense and pace per 100 possessions, adjusted for each opponent, with recent games counting more. Early in the season ratings are pulled toward last season (half kept, because rosters change) or the league average.'),
       li('Project the game.', 'Ratings give an expected score. Home court adds ' + (P.home_edge != null ? P.home_edge : 2.2) + ' points and a back-to-back takes ' + (P.b2b_points != null ? P.b2b_points : 1.5) + ' points off.'),
-      li('Blend with the market.', 'The betting line already holds a lot of information, so the model is only given a share of the weight (never more than half, and less while teams have few games).'),
+      li('Blend with the market.', 'The betting line already holds a lot of information, so the model is only given a share of the weight (never more than ' + Math.round((P.blend_max != null ? P.blend_max : 0.5) * 100) + '%, and less while teams have few games).'),
       li('Price the bet.', 'The blended number becomes a chance using a normal curve (typical miss ' + (P.sd_margin || 12) + ' points on the spread and ' + (P.sd_total || 17.5) + ' on the total). A bet needs an edge of at least 2 points to be listed.'),
       li('Price the props.', 'A player\'s season, last-10 and last-5 averages are blended with last season. The estimate is adjusted for a new team or role, teammates who are out, blowout risk, the opponent\'s defense against his position (never more than 6%) and the game\'s expected pace. The spread comes from his own game-to-game swings.'),
+      li('Compare the books.', 'With an Odds API key, every US book\'s spread, total, moneyline and player props are read. The most common line is the consensus, each bet is priced at the best number on offer, and the bookmaker margin is removed to get the market\'s fair chance. The model is pulled toward that fair chance, not toward the padded price.'),
       li('Claude writes the analysis.', 'Claude reads the same numbers and writes the reasoning and risks. It may nudge a game number by at most 2 points (total 5) and a prop by at most 10%, and only for a reason stated in the data. It never sets probabilities, confidence or stakes.'),
+      li('Claude\'s own read.', 'Besides writing the analysis, Claude is asked what it believes the realistic chance of each outcome is, counting what numbers cannot see (motivation, schedule spot, rotation habits, how a matchup tends to play). That probability is held within 12 points of the market\'s fair price, counts for a small share of the final chance (' + Math.round(((P.judgment && P.judgment.w != null) ? P.judgment.w : 0.1) * 100) + '%, never more than 4 points of movement), and can lower confidence or trim a stake when Claude flags a concern. It is a tracked estimate, scored against the model on every graded pick, and its weight rises or falls with its record. It is not inside information, and it cannot override the numbers.'),
       li('Safety brakes.', 'Players on the injury report get no prop pick. Unusually large edges are flagged and capped at Low. If a data source fails, the affected picks are capped at Low or skipped. The model also checks itself against graded results and shrinks its edges if they are not paying off (right now game picks count ' + (cal.game != null ? Math.round(cal.game * 100) : 100) + '% and props ' + (cal.prop != null ? Math.round(cal.prop * 100) : 70) + '% of the raw edge).'),
       li('Confidence and stake.', 'Both come from fixed rules: sample size, edge size, injury and line coverage. Stakes are a quarter of the Kelly amount, kept between 0.5 and 2 units.'))),
     sec('Coaching and matchup tendencies', [
@@ -2884,6 +3064,9 @@ function renderMethod(){
     sec('Game center and player view', [
       el('p', {text:'Tap any game for the live score by quarter, the live box score (refreshed every 15 seconds while the game is on), the props with their live values, every rotation player, ratings, tendencies, shot maps and how the numbers were built.'}),
       el('p', {text:'Tap any player or prop for his last 10 games on a chart against the line, his season, last-10 and last-5 averages next to tonight\'s projection and his live line, and a plain list of every step that produced the number. The live parts read ESPN directly from your browser, so they only show while ESPN is reachable.'})]),
+    sec('Closing line value and the backtest', [
+      el('p', {text:'Closing line value (CLV): a few minutes before tip-off, the engine saves the market\'s closing line next to every open pick and compares it with the number the pick got. Beating the close consistently is the quickest honest sign of skill, and it shows up in dozens of picks instead of hundreds.'}),
+      el('p', {text:'Backtest: once last season is loaded, the engine replays it day by day. It rates the teams using only games played before each day, prices the same bets against ESPN\'s closing lines and grades them on the real scores. The result sets where the model starts (how much of its raw edge to trust, and its weight against the market), and live results take over as they come in. The replay uses team ratings only, with no Claude, no injuries and no props, so it is a check on the method, not a promise.'})]),
     sec('How the record is kept', el('ul', {},
       li('Logged.', 'Every pick is saved with the time it was posted, before the game, and graded automatically from the final box score.'),
       li('Latest pre-game version.', 'If the model changes its mind before tip-off, the newest version replaces the old one. Once a game starts, its picks are locked.'),
@@ -2907,8 +3090,8 @@ function renderStatus(){
   var L = S.latest; if (!L) return;
   root.append(el('div', {class:'note'}, el('b', {text:'Last run: '}), new Date(L.generated_at).toLocaleString(), el('br'),
     'Written analysis: ' + (L.model ? 'on, model ' + L.model : 'OFF (no API key)'), el('br'),
-    'Model settings: home edge ' + L.params.home_edge + ' pts, margin spread ' + L.params.sd_margin + ', total spread ' + L.params.sd_total + ', back-to-back ' + L.params.b2b_points + ' pts.'));
-  var sources = L.status.sources, names = {espn_games:'Game results and box scores', ratings:'Team ratings', espn_injuries:'Injury report', anthropic:'Claude analysis', props_parse:'Props read by Claude', prior_season:'Last season as a starting point', shot_data:'Shot locations (play-by-play)', calibration:'Self-check against graded results', position_defense:'Defense by position', team_profiles:'Coaching tendencies (measured)', notes:'Your notes (notes.txt)', referees:'Referees (measured from box scores)', odds_api:'Player prop prices (Odds API)'};
+    'Model settings: home edge ' + L.params.home_edge + ' pts, margin spread ' + L.params.sd_margin + ', total spread ' + L.params.sd_total + ', back-to-back ' + L.params.b2b_points + ' pts.', (L.odds && L.odds.left != null) ? el('br') : null, (L.odds && L.odds.left != null) ? 'Odds API credits left this month: ' + L.odds.left + '.' : null));
+  var sources = L.status.sources, names = {espn_games:'Game results and box scores', ratings:'Team ratings', espn_injuries:'Injury report', anthropic:'Claude analysis', props_parse:'Props read by Claude', prior_season:'Last season as a starting point', shot_data:'Shot locations (play-by-play)', calibration:'Self-check against graded results', position_defense:'Defense by position', team_profiles:'Coaching tendencies (measured)', notes:'Your notes (notes.txt)', referees:'Referees (measured from box scores)', odds_api:'Player prop prices (Odds API)', odds_games:'Game prices across books (Odds API)', judgment:'Claude\'s own read', backtest:'Last-season backtest', closing:'Closing lines (CLV)'};
   var box = el('div', {class:'note'}, el('div', {class:'src'}, Object.keys(sources).map(function(k){
     return [el('span', {class:'dot' + (sources[k].ok ? '' : ' bad')}), el('div', {}, el('b', {text:(names[k] || k) + (sources[k].ok ? '' : ' (problem)')}), el('p', {class:'small mut', text:sources[k].msg || ''}))];
   }).reduce(function(a, b){ return a.concat(b); }, [])));
@@ -2961,8 +3144,8 @@ if (document.fonts && document.fonts.ready) document.fonts.ready.then(moveInd);
 function getJson(url, fallback){
   return fetch(url + '?v=' + Date.now(), {cache:'no-store'}).then(function(r){ if (!r.ok) throw new Error(url + ' ' + r.status); return r.json(); }).catch(function(e){ if (fallback !== undefined) return fallback; throw e; });
 }
-Promise.all([getJson('data/latest.json'), getJson('data/history.json', [])]).then(function(r){
-  S.latest = r[0]; S.history = Array.isArray(r[1]) ? r[1] : [];
+Promise.all([getJson('data/latest.json'), getJson('data/history.json', []), getJson('data/backtest.json', null)]).then(function(r){
+  S.latest = r[0]; S.history = Array.isArray(r[1]) ? r[1] : []; S.bt = r[2] && typeof r[2] === 'object' ? r[2] : null;
   slipSync(); slipUi(false);
   renderCounts();
   var h = (location.hash || '').slice(1);
