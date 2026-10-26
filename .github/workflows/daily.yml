@@ -10,6 +10,7 @@ on:
     paths:
       - "props.txt"
       - "notes.txt"
+      - "refs.txt"
 
 permissions:
   contents: write
