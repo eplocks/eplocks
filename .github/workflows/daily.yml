@@ -5,7 +5,15 @@ on:
     # 15:00 UTC = 10:00 AM CDT and 22:30 UTC = 5:30 PM CDT (one hour earlier after Nov 1). Games tip off in the evening.
     - cron: "0 15 * * *"
     - cron: "30 22 * * *"
-  workflow_dispatch: {}
+    # every 20 minutes from 4 PM to midnight Central: saves each pick's closing line just before tip-off (does nothing, and costs nothing, when no game is about to start)
+    - cron: "*/20 22-23,0-5 * * *"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "run = full update, closing = save closing lines now, backtest = replay last season"
+        default: "run"
+        type: choice
+        options: [run, closing, backtest]
   push:
     paths:
       - "props.txt"
@@ -22,7 +30,7 @@ concurrency:
 jobs:
   run:
     runs-on: ubuntu-latest
-    timeout-minutes: 80
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -35,10 +43,18 @@ jobs:
           EPLOCKS_PROP_MARKETS: ${{ vars.EPLOCKS_PROP_MARKETS }}
           EPLOCKS_MODEL: ${{ vars.EPLOCKS_MODEL }}
           EPLOCKS_SEASON_START: ${{ vars.EPLOCKS_SEASON_START }}
-        run: python eplocks.py
+          EPLOCKS_JUDGMENT_WEIGHT: ${{ vars.EPLOCKS_JUDGMENT_WEIGHT }}
+        run: |
+          MODE="${{ inputs.mode }}"
+          if [ "${{ github.event.schedule }}" = "*/20 22-23,0-5 * * *" ]; then MODE=closing; fi
+          case "$MODE" in
+            closing) python eplocks.py --closing ;;
+            backtest) python eplocks.py --backtest ;;
+            *) python eplocks.py ;;
+          esac
       - name: Save results
         run: |
           git config user.name "eplocks-bot"
           git config user.email "eplocks-bot@users.noreply.github.com"
           git add -A data
-          git diff --cached --quiet && echo "Nothing changed" || (git commit -m "EpLocks daily update" && git pull --rebase origin ${{ github.ref_name }} && git push)
+          git diff --cached --quiet && echo "Nothing changed" || (git commit -m "EpLocks update" && git pull --rebase origin ${{ github.ref_name }} && git push)
