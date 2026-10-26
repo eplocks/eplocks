@@ -11,14 +11,16 @@ What it does every run (GitHub Actions calls it once a day, and again when props
      his game log.
   6. Asks Claude (Anthropic API) to write the analysis and to propose small, bounded adjustments. All probabilities,
      edges, confidence tiers and unit sizes are computed here in code, never by the model.
-  7. Grades yesterday's picks from real box scores and writes everything to docs/data/*.json for the website.
+  7. Grades yesterday's picks from real box scores and writes everything to data/*.json for the website.
+  8. Auditor: before today's picks, reviews the whole graded record (each market, confidence tier, smart signal and
+     edge size), rates what is really working, asks Claude for short lessons and feeds them into every game's analysis.
 
 Only the Python standard library is used. Every data source is wrapped so one failure never stops the run; the
 Status tab on the site shows what loaded and what did not.
 """
 import os, sys, json, re, math, time, difflib, unicodedata, hashlib
 import datetime as dt
-import urllib.request, urllib.error
+import urllib.request, urllib.error, urllib.parse
 from concurrent.futures import ThreadPoolExecutor
 from zoneinfo import ZoneInfo
 
@@ -34,13 +36,19 @@ HCA = float(os.environ.get('EPLOCKS_HOME_EDGE') or 2.2)      # home-court points
 SD_MARGIN, SD_TOTAL = 12.0, 17.5                              # typical NBA error vs closing lines
 B2B_PTS = 1.5                                                 # heuristic back-to-back penalty (points of margin)
 MAX_PROP_ROWS = 60
-ENGINE_VERSION = '6.0'
+ENGINE_VERSION = '7.0'
 SZ_V = 3               # box-score format version: 2 adds player positions, 3 adds officials and team fouls (older stored games are re-read once)
 PRIOR_V = 2            # last-season summary format version (2 adds defense by position)
 CLAUDE_BUDGET = float(os.environ.get('EPLOCKS_CLAUDE_SECONDS') or 1500)   # stop asking Claude after this many seconds so a run always finishes
 PROP_ROWS_TO_CLAUDE = 30
 T0 = time.time()
 CL_T0 = None           # when the Claude phase starts (after last season has loaded), so a long first run does not eat the Claude budget
+W_JUDG = float(os.environ.get('EPLOCKS_JUDGMENT_WEIGHT') or 0.10)   # how far Claude's own probability moves the model's (0 switches the judgment layer off)
+JUDG_CAP = 0.04        # and never by more than this much probability, whatever the weight has grown to
+JUDG = {'w': W_JUDG, 'n': 0, 'brier_j': None, 'brier_m': None}
+BLEND_MAX = 0.5        # most weight the model's own number gets against the market's (last season's replay can lower it)
+CLOSE_WINDOW_MIN = int(os.environ.get('EPLOCKS_CLOSE_MINUTES') or 25)    # closing mode records a pick's closing line this many minutes before tip-off
+ODDS_MIN_CREDITS = int(os.environ.get('EPLOCKS_ODDS_MIN_CREDITS') or 40)  # never spend the Odds API key below this many credits
 
 # Last season as a starting point, and shot locations (both optional: if either fails the run carries on without it)
 PRIOR_ON = (os.environ.get('EPLOCKS_PRIOR') or 'on').lower() not in ('off', '0', 'no', 'false')
@@ -1081,6 +1089,10 @@ STAT_FN = {
     'reb_ast': lambda g: g['reb'] + g['ast'], 'steals': lambda g: g['stl'], 'blocks': lambda g: g['blk'], 'turnovers': lambda g: g['tov']}
 SD_K = {'points': 0.32, 'rebounds': 0.40, 'assists': 0.45, 'threes': 0.62, 'pra': 0.26, 'pts_reb': 0.28, 'pts_ast': 0.29, 'reb_ast': 0.34,
         'steals': 0.80, 'blocks': 0.90, 'turnovers': 0.60}
+# Counting noise: a player's night-to-night swing never gets smaller than this, however steady his first few games look.
+# Variance ~ DISP x mean (points come in 2s and 3s, so they swing more than a pure count). Keeps low-minute players from looking like locks.
+PROP_DISP = {'points': 1.6, 'rebounds': 1.3, 'assists': 1.3, 'threes': 1.1, 'pra': 2.2, 'pts_reb': 2.0, 'pts_ast': 2.0, 'reb_ast': 1.6,
+             'steals': 1.1, 'blocks': 1.2, 'turnovers': 1.1}
 STAT_ALIAS = {
     'pts': 'points', 'point': 'points', 'points': 'points', 'reb': 'rebounds', 'rebs': 'rebounds', 'rebounds': 'rebounds', 'ast': 'assists', 'asts': 'assists',
     'assists': 'assists', '3pm': 'threes', '3s': 'threes', 'threes': 'threes', '3-pointers': 'threes', '3 pointers made': 'threes', 'three pointers made': 'threes',
@@ -1136,8 +1148,8 @@ def prop_model(log, stat, line, env=1.0, mult=1.0, rm=1.0):
             kp = 6.0
         base = (n * base + kp * prior_mean) / (n + kp)
         n_eff = n + (1 if kp <= 2 else 2 if kp < 6 else 4)
-    prior = max(1.0, SD_K[stat] * base)
-    sd = math.sqrt((n * pstdev(vals) ** 2 + 5 * prior ** 2) / (n + 5))
+    prior = max(1.0, SD_K[stat] * base, math.sqrt(PROP_DISP.get(stat, 1.5) * max(base, 0.5)))
+    sd = max(math.sqrt((n * pstdev(vals) ** 2 + 5 * prior ** 2) / (n + 5)), 0.9 * prior)   # a few quiet games never shrink the swing below the noise floor
     mu = base * env * mult * rm
     half = abs(line - math.floor(line)) > 1e-9
     if half:
@@ -1298,12 +1310,18 @@ CAL_STRENGTH = 1.0                       # a few hundred graded picks before the
 CAL = dict(CAL_PRIOR)
 
 
-def cal_p(p, odds, cls):
-    """Shrink a model probability toward the market price by the learned factor."""
+SAMPLE_K = float(os.environ.get('EPLOCKS_SAMPLE_K') or 10)   # games of evidence at which a player's own numbers get half a say against the market price
+
+
+def cal_p(p, odds, cls, fair=None, n_eff=None):
+    """Shrink a model probability toward the market by the learned factor, and further when the player has few games. The anchor is the
+    no-vig price when known (the market's real opinion), otherwise the price itself."""
     lam = CAL.get(cls, 1.0)
+    if n_eff is not None:
+        lam *= n_eff / (n_eff + SAMPLE_K)
     if abs(lam - 1.0) < 1e-9:
         return p
-    q = impl(odds)
+    q = fair if fair is not None else impl(odds)
     return clamp(q + lam * (p - q), 0.01, 0.99)
 
 
@@ -1317,7 +1335,7 @@ def build_calibration(history):
         est = h.get('est_raw', h.get('est'))
         if est is None:
             continue
-        q = impl(h['odds'])
+        q = h['fair'] if h.get('fair') is not None else impl(h['odds'])
         rows['prop' if h.get('type') == 'prop' else 'game'].append((est - q, (1.0 if h['result'] == 'W' else 0.0) - q))
     res = {}
     for k, rs in rows.items():
@@ -1622,55 +1640,263 @@ ODDS_MARKETS = {'player_points': 'points', 'player_rebounds': 'rebounds', 'playe
                 'player_rebounds_assists': 'reb_ast', 'player_steals': 'steals', 'player_blocks': 'blocks', 'player_turnovers': 'turnovers'}
 
 
+ODDS_BASE = 'https://api.the-odds-api.com/v4/sports/basketball_nba'
+ODDS_REGIONS = os.environ.get('EPLOCKS_REGIONS') or 'us'
+ODDS = {'left': None, 'used': 0, 'calls': 0}
+STAT_MARKET = {v: k for k, v in ODDS_MARKETS.items()}
+
+
+def odds_get(path, params, tries=2):
+    """One Odds API call. Returns parsed JSON. Records the credits the API says are left. The key never appears in an error message."""
+    q = dict(params, apiKey=ODDS_KEY)
+    url = '%s/%s?%s' % (ODDS_BASE, path, urllib.parse.urlencode(q, safe=','))
+    last = None
+    for i in range(tries):
+        try:
+            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0 (EpLocks AI)', 'Accept': 'application/json'})
+            with urllib.request.urlopen(req, timeout=25) as r:
+                body = json.loads(r.read().decode('utf-8'))
+                for hk, k in (('x-requests-remaining', 'left'),):
+                    try:
+                        ODDS[k] = int(float(r.headers.get(hk)))
+                    except (TypeError, ValueError):
+                        pass
+                try:
+                    ODDS['used'] += int(float(r.headers.get('x-requests-last')))
+                except (TypeError, ValueError):
+                    pass
+            ODDS['calls'] += 1
+            return body
+        except urllib.error.HTTPError as e:
+            last = 'HTTP %s' % e.code
+            if e.code in (401, 403, 404, 422, 429):
+                break
+            time.sleep(2 * (i + 1))
+        except Exception as e:  # noqa
+            last = str(e)
+            time.sleep(2 * (i + 1))
+    raise RuntimeError(str(last).replace(ODDS_KEY, '***')[:160])
+
+
+def odds_ok(cost):
+    """Stop before the monthly credits run out, so the key is never burnt to zero by the engine."""
+    return bool(ODDS_KEY) and (ODDS['left'] is None or ODDS['left'] - cost >= ODDS_MIN_CREDITS)
+
+
+def nick(name):
+    parts = str(name or '').lower().replace('.', '').split()
+    return parts[-1] if parts else ''
+
+
+def devig2(o1, o2):
+    """No-vig probability of side 1 from both American prices, using the power method (fairer than a straight split on lopsided prices)."""
+    if o1 is None or o2 is None:
+        return None
+    a, b = impl(o1), impl(o2)
+    if a <= 0 or b <= 0:
+        return None
+    if a + b <= 1.0:
+        return a / (a + b)
+    lo, hi = 1.0, 6.0
+    for _ in range(50):
+        mid = (lo + hi) / 2.0
+        if a ** mid + b ** mid > 1.0:
+            lo = mid
+        else:
+            hi = mid
+    return a ** ((lo + hi) / 2.0)
+
+
+def best_of(pairs):
+    pairs = [p for p in pairs if p[0] is not None]
+    return max(pairs, key=lambda p: p[0]) if pairs else (None, None)
+
+
+def mode_line(lines):
+    """Most common line; ties go to the one nearest the median."""
+    if not lines:
+        return None
+    cnt = {}
+    for l in lines:
+        cnt[l] = cnt.get(l, 0) + 1
+    med = median(lines)
+    return sorted(cnt, key=lambda l: (-cnt[l], abs(l - med)))[0]
+
+
+def agg_game_market(ev):
+    """One Odds API event (every book) -> one market: the most common line, the best price at that line, no-vig fair probabilities and a book table."""
+    home, away = ev.get('home_team'), ev.get('away_team')
+    books = []
+    for bk in ev.get('bookmakers') or []:
+        d = {'book': bk.get('title') or bk.get('key') or '?'}
+        for mk in bk.get('markets') or []:
+            key = mk.get('key')
+            for o in mk.get('outcomes') or []:
+                pr, nm = odds_or_none(o.get('price')), o.get('name')
+                try:
+                    pt = float(o.get('point'))
+                except (TypeError, ValueError):
+                    pt = None
+                if key == 'h2h':
+                    if nm == home:
+                        d['ml_home'] = pr
+                    elif nm == away:
+                        d['ml_away'] = pr
+                elif key == 'spreads' and pt is not None:
+                    if nm == home:
+                        d['sp'], d['sph'] = pt, pr
+                    elif nm == away:
+                        d['sp_a'], d['spa'] = pt, pr
+                elif key == 'totals' and pt is not None:
+                    d['t'] = pt
+                    if str(nm).lower() == 'over':
+                        d['o'] = pr
+                    elif str(nm).lower() == 'under':
+                        d['u'] = pr
+        if d.get('sp_a') is not None and d.get('sp') is not None and abs(d['sp_a'] + d['sp']) > 0.01:
+            d.pop('sp', None)
+        books.append(d)
+    if not books:
+        return None
+    m, fair, shop = {}, {}, {}
+    sb = [b for b in books if b.get('sp') is not None and b.get('sph') is not None and b.get('spa') is not None]
+    if sb:
+        L = mode_line([b['sp'] for b in sb])
+        at = [b for b in sb if b['sp'] == L]
+        m['spread_home'] = L
+        m['spread_odds_home'], shop['spread_home'] = best_of([(b['sph'], b['book']) for b in at])
+        m['spread_odds_away'], shop['spread_away'] = best_of([(b['spa'], b['book']) for b in at])
+        fair['home_cover'] = r3(mean(devig2(b['sph'], b['spa']) for b in at))
+    tb = [b for b in books if b.get('t') is not None and b.get('o') is not None and b.get('u') is not None]
+    if tb:
+        T = mode_line([b['t'] for b in tb])
+        at = [b for b in tb if b['t'] == T]
+        m['total'] = T
+        m['over_odds'], shop['over'] = best_of([(b['o'], b['book']) for b in at])
+        m['under_odds'], shop['under'] = best_of([(b['u'], b['book']) for b in at])
+        fair['over'] = r3(mean(devig2(b['o'], b['u']) for b in at))
+    mb = [b for b in books if b.get('ml_home') is not None and b.get('ml_away') is not None]
+    if mb:
+        m['ml_home'], shop['ml_home'] = best_of([(b['ml_home'], b['book']) for b in mb])
+        m['ml_away'], shop['ml_away'] = best_of([(b['ml_away'], b['book']) for b in mb])
+        fair['home_win'] = r3(mean(devig2(b['ml_home'], b['ml_away']) for b in mb))
+    if not m:
+        return None
+    m['provider'] = '%d books' % len(books)
+    m['n_books'] = len(books)
+    m['fair'], m['shop'] = fair, shop
+    m['books'] = [{k: v for k, v in (('b', b['book']), ('sp', b.get('sp')), ('sph', b.get('sph')), ('spa', b.get('spa')), ('t', b.get('t')), ('o', b.get('o')), ('u', b.get('u')),
+                                    ('mh', b.get('ml_home')), ('ma', b.get('ml_away'))) if v is not None} for b in books[:12]]
+    return m
+
+
+def merge_market(espn, books):
+    """Books' consensus wins wherever it has a number; ESPN's single line fills any gap."""
+    if not books:
+        return espn
+    m = dict(espn or {})
+    for k, v in books.items():
+        if v is not None:
+            m[k] = v
+    if espn and espn.get('provider') and books.get('provider'):
+        m['espn_provider'] = espn['provider']
+    return m
+
+
+def fetch_game_books(events):
+    """Spread, total and moneyline from every US book for today's games in ONE call (3 credits). Returns {espn event id: market}."""
+    if not ODDS_KEY:
+        return {}
+    cost = 3 * len(ODDS_REGIONS.split(','))
+    if not odds_ok(cost):
+        note('Odds API credits are nearly used up (%s left), so game prices come from ESPN only this run' % ODDS['left'])
+        return {}
+    try:
+        data = odds_get('odds', {'regions': ODDS_REGIONS, 'markets': 'h2h,spreads,totals', 'oddsFormat': 'american'})
+    except Exception as e:  # noqa
+        src('odds_games', False, 'multi-book prices failed: %s' % e)
+        return {}
+    mine = {(nick(e['home']['name']), nick(e['away']['name'])): e for e in events if e.get('state', 'pre') == 'pre'}
+    out = {}
+    for e in data if isinstance(data, list) else []:
+        ev = mine.get((nick(e.get('home_team')), nick(e.get('away_team'))))
+        if ev:
+            m = agg_game_market(e)
+            if m:
+                m['odds_event'] = e.get('id')
+                out[ev['id']] = m
+    nb = max([m['n_books'] for m in out.values()] or [0])
+    src('odds_games', bool(out), ('%d games priced across up to %d books (best price per side, no-vig fair line)' % (len(out), nb)) if out else 'The Odds API returned no lines for today\'s games')
+    return out
+
+
+def agg_props(js):
+    """One Odds API event with player-prop markets (every book) -> one row per player and stat at the most common line, with the best over and under price,
+    no-vig fair P(over), the other lines on offer and a short book table."""
+    per = {}
+    for bk in js.get('bookmakers') or []:
+        name = bk.get('title') or bk.get('key') or '?'
+        for mk in bk.get('markets') or []:
+            stat = ODDS_MARKETS.get(mk.get('key'))
+            if not stat:
+                continue
+            tmp = {}
+            for oc in mk.get('outcomes') or []:
+                who = str(oc.get('description') or '').strip()
+                try:
+                    line = float(oc.get('point'))
+                except (TypeError, ValueError):
+                    continue
+                side = str(oc.get('name') or '').lower()
+                if who and side in ('over', 'under'):
+                    tmp.setdefault((who, line), {})[side] = odds_or_none(oc.get('price'))
+            for (who, line), sd in tmp.items():
+                per.setdefault((who, stat), {}).setdefault(line, []).append({'b': name, 'o': sd.get('over'), 'u': sd.get('under')})
+    out = []
+    for (who, stat), lines in per.items():
+        L = mode_line([l for l, bs in lines.items() for _ in bs])
+        bs = lines[L]
+        over, ob = best_of([(b['o'], b['b']) for b in bs])
+        under, ub = best_of([(b['u'], b['b']) for b in bs])
+        fs = [f for f in (devig2(b['o'], b['u']) for b in bs) if f is not None]
+        out.append({'player': who, 'stat': stat, 'line': L, 'over': over, 'under': under, 'raw': 'Odds API, %d books' % len(bs), 'n_books': len(bs),
+                    'fair_over': r3(mean(fs)) if fs else None, 'over_book': ob, 'under_book': ub,
+                    'shop': [b for b in sorted(bs, key=lambda b: -(b['o'] if b['o'] is not None else -9999))][:6],
+                    'alts': sorted(({'line': l, 'n': len(b)} for l, b in lines.items() if l != L), key=lambda a: -a['n'])[:3]})
+    return out
+
+
 def fetch_odds_props(slate_events):
-    """Optional: pull player props from The Odds API for today's games. Returns a list of prop dicts, or None on failure."""
+    """Optional: pull player props from The Odds API for today's games, from every US book. Returns a list of prop dicts, or None on failure."""
     if not ODDS_KEY:
         return None
     markets = [m for m in (os.environ.get('EPLOCKS_PROP_MARKETS') or 'player_points,player_rebounds,player_assists,player_threes').split(',') if m.strip() in ODDS_MARKETS]
-    base = 'https://api.the-odds-api.com/v4/sports/basketball_nba'
     try:
-        events = http_json('%s/events?apiKey=%s' % (base, ODDS_KEY))
+        events = odds_get('events', {})
     except Exception as e:  # noqa
-        src('odds_api', False, str(e).replace(ODDS_KEY, '***')[:200])
+        src('odds_api', False, str(e)[:200])
         return None
     mine = {}
     for ev in slate_events:
         if ev['state'] == 'pre':
-            mine[(ev['home']['name'].lower(), ev['away']['name'].lower())] = ev
-    out, used, fails = [], 0, 0
+            mine[(nick(ev['home']['name']), nick(ev['away']['name']))] = ev
+    out, fails, per = [], 0, len(markets) * len(ODDS_REGIONS.split(','))
     for e in events if isinstance(events, list) else []:
-        key = (str(e.get('home_team', '')).lower(), str(e.get('away_team', '')).lower())
-        if key not in mine:
+        if (nick(e.get('home_team')), nick(e.get('away_team'))) not in mine:
             continue
+        if not odds_ok(per):
+            note('Odds API credits are nearly used up (%s left), so some games have no auto-pulled props this run' % ODDS['left'])
+            break
         try:
-            js = http_json('%s/events/%s/odds?apiKey=%s&regions=us&markets=%s&oddsFormat=american&bookmakers=%s' % (base, e['id'], ODDS_KEY, ','.join(markets), ODDS_BOOK), tries=2)
+            js = odds_get('events/%s/odds' % e['id'], {'regions': ODDS_REGIONS, 'markets': ','.join(markets), 'oddsFormat': 'american'})
         except Exception as ex:  # noqa
             fails += 1
-            note('Props fetch failed for %s: %s' % (e.get('id'), str(ex).replace(ODDS_KEY, '***')[:120]))
+            note('Props fetch failed for %s: %s' % (e.get('id'), str(ex)[:120]))
             continue
-        used += len(markets)
-        grouped = {}
-        for bk in js.get('bookmakers') or []:
-            for mk in bk.get('markets') or []:
-                stat = ODDS_MARKETS.get(mk.get('key'))
-                if not stat:
-                    continue
-                for oc in mk.get('outcomes') or []:
-                    try:
-                        line = float(oc.get('point'))
-                    except (TypeError, ValueError):
-                        continue
-                    who = str(oc.get('description') or '').strip()
-                    if not who:
-                        continue
-                    d = grouped.setdefault((who, stat, line), {'player': who, 'stat': stat, 'line': line, 'over': None, 'under': None, 'raw': 'Odds API ' + bk.get('key', '')})
-                    side = str(oc.get('name') or '').lower()
-                    if side in ('over', 'under'):
-                        d[side] = odds_or_none(oc.get('price'))
-            break
-        out.extend(grouped.values())
+        out.extend(agg_props(js))
     ok = bool(out)
-    src('odds_api', ok, '%d props for %d games (about %d credits used)%s' % (len(out), len(mine), used, ('; %d games failed' % fails) if fails else '') if ok else
+    nbk = max([p['n_books'] for p in out] or [0])
+    src('odds_api', ok, ('%d props for %d games from up to %d books; %s credits left%s' % (len(out), len(mine), nbk, ODDS['left'] if ODDS['left'] is not None else '?', ('; %d games failed' % fails) if fails else '')) if ok else
         'The key worked but returned no player props. Your plan may not include them, or lines are not posted yet.')
     return out if ok else None
 
@@ -1734,15 +1960,19 @@ RULES
 - The market line already reflects public injury news. When a market line is given, keep margin_adj and total_adj at 0 unless the packet shows a specific, quantifiable reason the line misses (a rating or rest mismatch with numbers). Never exceed +/-2.0 margin or +/-5.0 total when a line exists.
 - Officials, when given, are measured from this season's box scores and shrunk hard. A crew number is a small nudge to totals and free throws, never a reason for a pick on its own.
 - Smart signals (hit-rate, form, cushion, matchup, role, pace, minutes) are pattern flags computed from history. They are context, never a reason to move a number.
+- TRACK RECORD, when present, is how past EpLocks picks actually graded out. Follow its lessons when you set mult and skip, respect the sample sizes it states, and say so in a prop note when a lesson changed your call. It is never a reason to invent or move a game number.
 - Early season samples are small. Say so when it matters and do not overstate.
 - You do not decide probabilities, confidence or stake sizes. The code computes them from your adjustments.
 - For props, mult scales the player's expected output (0.90 to 1.10). Change it only for a stated reason that is in the DATA (a starter listed out raising usage, a minutes change visible in the last games). Use skip=true for any player listed Out, Doubtful or Questionable, or whose role looks unclear.
+- JUDGMENT. After you have read the DATA, step back and answer as a sharp, honest handicapper who is betting their own money: what is the realistic chance of each outcome, counting what numbers cannot see (motivation and schedule spot, how this coach manages minutes, how this matchup tends to play, how much a late injury really changes things)? This is your own view, and it is scored against the model's, so be calibrated: 0.50 means no view. Stay close to the market's fair price (given in the DATA) unless you can name a concrete reason from the DATA or from firm basketball knowledge. If you have no extra insight, give the market's fair number. Probabilities above 0.80 or below 0.20 are not allowed. Set concern=true only when something specific makes betting this game risky (a key player's status unclear near tip, a line that looks stale or wrong) and say what in why.
 - Plain language. No hype. Be specific and cite the numbers you use.
 
 Reply with one JSON object only:
 {"margin_adj": number, "total_adj": number,
+ "judgment": {"home_win": 0.xx, "cover_home": 0.xx, "over": 0.xx, "conf": "low|med|high", "concern": false, "why": "one short sentence"},
  "analysis": {"lean": "one sentence", "why": ["3 to 5 short data-led points"], "risks": ["1 to 3 short points"], "matchups": ["0 to 3 short matchup notes, tagged (from memory) when they are"], "verify": ["what to check before betting"]},
- "props": [{"id": "p3", "mult": 1.0, "skip": false, "note": "one short sentence"}]}"""
+ "props": [{"id": "p3", "mult": 1.0, "p_over": 0.xx or null, "skip": false, "note": "one short sentence"}]}
+(cover_home = chance the home team covers the posted spread; over = chance the game total goes over the posted number; p_over = your own chance the player goes over his line, or null when you have no view.)"""
 
 
 def call_claude(prompt, system, max_tokens=3500, tries=3):
@@ -1753,7 +1983,8 @@ def call_claude(prompt, system, max_tokens=3500, tries=3):
             STATUS['_budget_note'] = True
             note('Claude time budget used up (%d s); the remaining games get numbers but no written analysis this run' % CLAUDE_BUDGET)
         return None
-    body = json.dumps({'model': MODEL, 'max_tokens': max_tokens, 'system': system, 'messages': [{'role': 'user', 'content': prompt}]}).encode()
+    body = json.dumps({'model': MODEL, 'max_tokens': max_tokens, 'system': [{'type': 'text', 'text': system, 'cache_control': {'type': 'ephemeral'}}],
+                       'messages': [{'role': 'user', 'content': prompt}]}).encode()
     last = None
     for i in range(tries):
         try:
@@ -1831,6 +2062,10 @@ def packet(g):
         L.append('Market (%s): home spread %s, total %s, moneyline home %s / away %s.' % (m.get('provider') or 'ESPN', m.get('spread_home'), m.get('total'), m.get('ml_home'), m.get('ml_away')))
     else:
         L.append('Market: NO LINE LOADED for this game.')
+    fr_ = market_fair(m) if m else {}
+    if fr_:
+        L.append('Market fair price with the bookmaker margin removed%s: home covers %s, over %s, home wins %s.' % (
+            (', averaged over %d books' % m['n_books']) if m.get('n_books') else '', fr_.get('home_cover'), fr_.get('over'), fr_.get('home_win')))
     mo = g['model']
     if mo:
         L.append('Our projection from ratings: home margin %+.1f, total %.1f, pace %.1f. Blended with the market at weight %.2f -> margin %+.1f, total %.1f.' % (
@@ -1857,7 +2092,7 @@ def packet(g):
             m_ = r['model']
             L.append('%s | %s %s | %s %s | %s/%s | n=%d | %s/%s/%s | mean %s | P(over) %s | L10 over %d/%d | min %s/%s | vs opp %s | adjustments: %s' % (
                 r['id'], r['player'], r['team'], STAT_NAMES.get(r['stat'], r['stat']), r['line'], r['over'], r['under'], m_['n'], m_['season'], m_['l10'], m_['l5'], m_['mean'],
-                m_['p_over'], m_['hit_l10'], m_['n_l10'], m_['min_avg'], m_['min_l5'], ('%s avg in %d g' % (r['vs_opp']['avg'], r['vs_opp']['n'])) if r.get('vs_opp') else 'none', adj_text(r)) + (
+                m_['p_over'], m_['hit_l10'], m_['n_l10'], m_['min_avg'], m_['min_l5'], ('%s avg in %d g' % (r['vs_opp']['avg'], r['vs_opp']['n'])) if r.get('vs_opp') else 'none', adj_text(r)) + ((' | market fair P(over) %s from %s books' % (r['fair_over'], r.get('n_books'))) if r.get('fair_over') is not None else '') + (
                 ' | signals (%s): %s' % (r['sig']['side'], ', '.join(i['k'] for i in r['sig']['items'])) if r.get('sig') else ''))
     return '\n'.join(L)
 
@@ -1991,29 +2226,88 @@ def game_conf(edge, min_n, inj_ok, uncertain_key, adj_abs, market_ok):
     return 'High' if (s >= 4 and min_n >= 15) else 'Medium' if s >= 2 else 'Low'
 
 
-def game_picks(g, final_margin, final_total, min_n, inj_ok, uncertain_key, adj_abs):
+def market_fair(m):
+    """No-vig probabilities for a market: the books' consensus when we have it, otherwise worked out from ESPN's two prices."""
+    f = dict((m or {}).get('fair') or {})
+    if not m:
+        return f
+    if f.get('home_cover') is None and m.get('spread_home') is not None:
+        f['home_cover'] = devig2(m.get('spread_odds_home'), m.get('spread_odds_away'))
+    if f.get('over') is None and m.get('total') is not None:
+        f['over'] = devig2(m.get('over_odds'), m.get('under_odds'))
+    if f.get('home_win') is None and m.get('ml_home') is not None and m.get('ml_away') is not None:
+        f['home_win'] = devig2(m.get('ml_home'), m.get('ml_away'))
+    return f
+
+
+# ----------------------------------------------------------------------------- judgment: Claude's own read, a small and tracked part of the decision
+def prob_or_none(x):
+    try:
+        v = float(x)
+    except (TypeError, ValueError):
+        return None
+    return v if 0.02 <= v <= 0.98 else None
+
+
+def judg_mix(p, jp, fair, scale=1.0):
+    """Blend Claude's own probability into the model's, a little. Its number is first held within 12 points of the market's fair price (a view far from the market
+    needs a reason the data can show), then moved only JUDG['w'] of the way, and never more than JUDG_CAP of probability either way. Returns (p, jp used)."""
+    if jp is None or JUDG['w'] <= 0:
+        return p, None
+    ref = fair if fair is not None else p
+    jp = clamp(ref + clamp(jp - ref, -0.12, 0.12), 0.03, 0.97)
+    shift = clamp(JUDG['w'] * scale * (jp - p), -JUDG_CAP, JUDG_CAP)
+    return clamp(p + shift, 0.01, 0.99), jp
+
+
+def build_judgment(history):
+    """Scores Claude's own probabilities against the model's on graded picks (Brier score, lower is better). Once there are enough, the weight follows the evidence:
+    it grows (to at most double) if Claude's read has been the sharper of the two, and shrinks to nothing if it has not."""
+    rows = [(h['jp'], h.get('est_nj', h.get('est')), 1.0 if h['result'] == 'W' else 0.0) for h in history
+            if h.get('result') in ('W', 'L') and h.get('jp') is not None and h.get('kind', 'priced') == 'priced' and h.get('est_nj', h.get('est')) is not None]
+    JUDG.update(w=W_JUDG, n=len(rows), brier_j=None, brier_m=None)
+    if len(rows) >= 40 and W_JUDG > 0:
+        bj = mean((j - y) ** 2 for j, m_, y in rows)
+        bm = mean((m_ - y) ** 2 for j, m_, y in rows)
+        JUDG['brier_j'], JUDG['brier_m'] = r3(bj), r3(bm)
+        skill = (bm - bj) / bm if bm > 0 else 0.0
+        JUDG['w'] = clamp(W_JUDG * clamp(1.0 + 8.0 * skill, 0.0, 2.0), 0.0, 0.2)
+    return dict(JUDG)
+
+
+def game_picks(g, final_margin, final_total, min_n, inj_ok, uncertain_key, adj_abs, judg=None):
     m = g['market']
     picks = []
     away, home = g['away']['abbr'], g['home']['abbr']
     if not m:
         return picks
+    fr, jd, shop = market_fair(m), judg or {}, m.get('shop') or {}
+
+    def inv(x):
+        return None if x is None else 1 - x
     cands = []
     if m.get('spread_home') is not None:
         L = m['spread_home']
         p_home = phi((final_margin + L) / SD_MARGIN)
-        cands.append(('spread', 'home', '%s %+g' % (home, L), L, m['spread_odds_home'], p_home))
-        cands.append(('spread', 'away', '%s %+g' % (away, -L), -L, m['spread_odds_away'], 1 - p_home))
+        cands.append(('spread', 'home', '%s %+g' % (home, L), L, m['spread_odds_home'], p_home, fr.get('home_cover'), jd.get('cover_home'), 'spread_home'))
+        cands.append(('spread', 'away', '%s %+g' % (away, -L), -L, m['spread_odds_away'], 1 - p_home, inv(fr.get('home_cover')), inv(jd.get('cover_home')), 'spread_away'))
     if m.get('total') is not None and final_total is not None:
         T = m['total']
         p_over = 1 - phi((T - final_total) / SD_TOTAL)
-        cands.append(('total', 'over', 'Over %g' % T, T, m['over_odds'], p_over))
-        cands.append(('total', 'under', 'Under %g' % T, T, m['under_odds'], 1 - p_over))
+        cands.append(('total', 'over', 'Over %g' % T, T, m['over_odds'], p_over, fr.get('over'), jd.get('over'), 'over'))
+        cands.append(('total', 'under', 'Under %g' % T, T, m['under_odds'], 1 - p_over, inv(fr.get('over')), inv(jd.get('over')), 'under'))
     if m.get('ml_home') is not None and m.get('ml_away') is not None:
         pw = phi(final_margin / SD_MARGIN)
-        cands.append(('moneyline', 'home', '%s ML' % home, None, m['ml_home'], pw))
-        cands.append(('moneyline', 'away', '%s ML' % away, None, m['ml_away'], 1 - pw))
-    cands = [c[:5] + (cal_p(c[5], c[4], 'game'), c[5]) for c in cands if c[4] is not None]
-    scored = sorted(((c[5] - impl(c[4]), c) for c in cands), key=lambda x: -x[0])
+        cands.append(('moneyline', 'home', '%s ML' % home, None, m['ml_home'], pw, fr.get('home_win'), jd.get('home_win'), 'ml_home'))
+        cands.append(('moneyline', 'away', '%s ML' % away, None, m['ml_away'], 1 - pw, inv(fr.get('home_win')), inv(jd.get('home_win')), 'ml_away'))
+    cs = []
+    for c in cands:
+        if c[4] is None:
+            continue
+        pc = cal_p(c[5], c[4], 'game', c[6])
+        pj, jpu = judg_mix(pc, c[7], c[6], jd.get('scale', 1.0))
+        cs.append((c[0], c[1], c[2], c[3], c[4], pj, c[5], c[6], jpu, pc, c[8]))
+    scored = sorted(((c[5] - impl(c[4]), c) for c in cs), key=lambda x: -x[0])
     seen_type = set()
     for edge, c in scored:
         if edge < 0.02 or len(picks) >= 2 or c[0] in seen_type:
@@ -2023,21 +2317,35 @@ def game_picks(g, final_margin, final_total, min_n, inj_ok, uncertain_key, adj_a
         flag = ''
         if edge > 0.08:
             conf, flag = 'Low', 'Unusually large edge for an NBA market. Check injuries, the line and the data before trusting it.'
+        units = kelly_units(c[5], c[4])
+        if jd.get('concern'):
+            if conf == 'High':
+                conf = 'Medium'
+            units = max(0.5, units - 0.5)
+            flag = ((flag + ' ') if flag else '') + ('Claude flagged a concern: %s' % (jd.get('why') or 'see the written analysis'))[:240]
+        elif c[8] is not None and c[7] is not None and c[8] - c[7] <= -0.03:
+            conf = 'Medium' if conf == 'High' else conf
+            flag = flag or 'Claude\'s own read of this side is below the market\'s fair price, so the confidence is held back.'
         picks.append({'type': c[0], 'side': c[1], 'label': c[2], 'line': c[3], 'odds': c[4], 'est': r3(c[5]), 'est_raw': r3(c[6]), 'implied': r3(impl(c[4])), 'edge': r3(edge),
-                      'kind': 'priced', 'conf': conf, 'units': kelly_units(c[5], c[4]), 'flag': flag})
+                      'kind': 'priced', 'conf': conf, 'units': units, 'flag': flag, 'fair': r3(c[7]), 'jp': r3(c[8]), 'est_nj': r3(c[9]),
+                      'book': shop.get(c[10]), 'n_books': m.get('n_books')})
     return picks
 
 
-def prop_pick(row, mult, injured_flag):
+def prop_pick(row, mult, injured_flag, jp_over=None, concern=False, why=''):
     """Choose the better side of a prop row from the model numbers; returns a pick dict or None."""
     pm = row['model']
+    fo = row.get('fair_over')
     options = []
     for side, p, price in (('over', pm['p_over'], row['over']), ('under', pm['p_under'], row['under'])):
         kind = 'priced' if price is not None else 'assumed'
         pr = price if price is not None else -110
-        pc = cal_p(p, pr, 'prop')
-        options.append((pc - impl(pr), side, pc, pr, kind, p))
-    edge, side, p, pr, kind, p_raw = max(options)
+        fair = None if fo is None else (fo if side == 'over' else 1 - fo)
+        pc = cal_p(p, pr, 'prop', fair, pm.get('n_eff', pm['n']))
+        jp = None if jp_over is None else (jp_over if side == 'over' else 1 - jp_over)
+        pj, jpu = judg_mix(pc, jp, fair)
+        options.append((pj - impl(pr), side, pj, pr, kind, p, pc, jpu, fair))
+    edge, side, p, pr, kind, p_raw, pc, jpu, fair = max(options, key=lambda o: o[0])
     if edge < 0.02:
         return None
     n, minavg = pm.get('n_eff', pm['n']), pm['min_avg'] or 0
@@ -2055,9 +2363,18 @@ def prop_pick(row, mult, injured_flag):
     flag = ''
     if edge > 0.12:
         conf, flag = 'Low', 'Unusually large edge. Check the line, the player\'s role and injury news before trusting it.'
+    units = kelly_units(p, pr)
+    if concern:
+        conf = 'Medium' if conf == 'High' else conf
+        units = max(0.5, units - 0.5)
+        flag = ((flag + ' ') if flag else '') + ('Claude flagged a concern: %s' % (why or 'see the written analysis'))[:240]
+    elif jpu is not None and fair is not None and jpu - fair <= -0.03:
+        conf = 'Medium' if conf == 'High' else conf
+        flag = flag or 'Claude\'s own read of this side is below the market\'s fair price, so the confidence is held back.'
     return {'type': 'prop', 'side': side, 'label': '%s %s %g %s' % (row['player'], side, row['line'], STAT_NAMES.get(row['stat'], row['stat']).lower()), 'line': row['line'], 'odds': pr,
-            'est': r3(p), 'est_raw': r3(p_raw), 'implied': r3(impl(pr)), 'edge': r3(edge), 'kind': kind, 'conf': conf, 'units': kelly_units(p, pr), 'player': row['player'], 'stat': row['stat'],
-            'pid': row['pid'], 'mean': pm['mean'], 'hit_l10': '%d/%d' % (pm['hit_l10'], pm['n_l10']), 'flag': flag}
+            'est': r3(p), 'est_raw': r3(p_raw), 'implied': r3(impl(pr)), 'edge': r3(edge), 'kind': kind, 'conf': conf, 'units': units, 'player': row['player'], 'stat': row['stat'],
+            'pid': row['pid'], 'mean': pm['mean'], 'hit_l10': '%d/%d' % (pm['hit_l10'], pm['n_l10']), 'flag': flag, 'fair': r3(fair), 'jp': r3(jpu), 'est_nj': r3(pc),
+            'book': row.get('over_book' if side == 'over' else 'under_book'), 'n_books': row.get('n_books'), 'sd': pm.get('sd')}
 
 
 def rank_key(p):
@@ -2088,6 +2405,7 @@ def grade_history(history, games, today=None):
                 res = 'V'
             else:
                 v = STAT_FN[h['stat']](row)
+                h['actual'] = v
                 if v == h['line']:
                     res = 'P'
                 else:
@@ -2110,6 +2428,233 @@ def grade_history(history, games, today=None):
             h['final'] = '%s %d - %s %d' % (g['away']['ab'], g['away']['pts'], g['home']['ab'], g['home']['pts'])
             changed += 1
     return changed
+
+
+# ----------------------------------------------------------------------------- auditor
+# The auditor runs right after grading. It measures how every part of the bot has actually done on graded picks
+# (each market, each confidence tier, each smart signal, each edge size), rates each one with strict sample-size rules,
+# asks Claude for a few short lessons, and hands the result to the picks step so the bot learns from its own record.
+# Ratings never touch a probability. The only thing they can change in code is a market rated TRUST_LESS on 50+
+# graded picks: its picks drop one confidence tier and risk half the units until the record recovers.
+AUDIT_MIN = 20          # graded picks before a row can be rated at all
+AUDIT_FULL = 50         # graded picks before a rating can change a pick in code
+AUDIT_EARLY = 100       # total graded picks before the auditor stops calling every rating tentative
+AUDIT = {'ratings': {}, 'text': ''}
+
+AUDIT_SYS = """You are the EpLocks AI Auditor. You never make picks. You read the graded record of past EpLocks picks and write short, specific lessons that the EpLocks picks analyst reads before analyzing today's games.
+
+RULES
+- Use only the numbers given. Never invent a result, a record or a stat.
+- Sample sizes decide everything. A row marked NOT_ENOUGH_DATA can never be the basis of a lesson. Under 100 total graded picks, call every pattern tentative.
+- Win rate is judged against break-even at the prices taken (shown per row), not against 50%.
+- Closing-line value (CLV) is the best early sign of real skill. A group that loses but beats the close is likely unlucky; one that wins but loses to the close is likely lucky.
+- One bad or good night is noise. Keep yesterday's lessons unless the record clearly changed.
+- The analyst can only do two things with a lesson: scale a player's expected output (0.90 to 1.10) or skip a prop. Write lessons it can act on through those, e.g. "Rebound overs are 14-27 on 50+ picks: lean skip unless the role change is in the data."
+- Separate bad process (the read was wrong) from bad luck (blowout, foul trouble, early injury) when the box score shows it.
+- Plain language, no hype, at most 5 lessons, each under 30 words.
+
+Reply with one JSON object only:
+{"summary": "two sentences on how the bot is doing", "lessons": ["up to 5 short lessons"], "yesterday": "one or two sentences on the last graded day"}"""
+
+
+def audit_market(h):
+    return ('prop:' + h.get('stat', '?')) if h.get('type') == 'prop' else h.get('type', '?')
+
+
+def audit_edge_bucket(e):
+    e = e or 0
+    return '2-4%' if e < 0.04 else '4-8%' if e < 0.08 else '8-12%' if e < 0.12 else '12%+'
+
+
+def audit_rate(g):
+    """TRUST_MORE / NEUTRAL / TRUST_LESS / NOT_ENOUGH_DATA from wins against break-even at the prices taken."""
+    n = g['w'] + g['l']
+    if n < AUDIT_MIN:
+        return 'NOT_ENOUGH_DATA'
+    diff = g['w'] / float(n) - g['be'] / n
+    z = diff / math.sqrt(max(0.25 / n, 1e-9))
+    need = 0.08 if n < AUDIT_FULL else 0.04
+    if abs(diff) >= need and abs(z) >= 1.64:
+        if diff < 0 and g.get('clv_n', 0) >= AUDIT_MIN and g['clv_sum'] / g['clv_n'] >= 0.01:
+            return 'NEUTRAL'     # losing but beating the closing line: good reads, bad luck so far
+        return 'TRUST_MORE' if diff > 0 else 'TRUST_LESS'
+    return 'NEUTRAL'
+
+
+def audit_groups(history):
+    graded = [h for h in history if h.get('result') in ('W', 'L', 'P') and h.get('kind', 'priced') == 'priced' and h.get('odds') is not None]
+    groups = {}
+
+    def add(kind, key, h):
+        g = groups.setdefault((kind, key), {'kind': kind, 'key': key, 'w': 0, 'l': 0, 'p': 0, 'net': 0.0, 'risk': 0.0, 'est': 0.0, 'be': 0.0, 'clv_sum': 0.0, 'clv_n': 0})
+        r = h['result']
+        g['w' if r == 'W' else 'l' if r == 'L' else 'p'] += 1
+        g['net'] += h.get('profit') or 0.0
+        g['risk'] += h.get('units') or 0.0
+        if r in ('W', 'L'):
+            g['est'] += h.get('est') or 0.0
+            g['be'] += impl(h['odds'])
+        if h.get('clv') is not None:
+            g['clv_sum'] += h['clv']
+            g['clv_n'] += 1
+
+    for h in graded:
+        add('overall', 'all picks', h)
+        add('market', audit_market(h), h)
+        add('confidence', h.get('conf') or '?', h)
+        add('edge', audit_edge_bucket(h.get('edge')), h)
+        for s in h.get('sig') or []:
+            add('signal', s, h)
+        if not h.get('sig'):
+            add('signal', 'no signal', h)
+    out = []
+    for g in groups.values():
+        n = g['w'] + g['l']
+        g['n'] = n
+        g['win'] = r3(g['w'] / float(n)) if n else None
+        g['breakeven'] = r3(g['be'] / n) if n else None
+        g['model'] = r3(g['est'] / n) if n else None
+        g['roi'] = r3(g['net'] / g['risk']) if g['risk'] else None
+        g['net'] = round(g['net'], 2)
+        g['rating'] = audit_rate(g)
+        g['clv'] = r3(g['clv_sum'] / g['clv_n']) if g['clv_n'] else None
+        for k in ('est', 'be', 'risk', 'clv_sum', 'clv_n'):
+            g.pop(k, None)
+        out.append(g)
+    order = {'overall': 0, 'market': 1, 'confidence': 2, 'signal': 3, 'edge': 4}
+    out.sort(key=lambda g: (order.get(g['kind'], 9), -g['n']))
+    return out, len(graded)
+
+
+def audit_last_day(history):
+    days = sorted({h['date'] for h in history if h.get('result') in ('W', 'L', 'P')})
+    if not days:
+        return None
+    d = days[-1]
+    rows = [h for h in history if h['date'] == d and h.get('result') in ('W', 'L', 'P')]
+    w, l, p = (sum(1 for h in rows if h['result'] == x) for x in ('W', 'L', 'P'))
+    return {'date': d, 'record': '%d-%d-%d' % (w, l, p), 'units': round(sum(h.get('profit') or 0.0 for h in rows), 2), 'rows': rows}
+
+
+def audit_fmt(groups, n_total, last, prev_lessons):
+    L = ['GRADED PICKS SO FAR: %d%s' % (n_total, ' (early sample: every pattern is tentative)' if n_total < AUDIT_EARLY else ''),
+         'Columns: group | W-L-P | win% | break-even% at the prices taken | model said% | units | ROI | avg closing-line value | rating']
+    for g in groups:
+        L.append('%s %s | %d-%d-%d | %s | %s | %s | %+.2f | %s | %s | %s' % (
+            g['kind'], g['key'], g['w'], g['l'], g['p'], pct_s(g['win']), pct_s(g['breakeven']), pct_s(g['model']), g['net'],
+            pct_s(g['roi']), 'n/a' if g['clv'] is None else '%+.1f%%' % (100 * g['clv']), g['rating']))
+    if last:
+        L.append('')
+        L.append('LAST GRADED DAY %s: %s, %+.2f units' % (last['date'], last['record'], last['units']))
+        for h in sorted(last['rows'], key=lambda h: h.get('profit') or 0.0)[:40]:
+            act = (' | actual %s' % h['actual']) if h.get('actual') is not None else ''
+            L.append('%s | %s %+d | model %s | %s | %s%s | signals: %s' % (
+                h['result'], h['label'], h.get('odds') or -110, pct_s(h.get('est')), h.get('conf'), h.get('final', ''), act, ', '.join(h.get('sig') or []) or 'none'))
+    if prev_lessons:
+        L.append('')
+        L.append('YESTERDAY\'S LESSONS:')
+        L.extend('- ' + s for s in prev_lessons)
+    return '\n'.join(L)
+
+
+def pct_s(x):
+    return 'n/a' if x is None else '%.1f%%' % (100 * x)
+
+
+def run_audit(history, today, prev):
+    """Builds the audit, asks Claude for lessons when the record changed, and loads AUDIT for the picks step."""
+    groups, n_total = audit_groups(history)
+    last = audit_last_day(history)
+    prev_lessons = (prev or {}).get('lessons') or []
+    audit = {'date': today.isoformat(), 'graded': n_total, 'early': n_total < AUDIT_EARLY, 'groups': groups,
+             'last_day': {k: v for k, v in last.items() if k != 'rows'} if last else None,
+             'summary': '', 'lessons': [], 'yesterday': '', 'by': 'code'}
+    if n_total < 1:
+        audit['summary'] = 'No graded picks yet. The auditor starts learning after the first games finish and are graded.'
+    else:
+        text = audit_fmt(groups, n_total, last, prev_lessons)
+        h = hashlib.sha1((AUDIT_SYS + text).encode('utf8')).hexdigest()
+        if prev and prev.get('h') == h and prev.get('by') == 'claude':
+            audit.update({k: prev[k] for k in ('summary', 'lessons', 'yesterday', 'by')})
+            audit['h'] = h
+        else:
+            js = extract_json(call_claude(text + '\n\nReturn the JSON object now.', AUDIT_SYS, max_tokens=1200)) if API_KEY else None
+            if isinstance(js, dict) and isinstance(js.get('lessons'), list):
+                audit.update({'summary': str(js.get('summary') or '')[:400], 'lessons': [str(s)[:240] for s in js['lessons']][:5],
+                              'yesterday': str(js.get('yesterday') or '')[:300], 'by': 'claude', 'h': h})
+            else:
+                ov = next((g for g in groups if g['kind'] == 'overall'), None)
+                audit['summary'] = 'Graded so far: %d-%d-%d, %+.2f units.' % (ov['w'], ov['l'], ov['p'], ov['net']) if ov else ''
+                audit['lessons'] = prev_lessons
+        if n_total < AUDIT_EARLY:
+            early = 'Early sample (%d graded picks). Treat every rating as tentative.' % n_total
+            audit['lessons'] = [early] + [s for s in audit['lessons'] if 'early sample' not in s.lower()][:4]
+    AUDIT['ratings'] = {(g['kind'], g['key']): g for g in groups}
+    AUDIT['text'] = audit_prompt_text(audit)
+    return audit
+
+
+def audit_prompt_text(audit):
+    """The short block added to every game packet so the analyst sees its own record."""
+    if not audit.get('graded'):
+        return ''
+    L = ['TRACK RECORD (from the EpLocks auditor, %d graded picks%s):' % (audit['graded'], ', early sample' if audit.get('early') else '')]
+    if audit.get('summary'):
+        L.append(audit['summary'])
+    for s in audit.get('lessons') or []:
+        L.append('- ' + s)
+    rated = [g for g in audit['groups'] if g['rating'] in ('TRUST_MORE', 'TRUST_LESS') and g['kind'] in ('market', 'signal')]
+    for g in rated[:10]:
+        L.append('%s %s: %d-%d, win %s vs break-even %s -> %s' % (g['kind'], g['key'], g['w'], g['l'], pct_s(g['win']), pct_s(g['breakeven']), g['rating']))
+    return '\n'.join(L)
+
+
+def audit_adjust(p):
+    """A market rated TRUST_LESS on 50+ graded picks: drop one confidence tier and halve the stake."""
+    g = AUDIT['ratings'].get(('market', audit_market(p)))
+    if not g or g['rating'] != 'TRUST_LESS' or g['n'] < AUDIT_FULL:
+        return
+    p['conf'] = {'High': 'Medium', 'Medium': 'Low'}.get(p['conf'], 'Low')
+    p['units'] = max(0.5, round(p['units'] / 2.0 * 2) / 2)
+    msg = 'Auditor: this market is %d-%d over %d graded picks (win %s vs break-even %s), so confidence and stake are cut.' % (
+        g['w'], g['l'], g['n'], pct_s(g['win']), pct_s(g['breakeven']))
+    p['flag'] = (p.get('flag') + ' ' if p.get('flag') else '') + msg
+
+
+# ----------------------------------------------------------------------------- the daily card
+UNIT_CAP = {'High': 2.0, 'Medium': 1.0, 'Low': 0.5}            # the most a pick can risk at each confidence level
+MAX_DAILY_PICKS = int(os.environ.get('EPLOCKS_MAX_PICKS') or 25)
+MAX_PROPS_PER_GAME = int(os.environ.get('EPLOCKS_MAX_PROPS_PER_GAME') or 4)
+MAX_PER_PLAYER = 1
+
+
+def finalize_picks(all_picks, out_games):
+    """Turns every bet that cleared the edge bar into the day's card: holds back edges too big to be real, sizes stakes
+    by confidence, keeps the best few per game and per player, and caps the day. Returns the card, best first."""
+    held = [p for p in all_picks if str(p.get('flag') or '').startswith('Unusually large edge')]
+    pool = [p for p in all_picks if p not in held]
+    for p in pool:
+        p['units'] = min(p['units'], UNIT_CAP.get(p['conf'], 0.5))
+    pool.sort(key=lambda p: rank_key(p), reverse=True)
+    card, per_game, per_player = [], {}, {}
+    for p in pool:
+        if len(card) >= MAX_DAILY_PICKS:
+            break
+        if p['type'] == 'prop':
+            if per_game.get(p['game_id'], 0) >= MAX_PROPS_PER_GAME or per_player.get(p.get('pid'), 0) >= MAX_PER_PLAYER:
+                continue
+            per_game[p['game_id']] = per_game.get(p['game_id'], 0) + 1
+            per_player[p.get('pid')] = per_player.get(p.get('pid'), 0) + 1
+        card.append(p)
+    keep = {id(p) for p in card}
+    for g in out_games:
+        g['pick_objs'] = [p for p in g.get('pick_objs') or [] if id(p) in keep]
+        g['picks'] = [p['id'] for p in g['pick_objs']]
+    cut = len(pool) - len(card)
+    if held or cut:
+        note('Card: %d picks posted%s%s' % (len(card), '; %d held back because the edge looked too big to be real (usually a stale line or a role change)' % len(held) if held else '',
+                                           '; %d more cleared the bar but missed the daily cap (%d a day, %d props a game, 1 per player)' % (cut, MAX_DAILY_PICKS, MAX_PROPS_PER_GAME) if cut else ''))
+    return card
 
 
 # ----------------------------------------------------------------------------- main
@@ -2138,16 +2683,363 @@ def team_block(ev_team, ratings, logs, injuries, inj_ok, today, name_to_abbr):
             'ratings': rt, 'rotation': rot, 'injuries': inj, 'injuries_ok': inj_ok}
 
 
+# ----------------------------------------------------------------------------- closing line value (CLV)
+# The closing line is the market's last and sharpest opinion. A pick that beat the close was a better number than the market ended up agreeing on,
+# which is the quickest honest signal of skill: it shows up in dozens of picks, while win-loss records need hundreds.
+CLV_SLOPE = {'spread': 0.033, 'total': 0.023}     # probability per point near the middle (normal curve with the typical NBA error)
+
+
+def parse_utc(s):
+    try:
+        return dt.datetime.fromisoformat(str(s).replace('Z', '+00:00')).astimezone(dt.timezone.utc)
+    except Exception:  # noqa
+        return None
+
+
+def close_for(h, m):
+    """The closing line, price and no-vig probability on the SAME side the pick took, from a market dict. None when the market lacks it."""
+    f = market_fair(m)
+    t, s = h.get('type'), h.get('side')
+    if t == 'spread':
+        if m.get('spread_home') is None:
+            return None
+        home = s == 'home'
+        L = m['spread_home'] if home else -m['spread_home']
+        od = m.get('spread_odds_home') if home else m.get('spread_odds_away')
+        fp = f.get('home_cover')
+        fp = fp if home else (None if fp is None else 1 - fp)
+    elif t == 'total':
+        if m.get('total') is None:
+            return None
+        over = s == 'over'
+        L, od = m['total'], (m.get('over_odds') if over else m.get('under_odds'))
+        fp = f.get('over')
+        fp = fp if over else (None if fp is None else 1 - fp)
+    elif t == 'moneyline':
+        home = s == 'home'
+        L, od = None, (m.get('ml_home') if home else m.get('ml_away'))
+        fp = f.get('home_win')
+        fp = fp if home else (None if fp is None else 1 - fp)
+        if od is None:
+            return None
+    else:
+        return None
+    return {'line': L, 'odds': od, 'fair': r3(fp), 'n': m.get('n_books') or 1}
+
+
+def clv_calc(h, c):
+    """How much better the pick's number was than the close. clv_pts: points of line (positive = better than the close). clv: the pick's edge over the
+    closing fair price, in probability, after allowing for any line move."""
+    pts, slope = 0.0, 0.0
+    if h['type'] == 'spread' and c.get('line') is not None:
+        pts, slope = h['line'] - c['line'], CLV_SLOPE['spread']
+    elif h['type'] == 'total' and c.get('line') is not None:
+        pts, slope = ((c['line'] - h['line']) if h['side'] == 'over' else (h['line'] - c['line'])), CLV_SLOPE['total']
+    elif h['type'] == 'prop' and c.get('line') is not None:
+        pts = (c['line'] - h['line']) if h['side'] == 'over' else (h['line'] - c['line'])
+        slope = 0.4 / max(h.get('sd') or 0.3 * abs(h['line']), 1.0)
+    out = {'clv_pts': round(pts, 2) if h['type'] != 'moneyline' else None, 'clv': None}
+    if c.get('fair') is not None and h.get('odds') is not None:
+        out['clv'] = round(c['fair'] + slope * pts - impl(h['odds']), 4)
+    return out
+
+
+def run_closing():
+    """--closing: runs every 20 minutes in the evening. Does nothing (and spends no credits) unless a logged pick tips off within CLOSE_WINDOW_MIN minutes.
+    Then it reads the market once more and stores the closing line beside each such pick."""
+    now = dt.datetime.now(dt.timezone.utc)
+    o = os.environ.get('EPLOCKS_NOW')
+    if o:
+        now = parse_utc(o)
+    hist_path = os.path.join(OUT, 'history.json')
+    history = jload(hist_path, [])
+    latest = jload(os.path.join(OUT, 'latest.json'), {})
+    gmap = {g['id']: g for g in latest.get('games', [])}
+    due = []
+    for h in history:
+        if h.get('result'):
+            continue
+        t = parse_utc(h.get('utc') or (gmap.get(h.get('game_id')) or {}).get('utc'))
+        if t and 0.5 <= (t - now).total_seconds() / 60.0 <= CLOSE_WINDOW_MIN:
+            due.append(h)
+    if not due:
+        print('Closing mode: no logged pick tips off within %d minutes. Nothing to do.' % CLOSE_WINDOW_MIN, flush=True)
+        return 0
+    print('Closing mode: %d picks tip off within %d minutes' % (len(due), CLOSE_WINDOW_MIN), flush=True)
+    gids = sorted({h['game_id'] for h in due})
+    espn_m = {}
+    for ds in sorted({h['date'] for h in due}):
+        try:
+            js = http_json('%s/scoreboard?dates=%s&limit=100' % (ESPN, ds.replace('-', '')))
+            for e in js.get('events') or []:
+                ev = parse_event(e)
+                if ev.get('market') and ev['id'] in gids:
+                    espn_m[ev['id']] = ev['market']
+        except Exception as ex:  # noqa
+            note('Closing: scoreboard for %s failed: %s' % (ds, str(ex)[:100]))
+    ev_like = [{'id': gid, 'state': 'pre', 'home': {'name': gmap[gid]['home']['name']}, 'away': {'name': gmap[gid]['away']['name']}} for gid in gids if gid in gmap]
+    game_due = [h for h in due if h['type'] != 'prop']
+    books_m = fetch_game_books([e for e in ev_like if e['id'] in {h['game_id'] for h in game_due}]) if (ODDS_KEY and game_due) else {}
+    prop_by = {}
+    prop_due = [h for h in due if h['type'] == 'prop']
+    if ODDS_KEY and prop_due:
+        try:
+            evs = odds_get('events', {})
+            oid = {(nick(e.get('home_team')), nick(e.get('away_team'))): e['id'] for e in evs if isinstance(e, dict)} if isinstance(evs, list) else {}
+            for gid in sorted({h['game_id'] for h in prop_due}):
+                g = gmap.get(gid)
+                if not g:
+                    continue
+                eid = oid.get((nick(g['home']['name']), nick(g['away']['name'])))
+                mk = sorted({STAT_MARKET[h['stat']] for h in prop_due if h['game_id'] == gid and h.get('stat') in STAT_MARKET})
+                if not eid or not mk:
+                    continue
+                if not odds_ok(len(mk) * len(ODDS_REGIONS.split(','))):
+                    note('Closing: Odds API credits are nearly used up (%s left), so prop closing lines are skipped' % ODDS['left'])
+                    break
+                js = odds_get('events/%s/odds' % eid, {'regions': ODDS_REGIONS, 'markets': ','.join(mk), 'oddsFormat': 'american'})
+                for p in agg_props(js):
+                    prop_by[(gid, norm_name(p['player']), p['stat'])] = p
+        except Exception as ex:  # noqa
+            note('Closing: prop lines failed: %s' % str(ex)[:120])
+    stamp, n_ok = now.strftime('%Y-%m-%dT%H:%M:%SZ'), 0
+    for h in due:
+        c = None
+        if h['type'] == 'prop':
+            p = prop_by.get((h['game_id'], norm_name(h.get('player', '')), h.get('stat')))
+            if p:
+                over, fo = h['side'] == 'over', p.get('fair_over')
+                c = {'line': p['line'], 'odds': p['over'] if over else p['under'], 'fair': fo if over else (None if fo is None else r3(1 - fo)), 'n': p['n_books']}
+        else:
+            m = merge_market(espn_m.get(h['game_id']), books_m.get(h['game_id']))
+            c = close_for(h, m) if m else None
+        if not c:
+            continue
+        h['close'] = dict(c, t=stamp)
+        h.update(clv_calc(h, c))
+        if not h.get('utc') and gmap.get(h['game_id']):
+            h['utc'] = gmap[h['game_id']].get('utc')
+        n_ok += 1
+    jsave(hist_path, history)
+    if latest:
+        stt = latest.setdefault('status', {}).setdefault('sources', {})
+        stt['closing'] = {'ok': n_ok > 0, 'msg': 'closing lines saved for %d of %d picks near tip-off (last check %s UTC)' % (n_ok, len(due), now.strftime('%H:%M'))}
+        latest['odds'] = {'left': ODDS['left'], 'used_closing': ODDS['used']}
+        jsave(os.path.join(OUT, 'latest.json'), latest)
+    print('Closing lines saved for %d of %d picks' % (n_ok, len(due)), flush=True)
+    return 0
+
+
+# ----------------------------------------------------------------------------- backtest: replay last season through the same ratings and pricing
+BT_SECONDS = float(os.environ.get('EPLOCKS_BACKTEST_SECONDS') or 600)
+LINE_KEYS = ('provider', 'spread_home', 'total', 'ml_home', 'ml_away', 'spread_odds_home', 'spread_odds_away', 'over_odds', 'under_odds')
+
+
+def bt_fetch_lines(days, lc):
+    """Closing lines ESPN still shows for last season's games (one scoreboard call per day, saved so it only ever happens once)."""
+    done = set(lc['days_done'])
+    todo = [d for d in days if d not in done]
+    t0 = time.time()
+
+    def one(d):
+        try:
+            js = http_json('%s/scoreboard?dates=%s&limit=100' % (ESPN, d.replace('-', '')), tries=2)
+            out = {}
+            for e in js.get('events') or []:
+                ev = parse_event(e)
+                if ev.get('market') and 'home' in ev:
+                    out[ev['id']] = {k: ev['market'].get(k) for k in LINE_KEYS}
+            return d, out
+        except Exception:  # noqa
+            return d, None
+    with ThreadPoolExecutor(max_workers=6) as ex:
+        for i in range(0, len(todo), 30):
+            if time.time() - t0 > BT_SECONDS:
+                break
+            for d, out in ex.map(one, todo[i:i + 30]):
+                if out is not None:
+                    lc['lines'].update(out)
+                    lc['days_done'].append(d)
+    return len(todo)
+
+
+def bt_bucket(rows):
+    n = len(rows)
+    w = sum(1 for r in rows if r['result'] == 'W')
+    l_ = sum(1 for r in rows if r['result'] == 'L')
+    net = sum(r['profit'] for r in rows)
+    return {'n': n, 'w': w, 'l': l_, 'hit': r3(w / float(w + l_)) if (w + l_) else None, 'roi': r3(net / n) if n else None, 'est': r3(mean(r['est'] for r in rows)) if rows else None}
+
+
+def run_backtest(prior_state=None, quiet=False):
+    """Replays last season day by day: ratings built only from games before each day, the same projection, blend and pricing as the live engine (no Claude, no
+    injuries), priced against ESPN's closing lines and graded on the real final scores. Returns the summary dict and saves data/backtest.json."""
+    st = prior_state or jload(os.path.join(DATA, 'prior.json'), None)
+    games = {k: v for k, v in ((st or {}).get('games') or {}).items() if v.get('date') and (v.get('home') or {}).get('pts') is not None and (v.get('away') or {}).get('pts') is not None}
+    if len(games) < 400:
+        if not quiet:
+            src('backtest', False, 'needs last season loaded first (%d games so far, needs 400)' % len(games))
+        return None
+    path = os.path.join(DATA, 'backtest_lines.json')
+    lc = jload(path, {'v': 1, 'days_done': [], 'lines': {}})
+    by_day = {}
+    for g in games.values():
+        by_day.setdefault(g['date'], []).append(g)
+    days = sorted(by_day)
+    bt_fetch_lines(days, lc)
+    jsave(path, lc)
+    n_lined = sum(1 for g in games.values() if (lc['lines'].get(g['id']) or {}).get('spread_home') is not None or (lc['lines'].get(g['id']) or {}).get('total') is not None)
+    if len(lc['days_done']) < 0.9 * len(days):
+        src('backtest', False, 'still collecting last season\'s lines: %d of %d days. It continues on the next run.' % (len(lc['days_done']), len(days)))
+        return None
+    if n_lined < 300:
+        src('backtest', False, 'ESPN no longer shows closing lines for last season (%d of %d games had one), so there is nothing to replay against' % (n_lined, len(games)))
+        return None
+    saved = dict(CAL)
+    CAL.update({'game': 1.0, 'prop': 1.0})
+    seen, rows, mr, tr = {}, [], [], []
+    try:
+        for d in days:
+            if len(seen) >= 150:
+                ratings, lo, lp = build_ratings(seen)
+                today_ = dt.date.fromisoformat(d)
+                for g in by_day[d]:
+                    mk = lc['lines'].get(g['id'])
+                    if not mk or (mk.get('spread_home') is None and mk.get('total') is None):
+                        continue
+                    hab, aab = g['home']['ab'], g['away']['ab']
+                    rh, ra = ratings.get(hab), ratings.get(aab)
+                    if not rh or not ra or min(rh['n'], ra['n']) < 10:
+                        continue
+                    mo = project(hab, aab, ratings, lo, lp, today_)
+                    if not mo:
+                        continue
+                    n_eff = min(rh['n_eff'], ra['n_eff'])
+                    w = BT_BLEND * n_eff / (n_eff + 12.0)
+                    mkm = -mk['spread_home'] if mk.get('spread_home') is not None else None
+                    bm = mo['margin'] if mkm is None else mkm + w * (mo['margin'] - mkm)
+                    bt_ = mo['total'] if mk.get('total') is None else mk['total'] + w * (mo['total'] - mk['total'])
+                    act_m, act_t = g['home']['pts'] - g['away']['pts'], g['home']['pts'] + g['away']['pts']
+                    if mkm is not None and n_eff >= 25:
+                        mr.append((mkm, mo['margin'], act_m))
+                    if mk.get('total') is not None and n_eff >= 25:
+                        tr.append((mk['total'], mo['total'], act_t))
+                    mk2 = dict(mk, provider='ESPN')
+                    for k_ in ('spread_odds_home', 'spread_odds_away', 'over_odds', 'under_odds'):
+                        mk2[k_] = mk2.get(k_) or -110
+                    pk = game_picks({'market': mk2, 'away': {'abbr': aab}, 'home': {'abbr': hab}}, bm, bt_, n_eff, True, False, 0.0)
+                    for p in pk:
+                        h = dict(p, game_id=g['id'], date=d, units=1.0)
+                        grade_history([h], {g['id']: g})
+                        if h.get('result') in ('W', 'L', 'P'):
+                            rows.append(h)
+            for g in by_day[d]:
+                seen[g['id']] = g
+    finally:
+        CAL.update(saved)
+    dec = [r for r in rows if r['result'] in ('W', 'L')]
+    sxy = sum((r['est_raw'] - impl(r['odds'])) * ((1.0 if r['result'] == 'W' else 0.0) - impl(r['odds'])) for r in dec)
+    sxx = sum((r['est_raw'] - impl(r['odds'])) ** 2 for r in dec)
+    lam = clamp(sxy / sxx, 0.0, 1.0) if sxx > 0 else None
+
+    def best_w(trip):
+        num = sum((mo - mk) * (a - mk) for mk, mo, a in trip)
+        den = sum((mo - mk) ** 2 for mk, mo, a in trip)
+        return clamp(num / den, 0.0, 1.0) if den > 0 else None
+    wm, wt = best_w(mr), best_w(tr)
+
+    def mae(trip, f):
+        return r3(mean(abs(f(mk, mo) - a) for mk, mo, a in trip)) if trip else None
+
+    def rms(trip, f):
+        return r3(math.sqrt(mean((f(mk, mo) - a) ** 2 for mk, mo, a in trip))) if trip else None
+    edges = (('2 to 4 points', 0.02, 0.04), ('4 to 6 points', 0.04, 0.06), ('6 or more', 0.06, 9.0))
+    ests = (('Model chance 50 to 55%', 0.0, 0.55), ('55 to 60%', 0.55, 0.60), ('60% or more', 0.60, 1.01))
+    types = {}
+    for t in ('spread', 'total', 'moneyline'):
+        types[t] = bt_bucket([r for r in rows if r['type'] == t])
+    months = {}
+    for r in rows:
+        months.setdefault(r['date'][:7], []).append(r)
+    bt = {'generated_at': dt.datetime.now(dt.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'), 'season': '%s to %s' % (days[0], days[-1]), 'engine': ENGINE_VERSION,
+          'games': len(games), 'lined': n_lined, 'bets': len(rows), 'all': bt_bucket(rows), 'by_type': types,
+          'by_edge': [dict(label=lb, **bt_bucket([r for r in rows if lo_ <= r['edge'] < hi_])) for lb, lo_, hi_ in edges],
+          'by_est': [dict(label=lb, **bt_bucket([r for r in rows if lo_ <= r['est'] < hi_])) for lb, lo_, hi_ in ests],
+          'months': [dict(m=k, **bt_bucket(v)) for k, v in sorted(months.items())],
+          'lambda': r3(lam), 'lambda_n': len(dec),
+          'mae_margin': {'market': mae(mr, lambda mk, mo: mk), 'model': mae(mr, lambda mk, mo: mo), 'blend': mae(mr, lambda mk, mo: mk + (wm or 0) * (mo - mk)), 'n': len(mr)},
+          'mae_total': {'market': mae(tr, lambda mk, mo: mk), 'model': mae(tr, lambda mk, mo: mo), 'blend': mae(tr, lambda mk, mo: mk + (wt or 0) * (mo - mk)), 'n': len(tr)},
+          'best_w_margin': r3(wm), 'best_w_total': r3(wt),
+          'sd_margin': rms(mr, lambda mk, mo: mk + (wm or 0) * (mo - mk)), 'sd_total': rms(tr, lambda mk, mo: mk + (wt or 0) * (mo - mk)),
+          'note': 'Replay of last season with team ratings only: no Claude, no injuries, no props (past prop lines are not available). Each day uses only games played before it.'}
+    jsave(os.path.join(OUT, 'backtest.json'), bt)
+    src('backtest', True, '%d games replayed, %d bets, ROI %s%%; model keeps about %s%% of its raw edge' % (len(games), len(rows), r1(100 * (bt['all']['roi'] or 0)), r1(100 * lam) if lam is not None else '?'))
+    return bt
+
+
+BT_BLEND = 0.5
+
+
+def apply_backtest():
+    """Seeds the starting beliefs from last season's replay when it has enough bets. Live results still take over as they accumulate."""
+    global BLEND_MAX
+    bt = jload(os.path.join(OUT, 'backtest.json'), None)
+    if not bt or (bt.get('bets') or 0) < 150:
+        return None
+    msg = []
+    if bt.get('lambda') is not None and (bt.get('lambda_n') or 0) >= 150:
+        CAL_PRIOR['game'] = clamp(bt['lambda'], 0.3, 1.0)
+        CAL['game'] = CAL_PRIOR['game']
+        msg.append('game picks start at x%.2f of the raw edge' % CAL_PRIOR['game'])
+    wm = bt.get('best_w_margin')
+    if wm is not None and (bt.get('mae_margin') or {}).get('n', 0) >= 300:
+        BLEND_MAX = clamp(wm / 0.75, 0.05, 0.6)
+        msg.append('model weight against the market tops out at %.2f' % BLEND_MAX)
+    if msg:
+        note('Last-season backtest set the starting point: ' + '; '.join(msg))
+    return bt
+
+
+def maybe_backtest(prior_state):
+    """Runs the replay once last season has fully loaded, then again about once a month."""
+    if not prior_state or not prior_state.get('complete'):
+        return
+    bt = jload(os.path.join(OUT, 'backtest.json'), None)
+    if bt:
+        try:
+            age = (dt.datetime.now(dt.timezone.utc) - parse_utc(bt['generated_at'])).days
+        except Exception:  # noqa
+            age = 99
+        if age < 30:
+            return
+    try:
+        run_backtest(prior_state)
+    except Exception as e:  # noqa
+        src('backtest', False, 'replay failed: %s' % str(e)[:140])
+
+
 def main(argv):
     only_data = '--no-llm' in argv
     global API_KEY
     if only_data:
         API_KEY = ''
+    if '--closing' in argv:
+        return run_closing()
+    if '--backtest' in argv:
+        bt = run_backtest(None)
+        print(json.dumps({'backtest': bool(bt), 'status': STATUS['sources'].get('backtest'), 'notes': STATUS['notes'][-3:]}), flush=True)
+        return 0
     today = today_ct()
     started = dt.datetime.now(dt.timezone.utc)
     print('EpLocks run for', today, flush=True)
 
     cache, slate_events = update_games(today)
+    try:
+        books_ = fetch_game_books(slate_events)
+        for ev_ in slate_events:
+            ev_['market'] = merge_market(ev_.get('market'), books_.get(ev_['id']))
+    except Exception as e:  # noqa
+        note('Multi-book prices skipped: %s' % str(e)[:100])
     games = {k: v for k, v in cache['games'].items() if v.get('date') and v['date'] <= today.isoformat()}
     prior_state = None
     try:
@@ -2171,6 +3063,12 @@ def main(argv):
         elif prior_state is not None:
             src('prior_season', True, 'still loading last season: %d of %d days done. It finishes over the next run or two; until then picks use this season only.' % (
                 len(prior_state['days_done']), (dt.date.fromisoformat(PRIOR_END) - dt.date.fromisoformat(PRIOR_START)).days + 1))
+    try:
+        maybe_backtest(prior_state)
+        apply_backtest()
+    except Exception as e:  # noqa
+        note('Backtest skipped: %s' % str(e)[:100])
+    CL_T0 = time.time()
     ratings, lg_ortg, lg_pace = build_ratings(games, pr_pack) if games else ({}, 112.0, 99.0)
     sane = (not games) or (95.0 <= lg_ortg <= 135.0 and 85.0 <= lg_pace <= 112.0)
     if not sane:
@@ -2261,6 +3159,23 @@ def main(argv):
             CAL['game'], CAL['prop'], cal_n['game'], cal_n['prop']))
     except Exception as e:  # noqa
         src('calibration', False, 'self-calibration failed: %s' % str(e)[:120])
+    try:
+        build_judgment(history)
+        src('judgment', True, ('Claude\'s own probability moves the model\'s by %.0f%% (at most %.0f points)%s' % (
+            100 * JUDG['w'], 100 * JUDG_CAP, ('; so far Claude\'s probabilities score %s against the model\'s %s over %d graded picks (lower is better)' % (
+                JUDG['brier_j'], JUDG['brier_m'], JUDG['n'])) if JUDG['brier_j'] is not None else '; the weight adjusts itself after 40 graded picks')) if JUDG['w'] > 0 else 'switched off')
+    except Exception as e:  # noqa
+        src('judgment', False, 'failed: %s' % str(e)[:120])
+
+    # auditor: learn from the graded record before today's picks are made
+    audit = None
+    try:
+        audit_path = os.path.join(OUT, 'audit.json')
+        audit = run_audit(history, today, jload(audit_path, {}))
+        jsave(audit_path, audit)
+        src('auditor', True, '%d graded picks reviewed; %d lessons%s' % (audit['graded'], len(audit['lessons']), ' (written by Claude)' if audit.get('by') == 'claude' else ''))
+    except Exception as e:  # noqa
+        src('auditor', False, 'the auditor failed: %s' % str(e)[:120])
 
     # props
     props_txt = ''
@@ -2323,7 +3238,7 @@ def main(argv):
         mk = ev['market']
         blend = None
         if mo:
-            w = 0.5 * min_n / (min_n + 12.0) if mk else 1.0
+            w = BLEND_MAX * min_n / (min_n + 12.0) if mk else 1.0
             mk_margin = -mk['spread_home'] if (mk and mk.get('spread_home') is not None) else None
             mk_total = mk['total'] if (mk and mk.get('total') is not None) else None
             bm = mo['margin'] if mk_margin is None else mk_margin + w * (mo['margin'] - mk_margin)
@@ -2397,9 +3312,9 @@ def main(argv):
             except Exception:  # noqa
                 r['sig'] = None
         # Claude
-        analysis, adjust_m, adjust_t, pnotes = None, 0.0, 0.0, {}
+        analysis, adjust_m, adjust_t, pnotes, judg = None, 0.0, 0.0, {}, None
         if API_KEY and mo and ev['state'] == 'pre':
-            prompt = packet(g) + '\n\nInjuries loaded: %s. Return the JSON object now.' % ('yes' if inj_ok else 'NO')
+            prompt = packet(g) + ('\n\n' + AUDIT['text'] if AUDIT.get('text') else '') + '\n\nInjuries loaded: %s. Return the JSON object now.' % ('yes' if inj_ok else 'NO')
             ph = hashlib.sha1((SYSTEM + prompt).encode('utf8')).hexdigest()
             ent = acache.get(ev['id'])
             if ent and ent.get('h') == ph and isinstance(ent.get('js'), dict):
@@ -2416,13 +3331,19 @@ def main(argv):
                 a = js.get('analysis') if isinstance(js.get('analysis'), dict) else {}
                 def lst(x):
                     return [str(i)[:300] for i in x][:6] if isinstance(x, list) else []
+                jd_ = js.get('judgment') if isinstance(js.get('judgment'), dict) else None
+                if jd_:
+                    judg = {'home_win': prob_or_none(jd_.get('home_win')), 'cover_home': prob_or_none(jd_.get('cover_home')), 'over': prob_or_none(jd_.get('over')),
+                            'conf': str(jd_.get('conf') or 'med')[:6].lower(), 'concern': bool(jd_.get('concern')), 'why': str(jd_.get('why') or '')[:240]}
+                    judg['scale'] = 0.5 if judg['conf'] == 'low' else 1.0
                 analysis = {'lean': str(a.get('lean') or '')[:300], 'why': lst(a.get('why')), 'risks': lst(a.get('risks')), 'matchups': lst(a.get('matchups')), 'verify': lst(a.get('verify'))}
                 for pn in js.get('props') or []:
                     if isinstance(pn, dict) and pn.get('id'):
-                        pnotes[str(pn['id'])] = {'mult': clamp(num_or(pn.get('mult'), 1.0), 0.9, 1.1), 'skip': bool(pn.get('skip')), 'note': str(pn.get('note') or '')[:240]}
+                        pnotes[str(pn['id'])] = {'mult': clamp(num_or(pn.get('mult'), 1.0), 0.9, 1.1), 'skip': bool(pn.get('skip')), 'note': str(pn.get('note') or '')[:240], 'p_over': prob_or_none(pn.get('p_over'))}
             else:
                 note('No usable analysis for %s @ %s' % (away['abbr'], home['abbr']))
         g['analysis'] = analysis
+        g['judgment'] = dict(judg, w=r3(JUDG['w'])) if judg else None
         g['adjust'] = {'margin': r1(adjust_m), 'total': r1(adjust_t)}
         try:
             pl = {}
@@ -2443,7 +3364,7 @@ def main(argv):
                 g['final']['note'] = 'No team ratings yet, so this is the market number only.'
             uncertain = any(0 < inj_weight(i['status']) < 1.0 and (i.get('avg') or {}).get('min', 0) >= 24
                             for t in (home, away) for i in t['injuries'])
-            picks = game_picks(g, fm, ft, min_n, inj_ok, uncertain, abs(adjust_m) + abs(adjust_t) / 3.0)
+            picks = game_picks(g, fm, ft, min_n, inj_ok, uncertain, abs(adjust_m) + abs(adjust_t) / 3.0, judg=judg)
             for p_ in picks:
                 try:
                     p_['sig'] = game_signals(g, p_, lg_pace)
@@ -2466,7 +3387,7 @@ def main(argv):
             if ev['state'] != 'pre' or r['skipped'] or is_blocked(r['injury']):
                 r['skipped'] = r['skipped'] or is_blocked(r['injury'])
                 continue
-            pk = prop_pick(r, mult, bool(r['injury']))
+            pk = prop_pick(r, mult, bool(r['injury']), pn.get('p_over'), bool(judg and judg.get('concern')), (judg or {}).get('why', ''))
             if pk:
                 pk['reason'] = r['note']
                 try:
@@ -2478,7 +3399,7 @@ def main(argv):
                 picks.append(pk)
         for i, p in enumerate(picks):
             p['id'] = '%s-%s-%d' % (today.isoformat(), ev['id'], i)
-            p.update({'game_id': ev['id'], 'away': away['abbr'], 'home': home['abbr'], 'date': today.isoformat()})
+            p.update({'game_id': ev['id'], 'away': away['abbr'], 'home': home['abbr'], 'date': today.isoformat(), 'utc': ev['utc']})
         g['pick_objs'] = picks
         g['picks'] = [p['id'] for p in picks]
         g['dq'] = {'min_games': min_real, 'min_games_eff': min_n, 'prior': bool((home['ratings'] or {}).get('prior') and (away['ratings'] or {}).get('prior')), 'shots': bool(g.get('shot_profile')), 'injuries_loaded': inj_ok, 'market_loaded': bool(mk), 'analysis': bool(analysis)}
@@ -2487,19 +3408,29 @@ def main(argv):
         out_games.append(g)
         all_picks.extend(picks)
 
-    all_picks.sort(key=lambda p: rank_key(p), reverse=True)
+    for p in all_picks:
+        try:
+            audit_adjust(p)
+        except Exception:  # noqa
+            pass
+    all_picks = finalize_picks(all_picks, out_games)
 
     # history: replace today's picks for games still 'pre', keep the rest
     today_s = today.isoformat()
     pre_ids = {g['id'] for g in out_games if g.get('state') == 'pre'}
+    old_by_id = {h['id']: h for h in history}
     history = [h for h in history if not (h['date'] == today_s and h['game_id'] in pre_ids and not h.get('result'))]
     have = {h['id'] for h in history}
     for p in all_picks:
         if p['id'] not in have and p['game_id'] in pre_ids:
-            history.append({k: p[k] for k in ('id', 'date', 'game_id', 'away', 'home', 'type', 'side', 'label', 'line', 'odds', 'est', 'est_raw', 'edge', 'kind', 'conf', 'units') if k in p}
+            row_ = ({k: p[k] for k in ('id', 'date', 'game_id', 'away', 'home', 'type', 'side', 'label', 'line', 'odds', 'est', 'est_raw', 'edge', 'kind', 'conf', 'units') if k in p}
+                    | {k: p[k] for k in ('fair', 'book', 'n_books', 'jp', 'est_nj', 'sd', 'utc') if p.get(k) is not None}
                            | ({'player': p['player'], 'stat': p['stat'], 'pid': p['pid']} if p['type'] == 'prop' else {})
                            | ({'sig': [i['k'] for i in p['sig']['items']], 'sig_tier': p['sig']['tier']} if p.get('sig') else {})
-                           | {'posted': started.strftime('%Y-%m-%dT%H:%M:%SZ'), 'v': ENGINE_VERSION})
+                    | {'posted': started.strftime('%Y-%m-%dT%H:%M:%SZ'), 'v': ENGINE_VERSION})
+            oh_ = old_by_id.get(p['id']) or {}
+            row_.update({k: oh_[k] for k in ('close', 'clv', 'clv_pts') if k in oh_})
+            history.append(row_)
     jsave(hist_path, history)
     jsave(acache_path, acache)
     if reused:
@@ -2511,10 +3442,12 @@ def main(argv):
     result = {
         'engine': ENGINE_VERSION, 'prop_source': 'odds_api' if auto else ('props.txt' if lines else 'none'),
         'generated_at': started.strftime('%Y-%m-%dT%H:%M:%SZ'), 'for_date': today_s, 'model': MODEL if API_KEY else None, 'league': league,
-        'params': {'home_edge': HCA, 'sd_margin': SD_MARGIN, 'sd_total': SD_TOTAL, 'b2b_points': B2B_PTS, 'calibration': {k: r3(v) for k, v in CAL.items()}},
+        'params': {'home_edge': HCA, 'sd_margin': SD_MARGIN, 'sd_total': SD_TOTAL, 'b2b_points': B2B_PTS, 'calibration': {k: r3(v) for k, v in CAL.items()},
+                   'blend_max': r3(BLEND_MAX), 'judgment': {'w': r3(JUDG['w']), 'cap': JUDG_CAP, 'n': JUDG['n'], 'brier_j': JUDG['brier_j'], 'brier_m': JUDG['brier_m']}},
+        'odds': {'left': ODDS['left'], 'used': ODDS['used'], 'calls': ODDS['calls']},
         'status': {k: v for k, v in STATUS.items() if not k.startswith('_')}, 'games': out_games,
         'picks': [dict(p, label=p['label']) for p in all_picks], 'props_unmatched': unmatched[:60], 'props_not_playing': [dict(p) for p in not_playing][:60],
-        'props_lines': len(lines) + (len(auto) if auto else 0)}
+        'props_lines': len(lines) + (len(auto) if auto else 0), 'audit': audit}
     # drop heavy duplicates
     for g in result['games']:
         for t in ('away', 'home'):
