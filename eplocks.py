@@ -34,8 +34,8 @@ HCA = float(os.environ.get('EPLOCKS_HOME_EDGE') or 2.2)      # home-court points
 SD_MARGIN, SD_TOTAL = 12.0, 17.5                              # typical NBA error vs closing lines
 B2B_PTS = 1.5                                                 # heuristic back-to-back penalty (points of margin)
 MAX_PROP_ROWS = 60
-ENGINE_VERSION = '4.0'
-SZ_V = 2               # box-score format version: 2 adds player positions (older stored games are re-read once)
+ENGINE_VERSION = '5.0'
+SZ_V = 3               # box-score format version: 2 adds player positions, 3 adds officials and team fouls (older stored games are re-read once)
 PRIOR_V = 2            # last-season summary format version (2 adds defense by position)
 CLAUDE_BUDGET = float(os.environ.get('EPLOCKS_CLAUDE_SECONDS') or 1500)   # stop asking Claude after this many seconds so a run always finishes
 PROP_ROWS_TO_CLAUDE = 30
@@ -378,6 +378,19 @@ def parse_plays(js, ev, pid_team):
     return sz
 
 
+def officials_from(js):
+    """Names of the game officials in an ESPN summary (crew chief first when ESPN orders them)."""
+    out = []
+    try:
+        for o in ((js.get('gameInfo') or {}).get('officials') or []):
+            nm = (o.get('displayName') or o.get('fullName') or '').strip() if isinstance(o, dict) else ''
+            if nm and nm not in out:
+                out.append(nm)
+    except Exception:  # noqa
+        return []
+    return out[:4]
+
+
 def parse_summary(js, ev):
     """Box score -> compact team + player stats."""
     box = js.get('boxscore') or {}
@@ -394,6 +407,7 @@ def parse_summary(js, ev):
             'drb': toi(lookup(s, ('defensiverebounds',), ('defensive rebounds', 'dreb'))),
             'reb': toi(lookup(s, ('totalrebounds', 'rebounds'), ('rebounds', 'reb'))),
             'tov': toi(lookup(s, ('totalturnovers', 'turnovers'), ('turnovers', 'to'))),
+            'pf': toi(lookup(s, ('fouls', 'totalfouls', 'personalfouls'), ('fouls', 'pf', 'personal fouls'))),
             'ast': toi(lookup(s, ('assists',), ('assists', 'ast')))}
         if teams[tid]['drb'] is None and teams[tid]['reb'] is not None and teams[tid]['orb'] is not None:
             teams[tid]['drb'] = teams[tid]['reb'] - teams[tid]['orb']
@@ -432,6 +446,7 @@ def parse_summary(js, ev):
         out['sz'] = None
         note('shot locations could not be read for game %s: %s' % (ev.get('id'), str(e)[:100]))
     out['sz_v'] = SZ_V
+    out['refs'] = officials_from(js)
     return out
 
 
@@ -539,6 +554,131 @@ def refresh_shots(games, budget=420):
                 games[ev['id']] = r
                 done += 1
     return done
+
+
+# ----------------------------------------------------------------------------- referees
+REF_K = 20.0           # games of league-average behaviour each official starts with, so a few games never swing anything
+REF_MIN_N = 10         # games an official needs before his number can touch the projection
+REF_TOTAL_W = 0.5      # share of the crew's measured total effect used, and
+REF_TOTAL_CAP = 1.0    # the most it can ever move the projected total (points)
+
+
+def build_ref_stats(games):
+    """What each official's games look like compared with what the two teams would normally produce.
+    For every game: actual total points / fouls / free-throw attempts minus the teams' own season averages, then averaged per official and shrunk toward zero."""
+    gs = [g for g in games.values() if g.get('refs') and g['home'].get('pts') is not None and g['away'].get('pts') is not None]
+    if len(gs) < 8:
+        return None
+    fns = {'tot': lambda g: g['home']['pts'] + g['away']['pts'],
+           'pf': lambda g: (g['home']['pf'] + g['away']['pf']) if g['home'].get('pf') is not None and g['away'].get('pf') is not None else None,
+           'fta': lambda g: (g['home']['fta'] + g['away']['fta']) if g['home'].get('fta') is not None and g['away'].get('fta') is not None else None}
+    lg, resid, raw = {}, {}, {}
+    for k, fn in fns.items():
+        vals = [(g, fn(g)) for g in gs]
+        vals = [(g, v) for g, v in vals if v is not None]
+        if len(vals) < 8:
+            continue
+        L = mean(v for _, v in vals)
+        lg[k] = L
+        per = {}
+        for g, v in vals:
+            for t in (g['home']['ab'], g['away']['ab']):
+                per.setdefault(t, []).append(v)
+        tm = {t: (sum(v) + 4.0 * L) / (len(v) + 4.0) for t, v in per.items()}          # shrunk team average of this measure
+        for g, v in vals:
+            exp = tm[g['home']['ab']] + tm[g['away']['ab']] - L
+            for nm in g['refs']:
+                resid.setdefault(nm, {}).setdefault(k, []).append(v - exp)
+                raw.setdefault(nm, {}).setdefault(k, []).append(v)
+    refs = {}
+    for nm in {g_nm for g in gs for g_nm in g['refs']}:
+        n = sum(1 for g in gs if nm in g['refs'])
+        e = {'n': n}
+        for k in lg:
+            rs = resid.get(nm, {}).get(k) or []
+            e[k] = r1(sum(rs) / (len(rs) + REF_K)) if rs else 0.0
+            e['avg_' + k] = r1(mean(raw[nm][k])) if raw.get(nm, {}).get(k) else None
+        refs[nm] = e
+    return {'refs': refs, 'lg': {k: r1(v) for k, v in lg.items()}, 'games': len(gs)}
+
+
+def crew_info(names, rs, source):
+    """The crew for a game with each official's history. 'adj_total' is the (small, capped) amount the projected total is moved by."""
+    if not names:
+        return None
+    idx = {norm_name(k): v for k, v in ((rs or {}).get('refs') or {}).items()}
+    rows = []
+    for nm in names:
+        r = idx.get(norm_name(nm))
+        rows.append(dict({'name': nm, 'n': 0, 'tot': 0.0, 'pf': 0.0, 'fta': 0.0}, **(r or {})))
+    solid = [x for x in rows if x['n'] >= REF_MIN_N]
+    eff = {k: r1(sum(x.get(k) or 0.0 for x in rows)) for k in ('tot', 'pf', 'fta')}
+    adj = 0.0
+    if len(solid) >= 2 and len(solid) >= len(rows) - 1:
+        adj = clamp(REF_TOTAL_W * eff['tot'], -REF_TOTAL_CAP, REF_TOTAL_CAP)
+    return {'names': names, 'source': source, 'refs': rows, 'effect': eff, 'adj_total': r1(adj), 'known': sum(1 for x in rows if x['n'] > 0), 'lg': (rs or {}).get('lg')}
+
+
+def crew_text(c):
+    if not c:
+        return None
+    parts = ['%s (%d g%s)' % (x['name'], x['n'], (', total %+.1f, fouls %+.1f' % (x['tot'], x['pf'])) if x['n'] >= 3 else ', little history') for x in c['refs']]
+    t = 'Officials (%s): %s. Crew effect vs what the two teams normally produce: total %+.1f pts, fouls %+.1f, free-throw attempts %+.1f (shrunk, early-season samples are small).' % (
+        c['source'], '; '.join(parts), c['effect']['tot'], c['effect']['pf'], c['effect']['fta'])
+    if c['adj_total']:
+        t += ' The projected total was moved %+.1f for this crew.' % c['adj_total']
+    return t
+
+
+def fetch_assignments(events, workers=6):
+    """Officials posted for today's games, from ESPN's game summary (the NBA posts crews on game day, so early runs may find none).
+    Returns {game id: [names]} for the games where a crew was found."""
+    out = {}
+
+    def one(ev):
+        try:
+            return ev['id'], officials_from(http_json('%s/summary?event=%s' % (ESPN, ev['id']), tries=2))
+        except Exception:  # noqa
+            return ev['id'], None
+    evs = [e for e in events if e.get('state') == 'pre']
+    if not evs:
+        return out, 0
+    bad = 0
+    with ThreadPoolExecutor(max_workers=workers) as ex:
+        for k, v in ex.map(one, evs):
+            if v is None:
+                bad += 1
+            elif v:
+                out[k] = v
+    return out, bad
+
+
+def parse_refs_file(path, events):
+    """refs.txt (optional, owner-typed): 'LAL @ DEN: Scott Foster, Tony Brothers, Marc Davis'. Either team order works."""
+    out = {}
+    try:
+        with open(path, encoding='utf8') as f:
+            lines = f.read().splitlines()
+    except Exception:  # noqa
+        return out, []
+    bad = []
+    pairs = {frozenset((e['home']['abbr'], e['away']['abbr'])): e['id'] for e in events}
+    for ln in lines:
+        ln = ln.strip()
+        if not ln or ln.startswith('#'):
+            continue
+        if ':' not in ln:
+            bad.append(ln[:60])
+            continue
+        head, tail = ln.split(':', 1)
+        tms = [ab(t.strip().upper()) for t in re.split(r'\s+(?:@|at|vs\.?|v)\s+|\s*[@/-]\s*', head, flags=re.I) if t.strip()]
+        names = [n.strip() for n in tail.split(',') if n.strip()][:4]
+        gid = pairs.get(frozenset(tms)) if len(tms) == 2 else None
+        if gid and names:
+            out[gid] = names
+        else:
+            bad.append(ln[:60])
+    return out, bad
 
 
 # ----------------------------------------------------------------------------- last season as a starting point
@@ -1143,6 +1283,15 @@ def build_player_board(teams, logs, tg, env, margin, inj_by_team, pd=None):
     return out
 
 
+def plog(L, n=10):
+    """Last games of one player, compact, for the click-through charts: [date, opp, min, pts, reb, ast, 3pm, stl, blk, tov]."""
+    gs = [g for g in L['games'] if g['min'] > 0][-n:]
+    return {'name': L['name'], 'team': L['team'], 'pos': L.get('pos'), 'gp': len(L['games']),
+            'avg': {k: r1(mean(g[k] for g in L['games'])) for k in ('min', 'pts', 'reb', 'ast', 'tpm', 'stl', 'blk', 'tov')},
+            'l5': {k: r1(mean(g[k] for g in L['games'][-5:])) for k in ('min', 'pts', 'reb', 'ast', 'tpm')},
+            'log': [[g['date'], g['opp'], g['min'], g['pts'], g['reb'], g['ast'], g['tpm'], g['stl'], g['blk'], g['tov']] for g in gs]}
+
+
 def pm_changed(L):
     pm = prop_model(L, 'points', 0.5)
     return {'changed': pm['changed'], 'prior_team': pm['prior_team']} if pm else {}
@@ -1587,6 +1736,7 @@ RULES
 - Measured coaching and matchup tendencies (rotation, minutes, blowout habits, shot mix, defense by position) are in the DATA. Use them and cite the numbers. Anything about roster changes or scheme beyond the DATA comes from your own memory and may be out of date after the 2026 offseason: tag it (from memory) and never let it drive a pick on its own.
 - Owner notes, when present, are the owner's own unverified opinions. Treat them as context to check against the numbers, never as facts and never as a reason to change a number by themselves.
 - The market line already reflects public injury news. When a market line is given, keep margin_adj and total_adj at 0 unless the packet shows a specific, quantifiable reason the line misses (a rating or rest mismatch with numbers). Never exceed +/-2.0 margin or +/-5.0 total when a line exists.
+- Officials, when given, are measured from this season's box scores and shrunk hard. A crew number is a small nudge to totals and free throws, never a reason for a pick on its own.
 - Early season samples are small. Say so when it matters and do not overstate.
 - You do not decide probabilities, confidence or stake sizes. The code computes them from your adjustments.
 - For props, mult scales the player's expected output (0.90 to 1.10). Change it only for a stated reason that is in the DATA (a starter listed out raising usage, a minutes change visible in the last games). Use skip=true for any player listed Out, Doubtful or Questionable, or whose role looks unclear.
@@ -1700,7 +1850,9 @@ def packet(g):
     if g.get('notes'):
         L.append("Owner's notes (unverified opinions, context only):")
         L.extend('  %s: %s' % (n_['who'], n_['text']) for n_ in g['notes'])
-    L.append('Not loaded: play-calling and timeout data, referee data, travel distance, true player tracking (defender distance, speed, touches)' + ('' if sh else ', shot quality'))
+    ct = crew_text(g.get('crew'))
+    L.append(ct if ct else 'Officials: not posted yet (referee data is not part of this analysis).')
+    L.append('Not loaded: play-calling and timeout data, travel distance, true player tracking (defender distance, speed, touches)' + ('' if sh else ', shot quality'))
     rows = (g.get('prop_rows') or [])[:PROP_ROWS_TO_CLAUDE]
     if rows:
         L.append('\nPROP TABLE (id | player team | stat line | over/under price | n games | season/L10/L5 avg | model mean | model P(over) | hit L10 over | minutes avg/L5 | vs this opponent):')
@@ -1966,6 +2118,28 @@ def main(argv):
     except Exception as e:  # noqa
         profiles, prof_lg = {}, {}
         src('team_profiles', False, 'failed: %s' % str(e)[:120])
+    rstats = None
+    try:
+        rstats = build_ref_stats(games)
+        src('referees', True, ('%d officials measured from %d games' % (len(rstats['refs']), rstats['games'])) if rstats else 'not enough games with officials stored yet (they fill in as the season goes)')
+    except Exception as e:  # noqa
+        src('referees', False, 'referee stats failed: %s' % str(e)[:120])
+    assign, assign_bad, manual = {}, 0, {}
+    try:
+        assign, assign_bad = fetch_assignments(slate_events)
+        manual, mbad = parse_refs_file(os.path.join(HERE, 'refs.txt'), slate_events)
+        if manual:
+            assign.update(manual)
+        pre_n = sum(1 for e in slate_events if e.get('state') == 'pre')
+        if pre_n:
+            note('Officials found for %d of %d upcoming games%s' % (len(assign), pre_n, ' (the NBA usually posts them the morning of the game; later runs pick up the rest)' if len(assign) < pre_n else ''))
+        if mbad:
+            note('refs.txt: %d line(s) could not be matched to a game: %s' % (len(mbad), ' | '.join(mbad[:3])))
+    except Exception as e:  # noqa
+        note('Officials could not be loaded: %s' % str(e)[:100])
+    ref_src = {}
+    for gid in assign:
+        ref_src[gid] = 'refs.txt' if gid in manual else 'ESPN'
     notes_data = None
     try:
         notes_data = parse_notes(os.path.join(HERE, 'notes.txt'), name_to_abbr, name_index, logs)
@@ -2033,6 +2207,14 @@ def main(argv):
         home = team_block(ev['home'], ratings, logs, injuries, inj_ok, today, name_to_abbr)
         away = team_block(ev['away'], ratings, logs, injuries, inj_ok, today, name_to_abbr)
         mo = project(home['abbr'], away['abbr'], ratings, lg_ortg, lg_pace, today)
+        crew = None
+        try:
+            crew = crew_info(assign.get(ev['id']), rstats, ref_src.get(ev['id'], 'ESPN'))
+            if mo and crew and crew['adj_total']:
+                mo['total'] += crew['adj_total']
+        except Exception as e:  # noqa
+            crew = None
+            note('Officials skipped for %s: %s' % (ev['id'], str(e)[:80]))
         def n_eff_(t):
             r_ = t['ratings'] or {}
             return r_.get('n_eff', r_.get('n', 0))
@@ -2055,7 +2237,7 @@ def main(argv):
                 w_, l_ = (gm['home'], gm['away']) if gm['home']['pts'] > gm['away']['pts'] else (gm['away'], gm['home'])
                 h2h.append('%s beat %s %d-%d at %s on %s' % (w_['ab'], l_['ab'], w_['pts'], l_['pts'], gm['home']['ab'], gm['date']))
         g = {'id': ev['id'], 'tip': ev['tip'], 'utc': ev['utc'], 'state': ev['state'], 'away': away, 'home': home, 'market': mk,
-             'model': {k: r1(v) for k, v in mo.items()} if mo else None, 'blend': blend, 'h2h': h2h}
+             'model': {k: r1(v) for k, v in mo.items()} if mo else None, 'blend': blend, 'h2h': h2h, 'crew': crew}
         g['model_raw'] = mo
         # props for this game
         rows = []
@@ -2137,6 +2319,15 @@ def main(argv):
                 note('No usable analysis for %s @ %s' % (away['abbr'], home['abbr']))
         g['analysis'] = analysis
         g['adjust'] = {'margin': r1(adjust_m), 'total': r1(adjust_t)}
+        try:
+            pl = {}
+            for pid in [b['pid'] for b in g.get('player_board') or []] + [r['pid'] for r in rows] + [x['id'] for t_ in (home, away) for x in t_['rotation']]:
+                if pid in logs and pid not in pl:
+                    pl[pid] = plog(logs[pid])
+            g['plogs'] = pl
+        except Exception as e:  # noqa
+            g['plogs'] = {}
+            note('Player logs skipped for %s: %s' % (ev['id'], str(e)[:80]))
 
         picks = []
         if blend and ev['state'] == 'pre':
