@@ -40,6 +40,7 @@ PRIOR_V = 2            # last-season summary format version (2 adds defense by p
 CLAUDE_BUDGET = float(os.environ.get('EPLOCKS_CLAUDE_SECONDS') or 1500)   # stop asking Claude after this many seconds so a run always finishes
 PROP_ROWS_TO_CLAUDE = 30
 T0 = time.time()
+CL_T0 = None           # when the Claude phase starts (after last season has loaded), so a long first run does not eat the Claude budget
 
 # Last season as a starting point, and shot locations (both optional: if either fails the run carries on without it)
 PRIOR_ON = (os.environ.get('EPLOCKS_PRIOR') or 'on').lower() not in ('off', '0', 'no', 'false')
@@ -1600,7 +1601,7 @@ Reply with one JSON object only:
 def call_claude(prompt, system, max_tokens=3500, tries=3):
     if not API_KEY:
         return None
-    if time.time() - T0 > CLAUDE_BUDGET:
+    if time.time() - (CL_T0 or T0) > CLAUDE_BUDGET:
         if not STATUS.get('_budget_note'):
             STATUS['_budget_note'] = True
             note('Claude time budget used up (%d s); the remaining games get numbers but no written analysis this run' % CLAUDE_BUDGET)
@@ -1901,6 +1902,8 @@ def main(argv):
         prior_state = update_prior(today)
     except Exception as e:  # noqa
         src('prior_season', False, 'last season could not be loaded: %s' % str(e)[:140])
+    global CL_T0
+    CL_T0 = time.time()
     pr_pack = None
     try:
         pr_pack = prior_ratings(prior_state)
