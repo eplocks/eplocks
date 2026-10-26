@@ -1,0 +1,45 @@
+Claude
+Daily · YML
+name: EpLocks daily run
+ 
+on:
+  schedule:
+    # 15:00 UTC = 10:00 AM CDT (9:00 AM CST after Nov 1). Games tip off in the evening.
+    - cron: "0 15 * * *"
+  workflow_dispatch: {}
+  push:
+    paths:
+      - "props.txt"
+ 
+permissions:
+  contents: write
+ 
+concurrency:
+  group: eplocks
+  cancel-in-progress: false
+ 
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Run the engine
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
+          EPLOCKS_PROP_MARKETS: ${{ vars.EPLOCKS_PROP_MARKETS }}
+          EPLOCKS_MODEL: ${{ vars.EPLOCKS_MODEL }}
+          EPLOCKS_SEASON_START: ${{ vars.EPLOCKS_SEASON_START }}
+        run: python eplocks.py
+      - name: Save results
+        run: |
+          git config user.name "eplocks-bot"
+          git config user.email "eplocks-bot@users.noreply.github.com"
+          git add -A data
+          git diff --cached --quiet && echo "Nothing changed" || (git commit -m "EpLocks daily update" && git pull --rebase origin ${{ github.ref_name }} && git push)
+ 
+Claude finished the response
