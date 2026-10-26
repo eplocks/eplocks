@@ -228,7 +228,24 @@ code{font:500 13px var(--f-mono);background:var(--surface2);padding:1px 5px;bord
 .leg-body{display:grid;gap:2px;min-width:0}
 .who{display:inline-flex;align-items:center;gap:8px}
 .who .av{--s:28px}
-@media (max-width:480px){.team .av{--s:38px}.hero h1{font-size:30px}.ult .big{font-size:44px}.ab{font-size:34px}.tiles{grid-template-columns:repeat(2,1fr)}.lines{grid-template-columns:1fr 1fr}}
+
+.shots{display:grid;gap:12px;margin-top:6px}
+.courts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.cwrap{background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:8px;display:grid;gap:4px;min-width:0}
+.cwrap h4{font:700 13px var(--f-body);letter-spacing:.06em;text-transform:uppercase;color:var(--mut);margin:0}
+.cwrap small{font:500 11px var(--f-mono);color:var(--mut)}
+svg.court{width:100%;height:auto;display:block;border-radius:6px}
+svg.court .bg{fill:var(--surface2)}
+svg.court .ct-line{fill:none;stroke:var(--mut);stroke-width:3;opacity:.7}
+svg.court .ct-lab{font:700 26px var(--f-body);fill:var(--fg);text-anchor:middle;paint-order:stroke;stroke:var(--surface);stroke-width:5px;stroke-linejoin:round}
+svg.court .ct-lab.sm{font-size:19px}
+.minis{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:10px}
+.mini{display:grid;gap:2px;justify-items:center;text-align:center;min-width:0}
+.mini b{font:600 12px var(--f-body);overflow-wrap:anywhere}
+.mini small{font:500 10px var(--f-mono);color:var(--mut)}
+.legend{display:flex;align-items:center;gap:8px;font:500 11px var(--f-mono);color:var(--mut);flex-wrap:wrap}
+.legend i{display:block;width:140px;height:8px;border-radius:4px;background:linear-gradient(90deg,rgba(244,114,102,.9),rgba(148,163,184,.5),rgba(16,185,129,.9))}
+@media (max-width:480px){.courts{grid-template-columns:1fr}.team .av{--s:38px}.hero h1{font-size:30px}.ult .big{font-size:44px}.ab{font-size:34px}.tiles{grid-template-columns:repeat(2,1fr)}.lines{grid-template-columns:1fr 1fr}}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{transition:none!important;animation:none!important}}
 </style>
 </head>
@@ -284,6 +301,7 @@ function el(tag, props){
   return n;
 }
 var CW = {High:1, Medium:.75, Low:.4};
+var ZN = {rim:'Rim (0-4 ft)', pnt:'Close (4-8 ft)', ms:'Short mid (8-16 ft)', ml:'Long mid (16 ft to the arc)', c3:'Corner 3', a3:'Above-the-break 3'};
 var STAT = {points:'Points', rebounds:'Rebounds', assists:'Assists', threes:'3-pointers', pra:'Pts+Reb+Ast', pts_reb:'Pts+Reb', pts_ast:'Pts+Ast', reb_ast:'Reb+Ast', steals:'Steals', blocks:'Blocks', turnovers:'Turnovers'};
 var TC = {ATL:'#e03a3e',BOS:'#1f9d5b',BKN:'#9aa0a6',CHA:'#1d8fa9',CHI:'#d6264a',CLE:'#b4264e',DAL:'#2f80e0',DEN:'#4f8fd6',DET:'#d8424f',GSW:'#f2b50f',
   HOU:'#d23a4a',IND:'#e8a93a',LAC:'#e0384f',LAL:'#8b5fd0',MEM:'#6b8fd2',MIA:'#c7374d',MIL:'#3e9c5c',MIN:'#3f86c9',NOP:'#4a86c7',NYK:'#f58426',
@@ -365,6 +383,92 @@ function bestSide(r){
   return o[0].edge >= o[1].edge ? o[0] : o[1];
 }
 
+/* ---- shot maps ---- */
+var ZONES = ['rim', 'pnt', 'ms', 'ml', 'c3', 'a3'];
+var NS = 'http://www.w3.org/2000/svg';
+function sv(tag, attrs, kids){
+  var n = document.createElementNS(NS, tag);
+  for (var k in (attrs || {})) n.setAttribute(k, attrs[k]);
+  (kids || []).forEach(function(c){ if (c) n.append(c); });
+  return n;
+}
+function heat(delta, att){
+  var t = Math.max(-1, Math.min(1, delta / 0.10)), cold = [244, 114, 102], mid = [148, 163, 184], hot = [16, 185, 129];
+  var a = t < 0 ? cold : hot, k = Math.abs(t), c = [0, 1, 2].map(function(i){ return Math.round(mid[i] + (a[i] - mid[i]) * k); });
+  var al = 0.3 + 0.6 * (att / (att + 18));
+  return 'rgba(' + c.join(',') + ',' + al.toFixed(2) + ')';
+}
+function courtEl(zs, lfg, o){
+  o = o || {};
+  var POS = {rim:[250, 86], pnt:[250, 119], ms:[250, 179], ml:[250, 258], c3:[15, 82], a3:[250, 322]};
+  function zt(z, el_){
+    var v = zs[z] || [0, 0, null], fl = lfg[z];
+    var d = v[2] != null && fl != null ? v[2] - fl : 0;
+    el_.setAttribute('fill', v[0] > 0 ? heat(d, v[0]) : 'rgba(148,163,184,.25)');
+    var tt = sv('title', {}); tt.textContent = (ZN[z] || z) + ': ' + Math.round(v[1]) + ' of ' + Math.round(v[0]) + ' made' + (v[2] != null ? ', adjusted ' + Math.round(v[2] * 100) + '% (league ' + Math.round((fl || 0) * 100) + '%)' : '');
+    el_.append(tt);
+    return el_;
+  }
+  var kids = [
+    sv('rect', {class:'bg', x:0, y:0, width:500, height:400}),
+    zt('a3', sv('rect', {x:0, y:0, width:500, height:400})),
+    zt('ml', sv('circle', {cx:250, cy:52, r:237.5})),
+    zt('c3', sv('rect', {x:0, y:0, width:30, height:140})),
+    zt('c3', sv('rect', {x:470, y:0, width:30, height:140})),
+    zt('ms', sv('circle', {cx:250, cy:52, r:160})),
+    zt('pnt', sv('circle', {cx:250, cy:52, r:80})),
+    zt('rim', sv('circle', {cx:250, cy:52, r:40})),
+    sv('rect', {class:'ct-line', x:1.5, y:1.5, width:497, height:397}),
+    sv('rect', {class:'ct-line', x:170, y:0, width:160, height:190}),
+    sv('circle', {class:'ct-line', cx:250, cy:190, r:60}),
+    sv('path', {class:'ct-line', d:'M30 0 L30 141.5 A237.5 237.5 0 0 0 470 141.5 L470 0'}),
+    sv('circle', {class:'ct-line', cx:250, cy:52, r:7.5}),
+    sv('path', {class:'ct-line', d:'M220 40 L280 40'})];
+  if (!o.mini){
+    ZONES.forEach(function(z){
+      var v = zs[z] || [0, 0, null], txt = v[0] >= 3 && v[2] != null ? Math.round(v[2] * 100) + '%' : '';
+      if (!txt) return;
+      var ps = z === 'c3' ? [[54, 100], [446, 100]] : [POS[z]];
+      ps.forEach(function(p){ var t = sv('text', {class:'ct-lab' + (z === 'c3' ? ' sm' : ''), x:p[0], y:p[1]}); t.textContent = txt; kids.push(t); });
+    });
+  }
+  var svg = sv('svg', {viewBox:'0 0 500 400', class:'court', role:'img', 'aria-label':o.label || 'Shot chart'}, kids);
+  if (o.mini) svg.style.width = '100px';
+  return svg;
+}
+function mixText(q){
+  if (!q) return '';
+  var m = q.mix;
+  return 'Rim ' + Math.round(100 * m.rim) + '% · Close ' + Math.round(100 * m.pnt) + '% · Mid ' + Math.round(100 * (m.ms + m.ml)) + '% · 3PT ' + Math.round(100 * (m.c3 + m.a3)) + '%';
+}
+function courtBox(title, zs, lfg, q){
+  return el('div', {class:'cwrap'}, el('h4', {text:title}), courtEl(zs, lfg, {label:title}), el('small', {text:mixText(q)}));
+}
+function shotPanel(g){
+  var sp = g.shot_profile, lfg = S.latest.league && S.latest.league.zones;
+  if (!sp || !lfg || !Object.keys(lfg).length) return null;
+  var a = g.away, h = g.home, m = sp.matchup || {};
+  function q(t, side, kind){ var x = sp[side][kind + '_q']; if (!x) return [t + (kind === 'off' ? ' shoots' : ' allows'), 'n/a', '', '', '', '', '', '']; var mm = x.mix; return [t + (kind === 'off' ? ' shoots' : ' allows'), x.n, pct(mm.rim), pct(mm.pnt), pct(mm.ms + mm.ml), pct(mm.c3 + mm.a3), x.xpps.toFixed(2), x.pps.toFixed(2)]; }
+  var rows = [q(a.abbr, 'away', 'off'), q(a.abbr, 'away', 'def'), q(h.abbr, 'home', 'off'), q(h.abbr, 'home', 'def')];
+  var lines = [];
+  if (m.away_pps != null && m.home_pps != null){
+    lines.push(el('p', {class:'small', text:'Matchup shot quality (expected points per shot, from where each team shoots and where the other allows shots): ' + a.abbr + ' ' + m.away_pps.toFixed(2) + ', ' + h.abbr + ' ' + m.home_pps.toFixed(2) + ', league ' + (m.league_pps != null ? m.league_pps.toFixed(2) : 'n/a') + '. Above the league number means a favorable shot profile.'}));
+  }
+  var minis = (sp.players || []).map(function(p){
+    return el('div', {class:'mini'}, courtEl(p.zones, lfg, {mini:true, label:p.name + ' shot zones'}), el('b', {text:p.name}), el('small', {text:p.team + ' · ' + p.n + ' shots'}));
+  });
+  return el('details', {}, el('summary', {text:'Shot profile and hot zones'}),
+    el('div', {class:'shots'},
+      el('div', {class:'legend'}, el('span', {text:'cold'}), el('i'), el('span', {text:'hot (versus league average in that zone)'})),
+      el('div', {class:'courts'}, courtBox(a.abbr + ' shoots', sp.away.off, lfg, sp.away.off_q), courtBox(h.abbr + ' allows', sp.home.def, lfg, sp.home.def_q),
+        courtBox(h.abbr + ' shoots', sp.home.off, lfg, sp.home.off_q), courtBox(a.abbr + ' allows', sp.away.def, lfg, sp.away.def_q)),
+      lines,
+      el('p', {class:'small mut', text:'Points per shot: Expected comes from where the shots were taken, Actual is what they scored. Rim, Close, Mid and 3PT are shares of all shots.'}),
+      table(['Team', 'Shots', 'Rim', 'Close', 'Mid', '3PT', 'Expected', 'Actual'], rows, 1),
+      minis.length ? el('div', {}, el('b', {class:'small', text:'Player hot zones'}), el('div', {class:'minis'}, minis)) : null,
+      el('p', {class:'small mut', text:'Built from ESPN play-by-play shot locations' + (sp.with_prior ? ', with last season counted at 40% weight' : '') + '. Each zone\'s percentage is pulled toward the league average so small samples do not paint false hot spots. This is context for the analysis. It does not change the numbers or the confidence.'})));
+}
+
 /* ---- slate ---- */
 function gameCard(g, idx){
   var L = S.latest, a = g.away, h = g.home, m = g.market, fin = g.final, mo = g.model;
@@ -426,8 +530,9 @@ function gameCard(g, idx){
     el('details', {}, el('summary', {text:'Ratings, injuries and rotation'}),
       el('div', {style:'display:grid;gap:10px;margin-top:6px'},
         table(['Per 100 possessions', a.abbr, h.abbr], ratingRows),
-        el('p', {class:'small mut', text:'Ratings are opponent-adjusted and pulled toward the league average while teams have few games (' + (g.dq ? 'min ' + g.dq.min_games + ' games here' : '') + '). Rest: ' + a.abbr + ' ' + a.rest + '; ' + h.abbr + ' ' + h.rest + '.'}),
-        injs, rotation)));
+        el('p', {class:'small mut', text:'Ratings are opponent-adjusted and pulled toward ' + (g.dq && g.dq.prior ? 'last season\'s level (half kept, since rosters change)' : 'the league average') + ' while teams have few games (' + (g.dq ? 'min ' + g.dq.min_games + ' games here' : '') + '). Rest: ' + a.abbr + ' ' + a.rest + '; ' + h.abbr + ' ' + h.rest + '.'}),
+        injs, rotation)),
+    shotPanel(g));
   root.querySelectorAll('.team').forEach(function(tm){
     tm.addEventListener('pointerenter', function(){ root.dataset.hot = tm.dataset.side; });
     tm.addEventListener('pointerleave', function(){ delete root.dataset.hot; });
@@ -618,6 +723,14 @@ function renderParlays(){
 }
 
 /* ---- props ---- */
+function roleTxt(r){
+  var t = [], m = r.model || {};
+  if (m.changed === 'traded') t.push('traded, new-team games only');
+  else if (m.changed === 'new team') t.push('new team' + (m.prior_team ? ' (was ' + m.prior_team + ')' : '') + ', last year counted less');
+  else if (m.changed === 'role') t.push('role changed, last year counted less');
+  if (r.rm_note) t.push(r.rm_note + ' (x' + Number(r.rm).toFixed(2) + ')');
+  return t.length ? t.join('; ') : '-';
+}
 function renderProps(){
   var root = $('#props'); root.textContent = '';
   var L = S.latest; if (!L) return;
@@ -631,10 +744,10 @@ function renderProps(){
     totals += g.prop_rows.length;
     var rows = g.prop_rows.map(function(r){
       var b = bestSide(r);
-      return [whoEl(r.pid, r.player + (r.injury ? ' [' + r.injury + ']' : '')), (STAT[r.stat] || r.stat) + ' ' + r.line, r.model.season, r.model.l10, r.model.l5, r.model.mean, pct(b.side === 'over' ? r.model.p_over : r.model.p_under), b.side + ' ' + fe(b.edge)];
+      return [whoEl(r.pid, r.player + (r.injury ? ' [' + r.injury + ']' : '')), (STAT[r.stat] || r.stat) + ' ' + r.line, r.model.season, r.model.l10, r.model.l5, r.model.prior_mean, r.model.mean, pct(b.side === 'over' ? r.model.p_over : r.model.p_under), b.side + ' ' + fe(b.edge), el('span', {class:'small mut', text:roleTxt(r)})];
     });
     root.append(el('div', {class:'pgroup'}, el('div', {class:'pg-h'}, el('div', {}, el('b', {text:g.away.abbr + ' @ ' + g.home.abbr}), el('span', {text:g.prop_rows.length + ' props'}))),
-      table(['Player', 'Prop', 'Season', 'L10', 'L5', 'Mean', 'Chance', 'Best side'], rows, 2)));
+      table(['Player', 'Prop', 'Season', 'L10', 'L5', 'Last yr', 'Mean', 'Chance', 'Best side', 'Adjusted for'], rows, 2)));
   } });
   if (!totals) root.append(el('div', {class:'empty'}, el('b', {text:'No props priced'}), L.props_lines ? 'Lines were pasted but none matched a player playing today with at least 3 games. See below.' : 'Add lines to props.txt and they show up here, grouped by game.'));
   if (L.props_unmatched && L.props_unmatched.length) root.append(el('div', {class:'pgroup un'}, el('div', {class:'pg-h'}, el('b', {text:'Could not use (' + L.props_unmatched.length + ')'})),
@@ -693,12 +806,12 @@ function renderStatus(){
   root.append(el('div', {class:'note'}, el('b', {text:'Last run: '}), new Date(L.generated_at).toLocaleString(), el('br'),
     'Written analysis: ' + (L.model ? 'on, model ' + L.model : 'OFF (no API key)'), el('br'),
     'Model settings: home edge ' + L.params.home_edge + ' pts, margin spread ' + L.params.sd_margin + ', total spread ' + L.params.sd_total + ', back-to-back ' + L.params.b2b_points + ' pts.'));
-  var sources = L.status.sources, names = {espn_games:'Game results and box scores', ratings:'Team ratings', espn_injuries:'Injury report', anthropic:'Claude analysis', props_parse:'Props read by Claude'};
+  var sources = L.status.sources, names = {espn_games:'Game results and box scores', ratings:'Team ratings', espn_injuries:'Injury report', anthropic:'Claude analysis', props_parse:'Props read by Claude', prior_season:'Last season as a starting point', shot_data:'Shot locations (play-by-play)', calibration:'Self-check against graded results'};
   var box = el('div', {class:'note'}, el('div', {class:'src'}, Object.keys(sources).map(function(k){
     return [el('span', {class:'dot' + (sources[k].ok ? '' : ' bad')}), el('div', {}, el('b', {text:(names[k] || k) + (sources[k].ok ? '' : ' (problem)')}), el('p', {class:'small mut', text:sources[k].msg || ''}))];
   }).reduce(function(a, b){ return a.concat(b); }, [])));
   root.append(box);
-  var anyBad = Object.keys(sources).some(function(k){ return !sources[k].ok; });
+  var anyBad = ['espn_games', 'ratings', 'espn_injuries', 'anthropic', 'props_parse'].some(function(k){ return sources[k] && !sources[k].ok; });
   if (!Object.keys(sources).length) root.append(el('div', {class:'note warn', text:'No source reports in the last run.'}));
   if (L.status.notes && L.status.notes.length) root.append(el('div', {class:'note warn'}, el('b', {text:'Notes from the last run'}), el('ul', {}, L.status.notes.map(function(n){ return el('li', {text:n}); }))));
   root.append(el('div', {class:'note'}, el('b', {text:'What this site does not know'}), el('p', {class:'small', text:'Coaching and referee data, travel distance, player tracking and shot quality are not loaded. Anything about coaching or scheme in the analysis is Claude\'s memory and is tagged that way. The market line already reflects public injury news, so the model only moves off it by a small, capped amount.'})));
