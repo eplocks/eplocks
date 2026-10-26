@@ -285,6 +285,95 @@ svg.court .ct-lab.sm{font-size:19px}
 .legend i{display:block;width:140px;height:8px;border-radius:4px;background:linear-gradient(90deg,rgba(244,114,102,.9),rgba(148,163,184,.5),rgba(16,185,129,.9))}
 @media (max-width:480px){.courts{grid-template-columns:1fr}.team .av{--s:38px}.hero h1{font-size:30px}.ult .big{font-size:44px}.ab{font-size:34px}.tiles{grid-template-columns:repeat(2,1fr)}.lines{grid-template-columns:1fr 1fr}}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{transition:none!important;animation:none!important}}
+
+/* ---- game center and player view ---- */
+body.noscroll{overflow:hidden}
+.sheet{position:fixed;inset:0;z-index:60;display:flex;justify-content:flex-end}
+.sheet .bk{position:absolute;inset:0;background:rgba(5,15,32,.62);animation:fadeIn .2s ease both}
+.sheet .pn{position:relative;width:min(860px,100%);height:100%;overflow-y:auto;overscroll-behavior:contain;background:var(--bg);box-shadow:-14px 0 40px rgba(0,0,0,.35);animation:slideIn .26s cubic-bezier(.2,.8,.2,1) both}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+@keyframes slideIn{from{transform:translateX(40px);opacity:.4}to{transform:none;opacity:1}}
+.sh-bar{position:sticky;top:0;z-index:3;display:flex;align-items:center;gap:10px;padding:calc(10px + env(safe-area-inset-top,0px)) max(14px,env(safe-area-inset-right,0px)) 10px max(14px,env(safe-area-inset-left,0px));background:linear-gradient(180deg,var(--hdr),var(--hdr2));color:var(--hdr-fg);border-bottom:1px solid rgba(52,211,153,.4)}
+.sh-bar b{flex:1;min-width:0;font:700 20px var(--f-disp);letter-spacing:.05em;text-transform:uppercase;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ib{appearance:none;flex:none;border:1px solid rgba(255,255,255,.3);background:transparent;color:var(--hdr-fg);width:40px;height:40px;border-radius:8px;font:600 18px var(--f-body);cursor:pointer;transition:border-color .15s ease,color .15s ease}
+.ib:hover{border-color:var(--hdr-acc);color:var(--hdr-acc)}
+.sh-in{padding:14px max(14px,env(safe-area-inset-right,0px)) calc(32px + env(safe-area-inset-bottom,0px)) max(14px,env(safe-area-inset-left,0px));display:grid;gap:14px;min-width:0}
+.stack{display:grid;gap:14px;min-width:0}
+.blk{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 14px;display:grid;gap:10px;min-width:0;align-content:start}
+.blk h3{font:700 13px var(--f-body);letter-spacing:.1em;text-transform:uppercase;color:var(--mut);margin:0}
+.blk .tscroll{border-radius:8px}
+.blk details{margin:0}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.sc-head{display:grid;gap:12px;background:linear-gradient(135deg,var(--hdr),var(--hdr2));color:var(--hdr-fg);border-radius:14px;padding:16px;border:1px solid rgba(52,211,153,.35)}
+.sc-grid{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);gap:10px;align-items:center}
+.sc-team{display:grid;gap:2px;justify-items:start;min-width:0}
+.sc-team.home{justify-items:end;text-align:right}
+.sc-team .tm-row{display:flex;align-items:center;gap:10px}
+.sc-team.home .tm-row{flex-direction:row-reverse}
+.sc-team .av{--s:52px}
+.sc-team .nm,.sc-team .rec,.sc-head .mut{color:var(--hdr-mut)}
+.sc-team .big{font:700 60px/1 var(--f-disp);color:var(--hdr-acc);font-variant-numeric:tabular-nums}
+.sc-mid{display:grid;justify-items:center;gap:4px;text-align:center;min-width:0;max-width:30vw}
+.sc-head .at{color:var(--hdr-mut)}
+.sc-head .pill{color:var(--hdr-mut);border-color:rgba(255,255,255,.25)}
+.sc-head .lv .st{color:var(--hdr-fg);border-color:rgba(255,255,255,.4)}
+.sc-head .lv.in .st{color:#ff9d94;border-color:#ff9d94}
+.sc-head .tscroll{background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.18);color:var(--hdr-fg)}
+.sc-head th{color:var(--hdr-mut)}
+.sc-head tr+tr td{border-top-color:rgba(255,255,255,.14)}
+.sc-head tbody tr:hover{background:transparent}
+.sh-tabs{display:flex;max-width:100%;overflow-x:auto;scrollbar-width:none}
+.sh-tabs::-webkit-scrollbar{display:none}
+.sh-tabs button{flex:1 0 auto;white-space:nowrap}
+.sh-stats{display:flex;max-width:100%;overflow-x:auto;scrollbar-width:none}
+.sh-stats::-webkit-scrollbar{display:none}
+.sh-stats button{flex:1 0 auto;white-space:nowrap;padding:8px 10px}
+tr.clk{cursor:pointer}
+tr.clk:hover{background:var(--surface2)}
+tr.clk:focus-visible{outline:2px solid var(--acc);outline-offset:-2px}
+.lpick.clk{cursor:pointer}
+.chev{margin-left:8px;color:var(--acc);font-weight:700}
+.leg.clk,.strip .lv.clk{cursor:pointer}
+.ptag{display:inline-block;font:600 10px var(--f-mono);padding:1px 6px;border-radius:999px;border:1px solid var(--line);color:var(--mut);margin:2px 4px 0 0}
+.ptag.hit{border-color:var(--good);color:var(--good)}
+.tags{display:block}
+.who>span{min-width:0}
+.bt{display:grid;gap:6px}
+.bt .k{font:600 11px var(--f-body);letter-spacing:.08em;text-transform:uppercase;color:var(--mut)}
+.why-list{margin:0;padding-left:20px;display:grid;gap:8px;font-size:14px}
+.plays{margin:0;padding-left:18px;font-size:13px;display:grid;gap:4px}
+.pl-head{display:flex;gap:14px;align-items:center;flex-wrap:wrap}
+.pl-head>.av{--s:68px}
+.pl-id{display:grid;gap:4px;flex:1;min-width:160px;justify-items:start}
+.pl-name{font:700 32px/1 var(--f-disp);letter-spacing:.01em;overflow-wrap:anywhere}
+.pl-id .av{--s:20px;vertical-align:-5px}
+.propcard{background:var(--surface);border:1px solid var(--acc);border-radius:12px;padding:12px 14px;display:grid;gap:10px;min-width:0;box-shadow:inset 0 0 0 1px var(--acc)}
+.pc-top{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
+.pc-title{font:700 28px/1 var(--f-disp);letter-spacing:.02em}
+.prog{display:grid;gap:6px}
+.bar2{position:relative;height:12px;border-radius:6px;background:var(--surface2)}
+.bar2 i{display:block;height:100%;border-radius:6px;background:var(--mut);max-width:100%;transition:width .5s ease}
+.bar2 i.hit{background:var(--good)}
+.bar2 s{position:absolute;top:-3px;bottom:-3px;width:2px;background:var(--gold);margin-left:-2px;text-decoration:none}
+.chartbox{background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:8px}
+svg.bars{width:100%;height:auto;max-height:340px;display:block}
+svg.bars .bar{fill:var(--mut)}
+svg.bars .bar.hit{fill:var(--good)}
+svg.bars .bar.miss{fill:var(--bad)}
+svg.bars .bar.live{fill:transparent;stroke:var(--acc);stroke-width:2;stroke-dasharray:4 3}
+svg.bars .bv{font:600 10px var(--f-mono);fill:var(--fg);text-anchor:middle}
+svg.bars .bl{font:600 9px var(--f-body);fill:var(--mut);text-anchor:middle}
+svg.bars .bl.sm{font-size:8px;font-weight:500}
+svg.bars .ln{stroke:var(--gold);stroke-width:1.5;stroke-dasharray:5 4}
+svg.bars .lt{font:700 9px var(--f-mono);fill:var(--gold);text-anchor:start}
+.game.clk-card,.pick.clk-card{cursor:pointer}
+.go-row{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
+.go-hint{color:var(--acc);font-weight:600}
+.btn.go{border-color:var(--acc);color:var(--acc)}
+.btn.go:hover{background:var(--acc);color:var(--on-acc)}
+.lean{margin:0}
+.sc-team .nm{overflow-wrap:anywhere}
+@media (max-width:600px){.sc-team .big{font-size:46px}.sc-team .av{--s:36px}.sc-team .ab{font-size:32px}.sc-head{padding:14px 12px}.pl-name{font-size:28px}}
 </style>
 </head>
 <body>
@@ -323,6 +412,13 @@ svg.court .ct-lab.sm{font-size:19px}
   <p class="legal">Estimates, not guarantees. Check lines and injuries before you bet. Bet only where it is legal and only what you can afford to lose. Problem gambling help in the US: 1-800-GAMBLER.</p>
   <p class="legal">Scores, box scores and injury reports from ESPN public data; prop prices from your props.txt or The Odds API; analysis by Claude. Independent project, not affiliated with the NBA, ESPN or any sportsbook. <span id="ver"></span></p>
 </main>
+<div class="sheet" id="sheet" role="dialog" aria-modal="true" aria-label="Game and player details" hidden>
+  <div class="bk"></div>
+  <div class="pn" id="shPn">
+    <div class="sh-bar"><button type="button" class="ib" id="shBack" aria-label="Back" hidden>←</button><b id="shTitle"></b><button type="button" class="ib" id="shClose" aria-label="Close">✕</button></div>
+    <div id="shBody"></div>
+  </div>
+</div>
 <script>
 (function(){
 'use strict';
@@ -421,9 +517,19 @@ function meterEl(p){
     el('div', {class:'mlab'}, el('span', {text:'Price ' + Math.round(px) + '%'}), el('span', {text:'Est ' + Math.round(est) + '%'})));
 }
 function tileEl(k, v, tip){ return el('div', {class:'tile', 'data-tip':tip, tabindex:'0'}, el('span', {text:k}), el('b', {text:v})); }
-function table(head, rows, numFrom){
-  return el('div', {class:'tscroll'}, el('table', {}, el('thead', {}, el('tr', {}, head.map(function(h, i){ return el('th', {class:i >= (numFrom == null ? 1 : numFrom) ? 'num' : '', text:h}); }))),
-    el('tbody', {}, rows.map(function(r){ return el('tr', {}, r.map(function(c, i){ var cl = i >= (numFrom == null ? 1 : numFrom) ? 'num' : ''; return c && c.nodeType ? el('td', {class:cl}, c) : el('td', {class:cl, text:c == null ? 'n/a' : String(c)}); })); }))));
+function table(head, rows, numFrom, onrow){
+  var nf = numFrom == null ? 1 : numFrom;
+  return el('div', {class:'tscroll'}, el('table', {}, el('thead', {}, el('tr', {}, head.map(function(h, i){ return el('th', {class:i >= nf ? 'num' : '', text:h}); }))),
+    el('tbody', {}, rows.map(function(r, ri){
+      var tr = el('tr', {}, r.map(function(c, i){ var cl = i >= nf ? 'num' : ''; return c && c.nodeType ? el('td', {class:cl}, c) : el('td', {class:cl, text:c == null ? 'n/a' : String(c)}); }));
+      var h = onrow ? onrow(ri) : null;
+      if (h){
+        tr.className = 'clk'; tr.tabIndex = 0; tr.setAttribute('role', 'link');
+        tr.onclick = function(){ h(); };
+        tr.onkeydown = function(e){ if (e.key === 'Enter' || e.key === ' '){ e.preventDefault(); h(); } };
+      }
+      return tr;
+    }))));
 }
 function listBlock(title, arr){
   if (!arr || !arr.length) return null;
@@ -558,19 +664,7 @@ function gameCard(g, idx){
       el('small', {text:fin ? (mo ? 'Our number ' : 'Market only ') + h.abbr + ' ' + sg(-fin.margin) : ''})),
     el('div', {class:'cell'}, el('span', {text:'Total'}), el('b', {text:m && m.total != null ? m.total : 'n/a'}), el('small', {text:fin && fin.total != null ? (mo ? 'Our number ' : 'Market only ') + fin.total : ''})),
     el('div', {class:'cell'}, el('span', {text:'Moneyline'}), el('b', {text:m && m.ml_home != null ? fo(m.ml_home) + ' / ' + fo(m.ml_away) : 'n/a'}), el('small', {text:m ? 'home / away' : ''})));
-  var ratingRows = ['off', 'def', 'net', 'pace', 'last5_net', 'efg', 'd_efg', 'tov_pct', 'orb_pct', 'ftr'].map(function(k){
-    var lbl = {off:'Off rating (adj)', def:'Def rating (adj)', net:'Net rating (adj)', pace:'Pace', last5_net:'Last-5 net', efg:'eFG%', d_efg:'Opp eFG%', tov_pct:'TOV%', orb_pct:'ORB%', ftr:'FT rate'}[k];
-    var f = function(t){ var r = t.ratings; if (!r || r[k] == null) return 'n/a'; return (['efg', 'd_efg', 'tov_pct', 'orb_pct', 'ftr'].indexOf(k) >= 0) ? (r[k] * 100).toFixed(1) : r[k]; };
-    return [lbl, f(a), f(h)];
-  });
-  var injs = [a, h].map(function(t){
-    if (!t.injuries || !t.injuries.length) return el('p', {class:'small mut', text:t.abbr + ': none listed'});
-    return el('p', {class:'small', text:t.abbr + ': ' + t.injuries.map(function(i){ return i.name + ' (' + i.status + (i.avg ? ', avg ' + i.avg.pts + ' pts/' + i.avg.min + ' min' : '') + ')'; }).join('; ')});
-  });
-  var ana = g.analysis ? el('div', {class:'ana'},
-    el('p', {}, el('b', {text:'Lean: '}), g.analysis.lean),
-    listBlock('Why', g.analysis.why), listBlock('Risks', g.analysis.risks), listBlock('Matchups', g.analysis.matchups), listBlock('Verify before betting', g.analysis.verify))
-    : el('p', {class:'small mut', text:g.state === 'pre' ? 'No written analysis for this game (the Claude step did not run or returned nothing). The numbers above are still model output.' : 'Game has started, so no new analysis.'});
+  var ana1 = g.analysis && g.analysis.lean ? el('p', {class:'small lean'}, el('b', {text:'Lean: '}), g.analysis.lean) : null;
   var picks = (g.pick_objs || []).slice().sort(function(x, y){ var a1 = rankKey(x), b1 = rankKey(y); return b1[0] - a1[0] || b1[1] - a1[1]; });
   var pk = picks.map(function(p){
     return el('div', {class:'lpick ' + p.conf}, el('b', {}, lockSvg(p.conf), ' ', p.label, ' ', el('span', {class:'mono mut', text:fo(p.odds)})),
@@ -578,33 +672,19 @@ function gameCard(g, idx){
       p.flag ? el('span', {class:'small', style:'color:var(--warn)', text:p.flag}) : null);
   });
   if (!pk.length && g.state === 'pre') pk.push(el('p', {class:'mut small', text:m ? 'No bet clears the 2-point edge bar on this game.' : 'No line loaded, so nothing can be priced.'}));
-  var propsBox = null;
-  if (g.prop_rows && g.prop_rows.length){
-    var rows = g.prop_rows.map(function(r){
-      var b = bestSide(r);
-      return [whoEl(r.pid, r.player + ' (' + r.team + ')' + (r.injury ? ' [' + r.injury + ']' : '')), (STAT[r.stat] || r.stat) + ' ' + r.line, r.model.mean, r.model.hit_l10 + '/' + r.model.n_l10, b.side + ' ' + fe(b.edge) + (r.skipped ? ' skip' : '')];
-    });
-    propsBox = el('details', {}, el('summary', {text:g.prop_rows.length + ' props from your board, priced from game logs'}),
-      table(['Player', 'Prop', 'Model mean', 'Over L10', 'Best side edge'], rows, 2),
-      el('p', {class:'small mut', text:'Edge is in percentage points versus the posted price. "skip" means the analysis or the injury report ruled the player out of a pick.'}));
-  }
   var colors = teamColors(a.abbr, h.abbr);
-  var rotation = [a, h].map(function(t){
-    return t.rotation && t.rotation.length ? table([t.abbr + ' rotation', 'Min', 'Pts', 'Reb', 'Ast', '3PM', 'L5 pts'], t.rotation.map(function(p){ return [p.id ? whoEl(p.id, p.name) : p.name, p.min, p.pts, p.reb, p.ast, p.tpm, p.pts_l5]; })) : null;
-  });
-  var root = el('article', {class:'game', style:'--ca:' + colors[0] + ';--ch:' + colors[1] + ';--i:' + Math.min(idx, 12)},
+  var np = (g.prop_rows || []).length;
+  var meta = el('div', {class:'flags'}, np ? el('span', {class:'pill', text:np + ' props'}) : null,
+    el('span', {class:'pill' + (g.crew ? ' good' : ''), text:g.crew ? 'Crew posted' : 'Crew pending'}), g.analysis ? el('span', {class:'pill', text:'Analysis'}) : null);
+  var openBtn = el('button', {type:'button', class:'btn go', text:(g.state === 'in' ? 'Live game center' : 'Open game center') + ' ›', onclick:function(e){ e.stopPropagation(); openGame(g.id); }});
+  var root = el('article', {class:'game clk-card', style:'--ca:' + colors[0] + ';--ch:' + colors[1] + ';--i:' + Math.min(idx, 12)},
     el('div', {class:'g-top'}, el('span', {class:'tip', text:g.tip || ''}), liveEl(a.abbr, h.abbr), flags),
     el('div', {class:'matchup'},
       el('div', {class:'team', 'data-side':'away'}, el('div', {class:'tm-row'}, logoEl(a.abbr), el('b', {class:'ab', text:a.abbr})), el('span', {class:'nm', text:a.name}), el('span', {class:'rec', text:a.record})),
       el('span', {class:'at', text:'AT'}),
       el('div', {class:'team home', 'data-side':'home'}, el('div', {class:'tm-row'}, logoEl(h.abbr), el('b', {class:'ab', text:h.abbr})), el('span', {class:'nm', text:h.name}), el('span', {class:'rec', text:h.record}))),
-    wp, cells, pk, ana, propsBox,
-    el('details', {}, el('summary', {text:'Ratings, injuries and rotation'}),
-      el('div', {style:'display:grid;gap:10px;margin-top:6px'},
-        table(['Per 100 possessions', a.abbr, h.abbr], ratingRows),
-        el('p', {class:'small mut', text:'Ratings are opponent-adjusted and pulled toward ' + (g.dq && g.dq.prior ? 'last season\'s level (half kept, since rosters change)' : 'the league average') + ' while teams have few games (' + (g.dq ? 'min ' + g.dq.min_games + ' games here' : '') + '). Rest: ' + a.abbr + ' ' + a.rest + '; ' + h.abbr + ' ' + h.rest + '.'}),
-        injs, rotation)),
-    tendPanel(g), shotPanel(g));
+    wp, cells, ana1, pk, el('div', {class:'go-row'}, meta, openBtn));
+  root.addEventListener('click', function(e){ if (e.target.closest('[data-tip],a,button')) return; openGame(g.id); });
   root.querySelectorAll('.team').forEach(function(tm){
     tm.addEventListener('pointerenter', function(){ root.dataset.hot = tm.dataset.side; });
     tm.addEventListener('pointerleave', function(){ delete root.dataset.hot; });
@@ -627,6 +707,7 @@ function renderSlate(){
   var eg = L.status && L.status.sources && L.status.sources.espn_games;
   if (eg && !eg.ok) root.append(el('div', {class:'note warn', text:'Game data could not be loaded in the last run (' + eg.msg + '). Open the Status tab.'}));
   else if (!L.games.length) root.append(el('div', {class:'note', text:'No NBA games are scheduled for this date.'}));
+  root.append(el('p', {class:'small mut', text:'Tap any game for the live box score, props, officials and the full breakdown. Tap a player or a prop for his last 10 games and why the number is what it is.'}));
   root.append(el('div', {class:'strip', id:'liveStrip', hidden:true, 'aria-live':'polite', 'aria-label':'Live scores'}));
   var grid = el('div', {class:'cards'}); L.games.forEach(function(g, i){ grid.append(gameCard(g, i)); }); root.append(grid);
   setTimeout(function(){ document.querySelectorAll('.wp.pre').forEach(function(x){ x.classList.remove('pre'); }); }, 80);
@@ -657,7 +738,12 @@ function applyLive(){
   if (st){
     st.textContent = '';
     var lst = Object.keys(LV.map).map(function(k){ return LV.map[k]; }).filter(function(d){ return d.state === 'in'; });
-    lst.forEach(function(d){ var n = el('span', {}); fillLive(n, d); st.append(n); });
+    lst.forEach(function(d){
+      var n = el('span', {}); fillLive(n, d);
+      var gg = ((S.latest && S.latest.games) || []).filter(function(x){ return x.away.abbr === d.away && x.home.abbr === d.home; })[0];
+      if (gg){ n.classList.add('clk'); n.tabIndex = 0; n.setAttribute('role', 'link'); n.onclick = function(){ openGame(gg.id); }; n.onkeydown = function(e){ if (e.key === 'Enter'){ openGame(gg.id); } }; }
+      st.append(n);
+    });
     st.hidden = !lst.length;
   }
   var sync = $('#sync');
@@ -700,7 +786,7 @@ function startLive(){ liveTick(); document.addEventListener('visibilitychange', 
 function pickCard(p, idx){
   var g = S.latest.games.filter(function(x){ return x.id === p.game_id; })[0];
   var av = pickAvatar(p, g);
-  return el('article', {class:'pick'},
+  var art = el('article', {class:'pick' + (g ? ' clk-card' : '')},
     el('div', {class:'p-main'}, av, el('div', {class:'p-body'},
     el('div', {class:'p-head'}, el('span', {class:'rank', text:'#' + (idx + 1)}), lockSvg(p.conf), el('span', {class:'conf ' + p.conf, text:p.conf}), el('span', {class:'pill', text:p.type}),
       p.kind === 'assumed' ? el('span', {class:'pill warn', text:'no price, -110 assumed'}) : null),
@@ -712,7 +798,10 @@ function pickCard(p, idx){
       el('span', {}, 'Edge ', el('b', {class:p.edge >= 0 ? 'pos' : 'neg', text:fe(p.edge)})), el('span', {}, 'Stake ', el('b', {text:p.units + 'u'})),
       p.type === 'prop' ? el('span', {}, 'Model mean ', el('b', {text:p.mean})) : null, p.type === 'prop' ? el('span', {}, 'L10 over ', el('b', {text:p.hit_l10})) : null),
     p.flag ? el('p', {class:'small', style:'color:var(--warn)', text:p.flag}) : null,
-    p.reason ? el('p', {class:'why', text:p.reason}) : null);
+    p.reason ? el('p', {class:'why', text:p.reason}) : null,
+    g ? el('p', {class:'small go-hint', text:'Tap for the full breakdown ›'}) : null);
+  if (g) art.addEventListener('click', function(){ if (p.type === 'prop' && p.pid) openPlayer(g.id, p.pid, p.stat); else openGame(g.id); });
+  return art;
 }
 function renderPicks(){
   var root = $('#picks'); root.textContent = '';
@@ -779,9 +868,12 @@ function mkTicket(legs){
   return {legs:legs, n:legs.length, D:D, odds:amer(D), P:P, Pc:Pc, ev:ev, evc:evc, g:g, stake:stake, conf:conf, profit:b};
 }
 function legRow(p, core, showCore){
-  return el('div', {class:'leg ' + p.conf}, pickAvatar(p, null), el('div', {class:'leg-body'},
+  var d = el('div', {class:'leg ' + p.conf}, pickAvatar(p, null), el('div', {class:'leg-body'},
     el('b', {}, lockSvg(p.conf), ' ', p.label, ' ', el('span', {class:'mono mut', text:fo(p.odds)}), showCore ? el('span', {class:'core', text:core ? '★ core' : '+ added'}) : null),
     el('span', {class:'small mut', text:p.away + ' @ ' + p.home + ' · ' + p.type + ' · ' + p.conf + ' · est ' + pct(p.est) + ' vs price ' + pct(p.implied) + ' · edge ' + fe(p.edge) + (p.kind === 'assumed' ? ' (no price, -110 assumed)' : '')})));
+  var gg = gameById(p.game_id);
+  if (gg){ d.classList.add('clk'); d.onclick = function(){ if (p.type === 'prop' && p.pid) openPlayer(gg.id, p.pid, p.stat); else openGame(gg.id); }; }
+  return d;
 }
 function ticketNums(t){
   return el('div', {class:'nums'},
@@ -917,7 +1009,7 @@ function renderPlayers(){
     return ['#' + (i + 1), whoEl(p.pid, p.player), betLine(p) + ' (' + fo(p.odds) + ')', p.away + ' @ ' + p.home, p.conf, p.mean, p.hit_l10, pct(p.est), fe(p.edge), p.units + 'u'];
   });
   root.append(el('div', {class:'pgroup', style:'margin-top:14px'}, el('div', {class:'pg-h'}, el('div', {}, el('b', {text:m.name + ': best bets'}), el('span', {text:bets.length + ' qualifying'}))),
-    rows.length ? table(['#', 'Player', 'Bet', 'Game', 'Confidence', 'Model', 'L10 over', 'Chance', 'Edge', 'Stake'], rows, 5)
+    rows.length ? table(['#', 'Player', 'Bet', 'Game', 'Confidence', 'Model', 'L10 over', 'Chance', 'Edge', 'Stake'], rows, 5, function(i){ var p = bets[i]; return p && gameById(p.game_id) ? function(){ openPlayer(p.game_id, p.pid, p.stat); } : null; })
       : el('div', {class:'empty'}, el('b', {text:'No priced bet in this market'}), 'Either no lines are loaded for ' + m.name.toLowerCase() + ' or none clear the edge bar. Add lines to props.txt, or set the markets the bot pulls automatically (see Status).')));
   m.stats.forEach(function(st){
     var br = boardRows(st).slice(0, 10);
@@ -927,7 +1019,7 @@ function renderPlayers(){
       return ['#' + (i + 1), whoEl(r.p.pid, r.p.name + (r.p.inj ? ' [' + r.p.inj + ']' : '')), r.g.away.abbr + ' @ ' + r.g.home.abbr, r.mean, r.season, r.l5, trend, el('span', {class:'small mut', text:r.p.note && r.p.note !== 'none' ? r.p.note : ''})];
     });
     root.append(el('div', {class:'pgroup', style:'margin-top:14px'}, el('div', {class:'pg-h'}, el('div', {}, el('b', {text:(STAT[st] || st) + ': projected leaders'}), el('span', {text:'tonight'}))),
-      prow.length ? table(['#', 'Player', 'Game', 'Projected', 'Season', 'Last 5', 'Form', 'Adjusted for'], prow, 3) : el('div', {class:'empty'}, el('b', {text:'No projections yet'}), 'Players need at least 3 games this season.')));
+      prow.length ? table(['#', 'Player', 'Game', 'Projected', 'Season', 'Last 5', 'Form', 'Adjusted for'], prow, 3, function(i){ var r = br[i]; return function(){ openPlayer(r.g.id, r.p.pid, st); }; }) : el('div', {class:'empty'}, el('b', {text:'No projections yet'}), 'Players need at least 3 games this season.')));
   });
   root.append(el('p', {class:'small mut', text:'Projected is the model mean for tonight: season, last-10 and last-5 averages blended, pulled toward last season while samples are small, then adjusted for teammates who are out, blowout risk and the game\'s expected pace. Form compares the last 5 games with the season average. Players ruled out are left off. Edge is in percentage points versus the posted price.'}));
 }
@@ -956,7 +1048,7 @@ function renderProps(){
       return [whoEl(r.pid, r.player + (r.injury ? ' [' + r.injury + ']' : '')), (STAT[r.stat] || r.stat) + ' ' + r.line, r.model.season, r.model.l10, r.model.l5, r.model.prior_mean, r.model.mean, pct(b.side === 'over' ? r.model.p_over : r.model.p_under), b.side + ' ' + fe(b.edge), el('span', {class:'small mut', text:roleTxt(r)})];
     });
     root.append(el('div', {class:'pgroup'}, el('div', {class:'pg-h'}, el('div', {}, el('b', {text:g.away.abbr + ' @ ' + g.home.abbr}), el('span', {text:g.prop_rows.length + ' props'}))),
-      table(['Player', 'Prop', 'Season', 'L10', 'L5', 'Last yr', 'Mean', 'Chance', 'Best side', 'Adjusted for'], rows, 2)));
+      table(['Player', 'Prop', 'Season', 'L10', 'L5', 'Last yr', 'Mean', 'Chance', 'Best side', 'Adjusted for'], rows, 2, function(i){ var r = g.prop_rows[i]; return function(){ openPlayer(g.id, r.pid, r.stat); }; })));
   } });
   if (!totals) root.append(el('div', {class:'empty'}, el('b', {text:'No props priced'}), L.props_lines ? 'Lines were pasted but none matched a player playing today with at least 3 games. See below.' : 'Add lines to props.txt and they show up here, grouped by game.'));
   if (L.props_unmatched && L.props_unmatched.length) root.append(el('div', {class:'pgroup un'}, el('div', {class:'pg-h'}, el('b', {text:'Could not use (' + L.props_unmatched.length + ')'})),
@@ -964,6 +1056,516 @@ function renderProps(){
   if (L.props_not_playing && L.props_not_playing.length) root.append(el('div', {class:'pgroup'}, el('div', {class:'pg-h'}, el('b', {text:'Team not playing today (' + L.props_not_playing.length + ')'})),
     table(['Player', 'Team', 'Prop'], L.props_not_playing.map(function(p){ return [p.name || p.player, p.team, (STAT[p.stat] || p.stat) + ' ' + p.line]; }), 9)));
 }
+
+/* ---- game center and player view: opens over any tab, live box score read from ESPN in the browser ---- */
+var SUMMARY = 'https://site.api.espn.com/apis/site/v2/sports/basketball/nba/summary?event=';
+var SH = {kind:null, gid:null, pid:null, stat:null, tab:'over', box:null, err:'', loading:false, tok:0, timer:null, depth:0, opener:null, at:0};
+var LIVE_KEYS = {points:['PTS'], rebounds:['REB'], assists:['AST'], threes:['3PT'], pra:['PTS', 'REB', 'AST'], pts_reb:['PTS', 'REB'], pts_ast:['PTS', 'AST'], reb_ast:['REB', 'AST'], steals:['STL'], blocks:['BLK'], turnovers:['TO']};
+var LOGI = {points:[3], rebounds:[4], assists:[5], threes:[6], steals:[7], blocks:[8], turnovers:[9], pra:[3, 4, 5], pts_reb:[3, 4], pts_ast:[3, 5], reb_ast:[4, 5]};
+var SHORT = {points:'PTS', rebounds:'REB', assists:'AST', threes:'3PM', pra:'PRA', pts_reb:'P+R', pts_ast:'P+A', reb_ast:'R+A', steals:'STL', blocks:'BLK', turnovers:'TO'};
+function gameById(id){ var a = (S.latest && S.latest.games) || []; for (var i = 0; i < a.length; i++) if (a[i].id === id) return a[i]; return null; }
+function nz(v){ var x = parseFloat(v); return isFinite(x) ? x : 0; }
+function madeOf(v){ var x = parseInt(String(v == null ? '' : v).split('-')[0], 10); return isFinite(x) ? x : 0; }
+function avgOf(a){ return a.length ? a.reduce(function(x, y){ return x + y; }, 0) / a.length : null; }
+function f1(x){ return x == null || !isFinite(x) ? 'n/a' : (Math.round(x * 10) / 10).toFixed(1); }
+function liveVal(row, stat){
+  if (!row) return null;
+  var ks = LIVE_KEYS[stat]; if (!ks) return null;
+  var t = 0; ks.forEach(function(k){ t += k === '3PT' ? madeOf(row.s[k]) : nz(row.s[k]); });
+  return t;
+}
+function logVal(e, stat){ var ix = LOGI[stat]; if (!ix) return null; var t = 0; ix.forEach(function(i){ t += e[i]; }); return t; }
+function gameState(g){
+  if (SH.box && SH.gid === g.id) return SH.box.state;
+  var lv = LV.map[g.away.abbr + '@' + g.home.abbr];
+  return lv ? lv.state : g.state;
+}
+function blk(title, kids, cls){
+  return el('div', {class:'blk' + (cls ? ' ' + cls : '')}, title ? el('h3', {text:title}) : null, kids);
+}
+
+/* ---- ESPN game summary -> small object ---- */
+function parseBox(js){
+  var out = {state:'pre', detail:'', period:0, lines:{}, tstats:{}, rows:{}, byTeam:{}, refs:[], plays:[]};
+  var hc = (js.header && js.header.competitions && js.header.competitions[0]) || {};
+  var tp = (hc.status && hc.status.type) || (js.header && js.header.status && js.header.status.type) || {};
+  out.state = tp.state || 'pre';
+  out.detail = String(tp.shortDetail || tp.detail || '').replace(/ - /g, ' · ');
+  out.period = (hc.status && hc.status.period) || 0;
+  (hc.competitors || []).forEach(function(c){
+    var a = fixAb(c.team && c.team.abbreviation);
+    out.lines[a] = {score:c.score != null ? c.score : null, side:c.homeAway, q:(c.linescores || []).map(function(x){ return x.displayValue != null ? x.displayValue : x.value; })};
+  });
+  var box = js.boxscore || {};
+  (box.teams || []).forEach(function(t){
+    var a = fixAb(t.team && t.team.abbreviation), m = {};
+    (t.statistics || []).forEach(function(s){ m[String(s.name || s.label || '').toLowerCase()] = s.displayValue; });
+    out.tstats[a] = m;
+  });
+  (box.players || []).forEach(function(tp2){
+    var a = fixAb(tp2.team && tp2.team.abbreviation), list = out.byTeam[a] = out.byTeam[a] || [];
+    (tp2.statistics || []).forEach(function(grp){
+      var labels = (grp.labels || grp.names || []).map(function(x){ return String(x).toUpperCase(); });
+      (grp.athletes || []).forEach(function(at){
+        var ath = at.athlete || {}, s = {};
+        (at.stats || []).forEach(function(v, i){ if (labels[i]) s[labels[i]] = v; });
+        var row = {id:String(ath.id), name:ath.displayName || ath.shortName || '', pos:(ath.position && ath.position.abbreviation) || '', starter:!!at.starter,
+          dnp:!!at.didNotPlay, reason:at.reason || '', s:s, team:a};
+        row.on = !row.dnp && (nz(s.MIN) > 0 || nz(s.PTS) > 0 || nz(s.REB) > 0 || nz(s.AST) > 0);
+        list.push(row); out.rows[row.id] = row;
+      });
+    });
+  });
+  out.refs = ((js.gameInfo && js.gameInfo.officials) || []).map(function(o){ return o.displayName || o.fullName; }).filter(Boolean);
+  out.plays = (js.plays || []).slice(-6).reverse().map(function(p){
+    return {t:p.text || p.shortDescription || '', c:(p.clock && p.clock.displayValue) || '', per:(p.period && (p.period.number || p.period.displayValue)) || ''};
+  });
+  return out;
+}
+function loadBox(){
+  var g = gameById(SH.gid); if (!g || SH.loading) return;
+  var tok = SH.tok; SH.loading = true;
+  fetch(SUMMARY + encodeURIComponent(g.id), {cache:'no-store'}).then(function(r){ if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); }).then(function(js){
+    if (tok !== SH.tok) return;
+    SH.box = parseBox(js); SH.err = ''; SH.at = Date.now();
+  }).catch(function(e){
+    if (tok !== SH.tok) return;
+    SH.err = 'The live box score could not be loaded from ESPN in this browser (' + ((e && e.message) || 'blocked') + '). The rest of this page still works.';
+  }).then(function(){
+    if (tok !== SH.tok) return;
+    SH.loading = false; renderSheet(); schedule();
+  });
+}
+function schedule(){
+  clearTimeout(SH.timer);
+  if (!SH.kind) return;
+  var g = gameById(SH.gid); if (!g) return;
+  var st = gameState(g);
+  var wait = SH.err ? 60000 : st === 'in' ? 15000 : st === 'pre' ? 60000 : 0;
+  if (!wait) return;
+  var tok = SH.tok;
+  SH.timer = setTimeout(function(){ if (tok !== SH.tok || !SH.kind) return; if (document.hidden){ schedule(); return; } loadBox(); }, wait);
+}
+
+/* ---- opening, closing and the address bar ---- */
+function go(route){
+  try { history.pushState({sh:SH.depth + 1}, '', '#' + route); } catch(e){}
+  routeHash();
+}
+function openGame(gid){ go('game/' + gid); }
+function openPlayer(gid, pid, stat){ go('player/' + gid + '/' + pid + (stat ? '/' + stat : '')); }
+function routeHash(){
+  var h = (location.hash || '').slice(1), p = h.split('/');
+  SH.depth = (history.state && history.state.sh) || 0;
+  if (p[0] === 'game' && p[1]) showSheet({kind:'game', gid:p[1]});
+  else if (p[0] === 'player' && p[1] && p[2]) showSheet({kind:'player', gid:p[1], pid:p[2], stat:p[3] || null});
+  else closeSheet(true);
+}
+function showSheet(r){
+  var g = gameById(r.gid);
+  if (!g){ closeSheet(true); return; }
+  var sh = $('#sheet'), fresh = sh.hidden;
+  var newGame = SH.gid !== r.gid || fresh;
+  SH.kind = r.kind; SH.pid = r.pid || null; SH.stat = r.stat || null;
+  if (newGame){ SH.gid = r.gid; SH.box = null; SH.err = ''; SH.tok++; SH.loading = false; SH.tab = 'over'; }
+  if (fresh){
+    SH.opener = document.activeElement;
+    sh.hidden = false; document.body.classList.add('noscroll');
+  }
+  renderSheet(true);
+  if (newGame) loadBox(); else schedule();
+  if (fresh) setTimeout(function(){ var c = $('#shClose'); if (c) c.focus(); }, 30);
+}
+function closeSheet(silent){
+  var sh = $('#sheet'); if (!sh) return;
+  if (!silent && !sh.hidden){
+    if (SH.depth > 0){ try { history.go(-SH.depth); return; } catch(e){} }
+    try { history.replaceState(null, '', '#' + S.tab); } catch(e){}
+  }
+  if (sh.hidden) return;
+  sh.hidden = true; document.body.classList.remove('noscroll');
+  clearTimeout(SH.timer); SH.tok++; SH.kind = null; SH.gid = null; SH.box = null; SH.loading = false;
+  var o = SH.opener; SH.opener = null;
+  if (o && o.focus && document.contains(o)) try { o.focus(); } catch(e){}
+}
+function sheetBack(){
+  if (SH.depth > 0){ try { history.back(); return; } catch(e){} }
+  closeSheet(false);
+}
+
+/* ---- drawing ---- */
+function renderSheet(top){
+  var g = gameById(SH.gid), pn = $('#shPn'), body = $('#shBody');
+  if (!g || !pn) return;
+  var keep = pn.scrollTop, title = '', content;
+  try {
+    if (SH.kind === 'player'){ var pb = playerBody(g, SH.pid, SH.stat); content = pb.node; title = pb.title; }
+    else { content = gameBody(g); title = g.away.abbr + ' at ' + g.home.abbr; }
+  } catch(e){
+    content = el('div', {class:'note warn'}, el('b', {text:'This view could not be drawn. '}), String(e && e.message || e));
+    title = 'Details';
+  }
+  body.textContent = ''; body.append(content);
+  $('#shTitle').textContent = title;
+  $('#shBack').hidden = SH.depth < 2;   /* the arrow only appears when you have moved between views; the X always closes */
+  pn.scrollTop = top ? 0 : keep;
+  applyLive();
+}
+
+function scoreHead(g){
+  var a = g.away, h = g.home, b = SH.box, lv = LV.map[a.abbr + '@' + h.abbr] || null, ln = (b && b.lines) || {};
+  var state = b ? b.state : lv ? lv.state : g.state;
+  var as = ln[a.abbr] && ln[a.abbr].score != null ? ln[a.abbr].score : lv ? lv.as : null;
+  var hs = ln[h.abbr] && ln[h.abbr].score != null ? ln[h.abbr].score : lv ? lv.hs : null;
+  var det = b && b.detail ? b.detail : lv ? lv.detail : '';
+  var colors = teamColors(a.abbr, h.abbr);
+  function side(t, sc, cls){
+    return el('div', {class:'sc-team ' + cls},
+      el('div', {class:'tm-row'}, logoEl(t.abbr), el('b', {class:'ab', text:t.abbr})),
+      el('span', {class:'nm', text:t.name}), el('span', {class:'rec', text:t.record}),
+      state !== 'pre' && sc != null ? el('b', {class:'big', text:String(sc)}) : null);
+  }
+  var chip = state === 'in' ? el('span', {class:'lv in'}, el('span', {class:'st', text:'Live'})) : state === 'post' ? el('span', {class:'lv post'}, el('span', {class:'st', text:'Final'})) : el('span', {class:'pill', text:'Not started'});
+  var mid = el('div', {class:'sc-mid'}, chip, el('span', {class:'at', text:state === 'pre' ? 'AT' : '–'}), el('span', {class:'small mut', text:state === 'pre' ? (g.tip || '') : det}));
+  var kids = [el('div', {class:'sc-grid'}, side(a, as, 'away'), mid, side(h, hs, 'home'))];
+  var qa = ln[a.abbr] && ln[a.abbr].q, qh = ln[h.abbr] && ln[h.abbr].q;
+  if (qa && qa.length && qh && qh.length){
+    var head = ['']; qa.forEach(function(x, i){ head.push(i < 4 ? 'Q' + (i + 1) : (i === 4 ? 'OT' : 'OT' + (i - 3))); }); head.push('T');
+    kids.push(table(head, [[a.abbr].concat(qa, [as]), [h.abbr].concat(qh, [hs])], 1));
+  }
+  if (SH.at && state === 'in') kids.push(el('p', {class:'small mut', text:'Live box score from ESPN, refreshed every 15 seconds while this is open.'}));
+  return el('div', {class:'sc-head', style:'--ca:' + colors[0] + ';--ch:' + colors[1]}, kids);
+}
+
+function gameBody(g){
+  var wrap = el('div', {class:'sh-in'});
+  wrap.append(scoreHead(g));
+  if (SH.err) wrap.append(el('div', {class:'note warn small', text:SH.err}));
+  var np = (g.prop_rows || []).length, nb = (g.player_board || []).length;
+  var tabs = [['over', 'Overview'], ['box', 'Box score']];
+  if (np) tabs.push(['props', 'Props (' + np + ')']);
+  if (nb) tabs.push(['players', 'Players']);
+  tabs.push(['match', 'Matchup']);
+  if (g.shot_profile) tabs.push(['shots', 'Shots']);
+  if (!tabs.some(function(t){ return t[0] === SH.tab; })) SH.tab = 'over';
+  wrap.append(el('div', {class:'seg sh-tabs', role:'tablist'}, tabs.map(function(t){
+    return el('button', {type:'button', role:'tab', 'aria-pressed':String(SH.tab === t[0]), text:t[1], onclick:function(){ SH.tab = t[0]; renderSheet(false); }});
+  })));
+  var fn = {over:overTab, box:boxTab, props:propsTab, players:playersTab, match:matchTab, shots:shotsTab}[SH.tab] || overTab;
+  wrap.append(fn(g));
+  return wrap;
+}
+
+function pickLine(g, p){
+  var go_ = p.type === 'prop' && p.pid ? function(){ openPlayer(g.id, p.pid, p.stat); } : null;
+  var d = el('div', {class:'lpick ' + p.conf + (go_ ? ' clk' : ''), tabindex:go_ ? '0' : null, role:go_ ? 'link' : null},
+    el('b', {}, lockSvg(p.conf), ' ', p.label, ' ', el('span', {class:'mono mut', text:fo(p.odds)}), go_ ? el('span', {class:'chev', text:'›'}) : null),
+    el('span', {class:'small mut', text:p.conf + ' · est ' + pct(p.est) + ' vs price ' + pct(p.implied) + ' · edge ' + fe(p.edge) + (p.kind === 'assumed' ? ' (at -110)' : '') + ' · ' + p.units + 'u'}),
+    p.flag ? el('span', {class:'small', style:'color:var(--warn)', text:p.flag}) : null,
+    p.reason ? el('span', {class:'small', text:p.reason}) : null);
+  if (go_){ d.onclick = go_; d.onkeydown = function(e){ if (e.key === 'Enter' || e.key === ' '){ e.preventDefault(); go_(); } }; }
+  return d;
+}
+function numbersTable(g){
+  var h = g.home, m = g.market, mo = g.model, bl = g.blend, ad = g.adjust || {}, fin = g.final, cr = g.crew;
+  var sp = function(x){ return x == null ? 'n/a' : h.abbr + ' ' + sg(-x); };
+  var rows = [];
+  rows.push(['Our ratings projection', mo ? sp(mo.margin) : 'n/a', mo ? f1(mo.total) : 'n/a']);
+  rows.push(['Market line', m && m.spread_home != null ? h.abbr + ' ' + sg(m.spread_home) : 'n/a', m && m.total != null ? m.total : 'n/a']);
+  rows.push(['Blended (our weight ' + (bl ? Math.round(bl.weight * 100) + '%' : 'n/a') + ')', bl ? sp(bl.margin) : 'n/a', bl && bl.total != null ? f1(bl.total) : 'n/a']);
+  rows.push(['Claude adjustment (capped)', ad.margin != null ? sg(ad.margin) + ' pts' : 'n/a', ad.total != null ? sg(ad.total) + ' pts' : 'n/a']);
+  if (cr) rows.push(['Officials (already inside our projection)', '', cr.adj_total ? sg(cr.adj_total) + ' pts' : 'no change']);
+  rows.push(['Final number', fin ? sp(fin.margin) : 'n/a', fin && fin.total != null ? f1(fin.total) : 'n/a']);
+  var kids = [table(['Step', 'Spread (' + h.abbr + ')', 'Total'], rows, 1)];
+  if (fin) kids.push(el('p', {class:'small mut', text:'Win chance: ' + g.away.abbr + ' ' + Math.round((1 - fin.home_win) * 100) + '%, ' + h.abbr + ' ' + Math.round(fin.home_win * 100) + '%. ' + (fin.note || '')}));
+  return kids;
+}
+function crewPanel(g){
+  var c = g.crew, bn = SH.box && SH.box.refs && SH.box.refs.length ? SH.box.refs : null;
+  if (!c && !bn) return blk('Officials', el('p', {class:'small mut', text:'Not posted yet. The NBA names the crew on game day, usually in the morning. EpLocks checks again on every run and in this live view, or you can type them into refs.txt.'}));
+  if (!c) return blk('Officials', [el('div', {class:'chips'}, bn.map(function(n){ return el('span', {class:'pill', text:n}); })),
+    el('p', {class:'small mut', text:'Named by ESPN after the last run, so no history table yet. The next run measures them.'})]);
+  var rows = c.refs.map(function(x){
+    return [x.name, x.n, x.avg_tot != null ? f1(x.avg_tot) : 'n/a', x.avg_pf != null ? f1(x.avg_pf) : 'n/a', x.n ? sg(x.tot) : 'n/a', x.n ? sg(x.pf) : 'n/a', x.n ? sg(x.fta) : 'n/a'];
+  });
+  var lg = c.lg || {};
+  return blk('Officials', [
+    table(['Official', 'Games', 'Avg total', 'Avg fouls', 'Total effect', 'Foul effect', 'FTA effect'], rows, 1),
+    el('p', {class:'small', text:'Crew effect on this game: total ' + sg(c.effect.tot) + ' pts, fouls ' + sg(c.effect.pf) + ', free-throw attempts ' + sg(c.effect.fta) + '.' + (c.adj_total ? ' The projected total was moved ' + sg(c.adj_total) + '.' : ' Not enough games per official yet to move any number.')}),
+    el('p', {class:'small mut', text:'Source: ' + c.source + '. Effects compare each official\'s games with what the two teams normally produce, then shrink the result hard so a few games never swing anything (it needs ' + 10 + ' games each and can move a total by 1 point at most).' + (lg.tot ? ' League average this season: total ' + lg.tot + (lg.pf ? ', fouls ' + lg.pf : '') + '.' : '')})]);
+}
+function overTab(g){
+  var picks = (g.pick_objs || []).slice().sort(function(x, y){ var a1 = rankKey(x), b1 = rankKey(y); return b1[0] - a1[0] || b1[1] - a1[1]; });
+  var kids = [];
+  kids.push(blk('Our picks on this game', picks.length ? picks.map(function(p){ return pickLine(g, p); })
+    : el('p', {class:'small mut', text:g.state !== 'pre' ? 'The game has started, so picks are locked.' : g.market ? 'No bet clears the 2-point edge bar on this game.' : 'No line loaded, so nothing can be priced.'})));
+  if (g.analysis){
+    kids.push(blk('Analysis', el('div', {class:'ana'}, el('p', {}, el('b', {text:'Lean: '}), g.analysis.lean),
+      listBlock('Why', g.analysis.why), listBlock('Risks', g.analysis.risks), listBlock('Matchups', g.analysis.matchups), listBlock('Verify before betting', g.analysis.verify))));
+  } else kids.push(blk('Analysis', el('p', {class:'small mut', text:g.state === 'pre' ? 'No written analysis for this game (the Claude step did not run or returned nothing). The numbers are still model output.' : 'Game has started, so no new analysis.'})));
+  kids.push(blk('How the numbers were built', numbersTable(g)));
+  kids.push(crewPanel(g));
+  var inj = [g.away, g.home].map(function(t){
+    if (!t.injuries || !t.injuries.length) return el('p', {class:'small mut', text:t.abbr + ': none listed'});
+    return el('p', {class:'small', text:t.abbr + ': ' + t.injuries.map(function(i){ return i.name + ' (' + i.status + (i.avg ? ', avg ' + i.avg.pts + ' pts/' + i.avg.min + ' min' : '') + ')'; }).join('; ')});
+  });
+  kids.push(blk('Injury report', inj));
+  var ctx = [el('p', {class:'small', text:g.away.abbr + ': ' + g.away.rest + '. ' + g.home.abbr + ': ' + g.home.rest + '.'})];
+  if (g.h2h && g.h2h.length) ctx.push(el('p', {class:'small', text:'Earlier this season: ' + g.h2h.join('; ') + '.'}));
+  kids.push(blk('Rest and history', ctx));
+  return el('div', {class:'stack'}, kids);
+}
+
+var TSPEC = [['Field goals', ['fieldgoalsmade-fieldgoalsattempted']], ['3-pointers', ['threepointfieldgoalsmade-threepointfieldgoalsattempted']], ['Free throws', ['freethrowsmade-freethrowsattempted']],
+  ['FG%', ['fieldgoalpct']], ['3P%', ['threepointfieldgoalpct']], ['Rebounds', ['totalrebounds', 'rebounds']], ['Offensive rebounds', ['offensiverebounds']], ['Assists', ['assists']],
+  ['Turnovers', ['totalturnovers', 'turnovers']], ['Steals', ['steals']], ['Blocks', ['blocks']], ['Fouls', ['fouls']], ['Points in the paint', ['pointsinpaint']],
+  ['Fast-break points', ['fastbreakpoints']], ['Points off turnovers', ['pointsoffturnovers']], ['Largest lead', ['largestlead']]];
+function tval(m, names){ for (var i = 0; i < names.length; i++) if (m && m[names[i]] != null && m[names[i]] !== '') return m[names[i]]; return null; }
+function propTags(g, pid){
+  var out = [];
+  (g.prop_rows || []).forEach(function(r){
+    if (r.pid !== pid || !LIVE_KEYS[r.stat]) return;
+    var v = liveVal(SH.box && SH.box.rows[pid], r.stat);
+    out.push(el('span', {class:'ptag' + (v != null && v > r.line ? ' hit' : ''), text:(SHORT[r.stat] || r.stat) + ' ' + (v != null ? v + ' / ' : '') + r.line}));
+  });
+  return out;
+}
+function boxTeam(g, t){
+  var b = SH.box, list = (b && b.byTeam[t.abbr]) || [];
+  var on = list.filter(function(r){ return r.on; }), off = list.filter(function(r){ return !r.on; });
+  var rows = on.map(function(r){
+    var s = r.s; return [el('span', {class:'who'}, faceEl(r.id, r.name), el('span', {}, el('span', {text:r.name + (r.pos ? ' ' + r.pos : '')}), el('span', {class:'tags'}, propTags(g, r.id)))),
+      s.MIN, s.PTS, s.REB, s.AST, madeOf(s['3PT']), s.STL, s.BLK, s.TO, s.PF, s.FG, s['+/-']];
+  });
+  var kids = [el('b', {class:'k', text:t.abbr + ' players'}),
+    rows.length ? table(['Player', 'MIN', 'PTS', 'REB', 'AST', '3PM', 'STL', 'BLK', 'TO', 'PF', 'FG', '+/-'], rows, 1, function(i){ var r = on[i]; return function(){ openPlayer(g.id, r.id, null); }; })
+      : el('p', {class:'small mut', text:'No one has played yet.'})];
+  if (off.length) kids.push(el('p', {class:'small mut', text:'Did not play / not in yet: ' + off.map(function(r){ return r.name + (r.reason ? ' (' + r.reason + ')' : ''); }).join(', ')}));
+  return el('div', {class:'bt'}, kids);
+}
+function boxTab(g){
+  var b = SH.box, kids = [];
+  var state = gameState(g);
+  if (!b || state === 'pre' || !Object.keys(b.byTeam).length){
+    kids.push(blk('', el('p', {class:'small', text:state === 'pre' ? 'The box score fills in at tip-off and refreshes every 15 seconds while the game is on. Until then, here is who the model expects to play.' : (SH.err ? 'No live box score available. Showing season averages instead.' : 'Loading the box score…')})));
+    [g.away, g.home].forEach(function(t){
+      if (t.rotation && t.rotation.length) kids.push(table([t.abbr + ' rotation', 'Min', 'Pts', 'Reb', 'Ast', '3PM', 'L5 pts'], t.rotation.map(function(p){ return [p.id ? whoEl(p.id, p.name) : p.name, p.min, p.pts, p.reb, p.ast, p.tpm, p.pts_l5]; }), 1,
+        function(i){ var p = t.rotation[i]; return p.id ? function(){ openPlayer(g.id, p.id, null); } : null; }));
+    });
+    return el('div', {class:'stack'}, kids);
+  }
+  var cmp = [];
+  TSPEC.forEach(function(sp){
+    var va = tval(b.tstats[g.away.abbr], sp[1]), vh = tval(b.tstats[g.home.abbr], sp[1]);
+    if (va != null || vh != null) cmp.push([sp[0], va == null ? 'n/a' : va, vh == null ? 'n/a' : vh]);
+  });
+  if (cmp.length) kids.push(blk('Team stats', table(['', g.away.abbr, g.home.abbr], cmp, 1)));
+  kids.push(blk('Box score', [boxTeam(g, g.away), boxTeam(g, g.home)]));
+  if (b.plays && b.plays.length && state === 'in') kids.push(blk('Latest plays', el('ul', {class:'plays'}, b.plays.map(function(p){ return el('li', {text:(p.per ? 'Q' + p.per + ' ' : '') + p.c + '  ' + p.t}); }))));
+  return el('div', {class:'stack'}, kids);
+}
+function propsTab(g){
+  var rows = g.prop_rows.map(function(r){
+    var b = bestSide(r), v = liveVal(SH.box && SH.box.rows[r.pid], r.stat);
+    return [whoEl(r.pid, r.player + (r.injury ? ' [' + r.injury + ']' : '')), (STAT[r.stat] || r.stat) + ' ' + r.line, v == null ? '-' : v, r.model.mean, r.model.hit_l10 + '/' + r.model.n_l10, b.side + ' ' + fo(b.price) + (b.assumed ? '*' : ''), pct(b.p), fe(b.edge) + (r.skipped ? ' skip' : '')];
+  });
+  return el('div', {class:'stack'}, blk('', [
+    table(['Player', 'Prop', 'Now', 'Model', 'Over L10', 'Best side', 'Chance', 'Edge'], rows, 2, function(i){ var r = g.prop_rows[i]; return function(){ openPlayer(g.id, r.pid, r.stat); }; }),
+    el('p', {class:'small mut', text:'Tap a row for the full breakdown. Edge is in percentage points versus the posted price; * means no price was posted and -110 was assumed. "skip" means the analysis or the injury report ruled the player out of a pick.'})]));
+}
+function playersTab(g){
+  var bd = g.player_board || [];
+  var P = function(b, k){ return b.proj && b.proj[k] ? b.proj[k][0] : 'n/a'; };
+  var rows = bd.map(function(b){
+    return [whoEl(b.pid, b.name + (b.inj ? ' [' + b.inj + ']' : '')), b.team, b.min, P(b, 'points'), P(b, 'rebounds'), P(b, 'assists'), P(b, 'threes'), P(b, 'pra'), b.proj && b.proj.points ? b.proj.points[1] : 'n/a', b.proj && b.proj.points ? b.proj.points[2] : 'n/a'];
+  });
+  return el('div', {class:'stack'}, blk('', [
+    table(['Player', 'Team', 'Min', 'Proj PTS', 'REB', 'AST', '3PM', 'PRA', 'Season PTS', 'L5 PTS'], rows, 2, function(i){ var b = bd[i]; return function(){ openPlayer(g.id, b.pid, null); }; }),
+    el('p', {class:'small mut', text:'Projections for tonight for every rotation player, with or without a posted line. Tap a player for the last 10 games and the full breakdown.'})]));
+}
+function ratingsBlock(g){
+  var a = g.away, h = g.home;
+  var rows = ['off', 'def', 'net', 'pace', 'last5_net', 'efg', 'd_efg', 'tov_pct', 'orb_pct', 'ftr'].map(function(k){
+    var lbl = {off:'Off rating (adj)', def:'Def rating (adj)', net:'Net rating (adj)', pace:'Pace', last5_net:'Last-5 net', efg:'eFG%', d_efg:'Opp eFG%', tov_pct:'TOV%', orb_pct:'ORB%', ftr:'FT rate'}[k];
+    var f = function(t){ var r = t.ratings; if (!r || r[k] == null) return 'n/a'; return (['efg', 'd_efg', 'tov_pct', 'orb_pct', 'ftr'].indexOf(k) >= 0) ? (r[k] * 100).toFixed(1) : r[k]; };
+    return [lbl, f(a), f(h)];
+  });
+  return [table(['Per 100 possessions', a.abbr, h.abbr], rows),
+    el('p', {class:'small mut', text:'Ratings are opponent-adjusted and pulled toward ' + (g.dq && g.dq.prior ? 'last season\'s level (half kept, since rosters change)' : 'the league average') + ' while teams have few games' + (g.dq ? ' (min ' + g.dq.min_games + ' games here)' : '') + '. Rest: ' + a.abbr + ' ' + a.rest + '; ' + h.abbr + ' ' + h.rest + '.'})];
+}
+function matchTab(g){
+  var kids = [blk('Team ratings', ratingsBlock(g))];
+  [g.away, g.home].forEach(function(t){
+    if (t.rotation && t.rotation.length) kids.push(blk('', table([t.abbr + ' rotation', 'Min', 'Pts', 'Reb', 'Ast', '3PM', 'L5 pts'], t.rotation.map(function(p){ return [p.id ? whoEl(p.id, p.name) : p.name, p.min, p.pts, p.reb, p.ast, p.tpm, p.pts_l5]; }), 1,
+      function(i){ var p = t.rotation[i]; return p.id ? function(){ openPlayer(g.id, p.id, null); } : null; })));
+  });
+  var tp = tendPanel(g); if (tp){ tp.setAttribute('open', ''); kids.push(blk('', tp)); }
+  return el('div', {class:'stack'}, kids);
+}
+function shotsTab(g){
+  var sp = shotPanel(g);
+  if (!sp) return el('p', {class:'small mut', text:'No shot data for this game.'});
+  sp.setAttribute('open', '');
+  return el('div', {class:'stack'}, blk('', sp));
+}
+
+/* ---- player view ---- */
+function barChart(pl, stat, line, nowVal){
+  var data = (pl.log || []).map(function(e){ return {v:logVal(e, stat), opp:e[1], d:String(e[0]).slice(5).replace('-', '/'), min:e[2]}; }).filter(function(x){ return x.v != null; });
+  if (nowVal != null) data.push({v:nowVal, opp:'now', d:'', min:null, live:true});
+  if (!data.length) return null;
+  var W = 360, H = 190, L0 = 10, R0 = 60, T0 = 22, B0 = 52, n = data.length, slot = (W - L0 - R0) / n, bw = Math.min(26, slot * 0.66);
+  var mx = Math.max.apply(null, data.map(function(x){ return x.v; }).concat([line || 0, 1])) * 1.15;
+  var y = function(v){ return T0 + (H - T0 - B0) * (1 - v / mx); };
+  var svg = sv('svg', {viewBox:'0 0 ' + W + ' ' + H, class:'bars', role:'img', 'aria-label':'Last games for ' + (STAT[stat] || stat)});
+  data.forEach(function(d, i){
+    var x = L0 + slot * i + (slot - bw) / 2, cls = 'bar' + (d.live ? ' live' : line != null ? (d.v > line ? ' hit' : d.v < line ? ' miss' : '') : '');
+    svg.append(sv('rect', {x:x.toFixed(1), y:y(d.v).toFixed(1), width:bw.toFixed(1), height:Math.max(1, (H - B0) - y(d.v)).toFixed(1), rx:3, class:cls}));
+    var t1 = sv('text', {x:(x + bw / 2).toFixed(1), y:(y(d.v) - 4).toFixed(1), class:'bv'}); t1.textContent = String(Math.round(d.v * 10) / 10); svg.append(t1);
+    var t2 = sv('text', {x:(x + bw / 2).toFixed(1), y:H - B0 + 13, class:'bl'}); t2.textContent = d.opp; svg.append(t2);
+    var t3 = sv('text', {x:(x + bw / 2).toFixed(1), y:H - B0 + 25, class:'bl sm'}); t3.textContent = d.d; svg.append(t3);
+    if (d.min != null){ var t4 = sv('text', {x:(x + bw / 2).toFixed(1), y:H - B0 + 38, class:'bl sm'}); t4.textContent = Math.round(d.min) + 'm'; svg.append(t4); }
+  });
+  if (line != null){
+    svg.append(sv('line', {x1:L0, x2:W - R0 + 4, y1:y(line).toFixed(1), y2:y(line).toFixed(1), class:'ln'}));
+    var tl = sv('text', {x:W - R0 + 8, y:(y(line) + 3).toFixed(1), class:'lt'}); tl.textContent = 'line ' + line; svg.append(tl);
+  }
+  return svg;
+}
+function lmean(pl, ix, n){
+  var a = (pl.log || []).slice(-n).map(function(e){ return e[ix]; });
+  return avgOf(a);
+}
+var AVG_ROWS = [['Minutes', 2, 'min', 'MIN', null], ['Points', 3, 'pts', 'PTS', 'points'], ['Rebounds', 4, 'reb', 'REB', 'rebounds'], ['Assists', 5, 'ast', 'AST', 'assists'], ['3-pointers', 6, 'tpm', '3PT', 'threes'],
+  ['Steals', 7, 'stl', 'STL', 'steals'], ['Blocks', 8, 'blk', 'BLK', 'blocks'], ['Turnovers', 9, 'tov', 'TO', 'turnovers']];
+function breakdownList(g, r, pick){
+  var m = r.model, L = [];
+  L.push('Starting point: ' + f1(m.season) + ' season average, ' + f1(m.l10) + ' over the last 10, ' + f1(m.l5) + ' over the last 5, weighted 50 / 30 / 20 (' + m.n + ' games this season).');
+  if (m.prior_mean != null) L.push('Last season he averaged ' + f1(m.prior_mean) + '. The blend leans on last year less as this season\'s games pile up (effective sample ' + m.n_eff + ').');
+  var ch = roleTxt(r); if (ch && ch !== '-') L.push('Adjusted for: ' + ch + '.');
+  if (r.env && Math.abs(r.env - 1) > 0.004) L.push('Game environment x' + Number(r.env).toFixed(3) + ' (the expected total in this game versus the league average pace and scoring).');
+  if (r.mult && r.mult !== 1) L.push('Claude\'s adjustment x' + Number(r.mult).toFixed(2) + (r.note ? ': ' + r.note : '') + ' (never more than 10%).');
+  else if (r.note) L.push('Claude\'s note: ' + r.note);
+  L.push('Result: expects ' + f1(m.mean) + ' ' + (STAT[r.stat] || r.stat).toLowerCase() + ' with a typical swing of about ' + f1(m.sd) + ', which makes the over ' + pct(m.p_over) + ' and the under ' + pct(m.p_under) + ' before the self-check.');
+  if (pick && pick.est_raw != null && Math.abs(pick.est_raw - pick.est) > 0.004) L.push('Self-check: the model\'s own track record shrinks the edge toward the price, so the final chance is ' + pct(pick.est) + ' instead of ' + pct(pick.est_raw) + '.');
+  if (r.vs_opp) L.push('Against this opponent he has averaged ' + f1(r.vs_opp.avg) + ' in ' + r.vs_opp.n + ' game' + (r.vs_opp.n === 1 ? '' : 's') + ' (small sample, context only).');
+  L.push('Minutes: ' + f1(m.min_avg) + ' per game, ' + f1(m.min_l5) + ' over the last 5. Hit the over in ' + m.hit_l10 + ' of the last ' + m.n_l10 + ' and ' + m.hit_all + ' of ' + m.n + ' this season.');
+  if (r.injury) L.push('Injury report: ' + r.injury + '. Players on the report get no pick.');
+  return el('ol', {class:'why-list'}, L.map(function(x){ return el('li', {text:x}); }));
+}
+function playerBody(g, pid, stat){
+  var pl = g.plogs && g.plogs[pid] || null;
+  var rows = (g.prop_rows || []).filter(function(r){ return r.pid === pid; });
+  var bd = (g.player_board || []).filter(function(b){ return b.pid === pid; })[0] || null;
+  var live = SH.box && SH.box.rows[pid] || null;
+  var state = gameState(g);
+  var row = null;
+  if (stat) row = rows.filter(function(r){ return r.stat === stat; })[0] || null;
+  if (!row && !stat && rows.length) row = rows[0];
+  var cur = row ? row.stat : (stat && LOGI[stat] ? stat : 'points');
+  var name = (pl && pl.name) || (bd && bd.name) || (rows[0] && rows[0].player) || (live && live.name) || 'Player';
+  var team = (pl && pl.team) || (bd && bd.team) || (rows[0] && rows[0].team) || (live && live.team) || '';
+  var inj = (bd && bd.inj) || (rows[0] && rows[0].injury) || '';
+  var pos = (pl && pl.pos) || (live && live.pos) || '';
+  var kids = [];
+  /* header */
+  var gbtn = el('button', {type:'button', class:'btn small', text:g.away.abbr + ' at ' + g.home.abbr + ' · open game', onclick:function(){ openGame(g.id); }});
+  kids.push(el('div', {class:'pl-head'}, faceEl(pid, name), el('div', {class:'pl-id'},
+    el('b', {class:'pl-name', text:name}), el('span', {class:'small mut'}, team ? logoEl(team) : null, ' ', [team, pos].filter(Boolean).join(' · ')),
+    inj ? el('span', {class:'pill warn', text:inj}) : null), gbtn));
+  /* prop card */
+  if (row){
+    var b = bestSide(row), pk = (g.pick_objs || []).filter(function(p){ return p.pid === pid && p.stat === row.stat; })[0] || null;
+    var verdict = pk ? 'EpLocks pick: ' + pk.label + ' (' + fo(pk.odds) + ') · ' + pk.conf + ' · ' + pk.units + 'u'
+      : row.skipped ? 'No pick: the analysis or the injury report ruled this one out.' : 'No pick: the edge does not clear the bar.';
+    var sides = ['over', 'under'].map(function(sd){
+      var p_ = sd === 'over' ? row.model.p_over : row.model.p_under, pr = sd === 'over' ? row.over : row.under, e = p_ - impl(pr != null ? pr : -110);
+      return [sd.charAt(0).toUpperCase() + sd.slice(1) + ' ' + row.line, pr != null ? fo(pr) : '-110*', pct(impl(pr != null ? pr : -110)), pct(p_), fe(e)];
+    });
+    var pc = [el('div', {class:'pc-top'}, el('b', {class:'pc-title', text:(STAT[row.stat] || row.stat) + ' ' + row.line}), el('span', {class:'pill' + (pk ? ' good' : ''), text:pk ? pk.conf + ' pick' : 'no pick'})),
+      el('p', {class:'small', text:verdict}),
+      table(['Side', 'Price', 'Implied', 'Chance', 'Edge'], sides, 1)];
+    var v = liveVal(live, row.stat);
+    if (v != null && (state === 'in' || state === 'post')){
+      var mins = nz(live.s.MIN), exp = row.model.min_avg, msg;
+      var done = state === 'post';
+      var cls = v > row.line ? 'hit' : '';
+      if (done) msg = 'Final: ' + v + (v > row.line ? ' · over cashed' : v < row.line ? ' · under cashed' : ' · push');
+      else {
+        var pace = mins >= 5 && exp ? v + (v / mins) * Math.max(0, exp - mins) : null;
+        msg = 'Now ' + v + ' in ' + Math.round(mins) + ' min' + (v > row.line ? ' · over already hit' : ' · needs ' + (Math.floor(row.line) + 1 - v) + ' more for the over') + (pace != null ? ' · on pace for about ' + f1(pace) : '');
+      }
+      pc.push(el('div', {class:'prog'}, el('div', {class:'bar2'}, el('i', {class:cls, style:'width:' + Math.min(100, row.line > 0 ? v / row.line * 100 : 0).toFixed(0) + '%'}), el('s', {style:'left:100%'})),
+        el('p', {class:'small', text:msg})));
+    }
+    kids.push(el('div', {class:'propcard'}, pc));
+  }
+  /* live line */
+  if (live && live.on){
+    var s = live.s;
+    kids.push(blk(state === 'post' ? 'Final line' : 'Live line', table(['MIN', 'PTS', 'REB', 'AST', '3PM', 'STL', 'BLK', 'TO', 'PF', 'FG', '+/-'], [[s.MIN, s.PTS, s.REB, s.AST, madeOf(s['3PT']), s.STL, s.BLK, s.TO, s.PF, s.FG, s['+/-']]], 0)));
+  } else if (SH.box && state !== 'pre') {
+    kids.push(blk('Live line', el('p', {class:'small mut', text:live && live.dnp ? 'Did not play' + (live.reason ? ' (' + live.reason + ')' : '') + '.' : 'Not in the box score yet (on the bench, inactive or has not checked in).'})));
+  } else if (state === 'pre') {
+    kids.push(blk('Live line', el('p', {class:'small mut', text:'Live stats start at tip-off and refresh every 15 seconds while this is open.'})));
+  }
+  /* chart + stat switcher */
+  if (pl && pl.log && pl.log.length){
+    var avail = [];
+    Object.keys(LOGI).forEach(function(k){ avail.push(k); });
+    var pillStats = ['points', 'rebounds', 'assists', 'threes', 'pra', 'pts_reb', 'pts_ast', 'reb_ast', 'steals', 'blocks', 'turnovers'].filter(function(k){ return avail.indexOf(k) >= 0; });
+    var seg = el('div', {class:'seg sh-stats'}, pillStats.map(function(k){
+      var hasLine = rows.some(function(r){ return r.stat === k; });
+      return el('button', {type:'button', 'aria-pressed':String(k === cur), text:(SHORT[k] || k) + (hasLine ? ' •' : ''), onclick:function(){ SH.stat = k; renderSheet(false); }});
+    }));
+    var rr = rows.filter(function(r){ return r.stat === cur; })[0] || null, line = rr ? rr.line : null;
+    var nowV = live && live.on && state !== 'pre' ? liveVal(live, cur) : null;
+    var ch = barChart(pl, cur, line, nowV);
+    var vals = pl.log.map(function(e){ return logVal(e, cur); });
+    var hit = line != null ? vals.filter(function(x){ return x > line; }).length : null;
+    kids.push(blk('Last ' + pl.log.length + ' games · ' + (STAT[cur] || cur), [seg, el('div', {class:'chartbox'}, ch),
+      el('p', {class:'small mut', text:(line != null ? 'Over ' + line + ' in ' + hit + ' of ' + vals.length + ' (green = over, red = under). ' : 'Dots on a stat mean a line is posted for it. ') + 'Under each bar: opponent, date, minutes. Oldest on the left.'})]));
+    /* averages */
+    var arows = AVG_ROWS.map(function(a){
+      var seas = pl.avg && pl.avg[a[2]], l10 = lmean(pl, a[1], 10), l5 = lmean(pl, a[1], 5);
+      var pj = a[4] && bd && bd.proj && bd.proj[a[4]] ? bd.proj[a[4]][0] : (a[4] === null && bd ? bd.min : null);
+      var lv = live && live.on && state !== 'pre' ? (a[3] === '3PT' ? madeOf(live.s['3PT']) : live.s[a[3]]) : null;
+      return [a[0], f1(seas), f1(l10), f1(l5), pj != null ? f1(pj) : 'n/a', lv != null ? lv : '-'];
+    });
+    kids.push(blk('Averages', [table(['', 'Season', 'Last 10', 'Last 5', 'Tonight (model)', 'Live'], arows, 1),
+      el('p', {class:'small mut', text:pl.gp + ' games this season. "Tonight" is the model\'s projection after role, blowout, pace and defense adjustments.'})]));
+  } else {
+    kids.push(blk('', el('p', {class:'small mut', text:'The model has no season data for this player (fewer than 3 games, or not in the rotation), so there is no chart or projection.'})));
+  }
+  /* breakdown */
+  if (row) kids.push(blk('Why this number', breakdownList(g, row, (g.pick_objs || []).filter(function(p){ return p.pid === pid && p.stat === row.stat; })[0] || null)));
+  /* other props */
+  var others = rows.filter(function(r){ return !row || r.stat !== row.stat; });
+  if (others.length) kids.push(blk('Other props for him', table(['Prop', 'Model', 'Chance', 'Edge'], others.map(function(r){ var b2 = bestSide(r); return [(STAT[r.stat] || r.stat) + ' ' + r.line, r.model.mean, b2.side + ' ' + pct(b2.p), fe(b2.edge)]; }), 1,
+    function(i){ var r = others[i]; return function(){ SH.stat = r.stat; renderSheet(false); }; })));
+  return {node:el('div', {class:'sh-in stack'}, kids), title:name};
+}
+
+/* sheet shell: close, back, Esc, Tab stays inside, and browser Back closes it */
+(function(){
+  var sh = $('#sheet'); if (!sh) return;
+  $('#shClose').onclick = function(){ closeSheet(false); };
+  $('#shBack').onclick = sheetBack;
+  sh.querySelector('.bk').onclick = function(){ closeSheet(false); };
+  document.addEventListener('keydown', function(e){
+    if (sh.hidden) return;
+    if (e.key === 'Escape'){ e.preventDefault(); closeSheet(false); return; }
+    if (e.key === 'Tab'){
+      var f = Array.prototype.filter.call(sh.querySelectorAll('button,[href],[tabindex]:not([tabindex="-1"]),summary,input,select'), function(n){ return !n.hidden && n.offsetParent !== null; });
+      if (!f.length) return;
+      var first = f[0], last = f[f.length - 1];
+      if (e.shiftKey && document.activeElement === first){ e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last){ e.preventDefault(); first.focus(); }
+    }
+  });
+  window.addEventListener('popstate', routeHash);
+  document.addEventListener('visibilitychange', function(){ if (!document.hidden && !sh.hidden) { var g = gameById(SH.gid); if (g && gameState(g) !== 'post') loadBox(); } });
+})();
 
 /* ---- tracker ---- */
 function stats(list){
@@ -1035,6 +1637,12 @@ function renderMethod(){
     sec('Coaching and matchup tendencies', [
       el('p', {text:'Open any game and choose "Coaching and matchup tendencies". These are measured from box scores: how deep the rotation goes, how hard starters are played, how soon they leave blowouts, how stable the core is, how often a team shoots threes, how it fares on back-to-backs, and what each defense gives up to guards, forwards and centers.'}),
       el('p', {text:'Only the position-defense piece feeds the prop estimates, and only by a small capped amount. The rest is context for Claude and for you. Your own notes (the notes.txt file) are shown as notes and never change a number.'})]),
+    sec('Officials (referees)', [
+      el('p', {text:'When the NBA posts the crew for a game, it shows in that game\'s Overview with each official\'s history. For every official the model compares his games with what the two teams normally produce (total points, fouls, free-throw attempts) and shrinks the result hard, so a few games say almost nothing.'}),
+      el('p', {text:'An official needs 10 games before his number counts, at least two of the three must qualify, and even then the crew can move a game total by at most 1 point. Claude sees the same numbers as context. Crews come from ESPN once posted, or from the refs.txt file if you type them in.'})]),
+    sec('Game center and player view', [
+      el('p', {text:'Tap any game for the live score by quarter, the live box score (refreshed every 15 seconds while the game is on), the props with their live values, every rotation player, ratings, tendencies, shot maps and how the numbers were built.'}),
+      el('p', {text:'Tap any player or prop for his last 10 games on a chart against the line, his season, last-10 and last-5 averages next to tonight\'s projection and his live line, and a plain list of every step that produced the number. The live parts read ESPN directly from your browser, so they only show while ESPN is reachable.'})]),
     sec('How the record is kept', el('ul', {},
       li('Logged.', 'Every pick is saved with the time it was posted, before the game, and graded automatically from the final box score.'),
       li('Latest pre-game version.', 'If the model changes its mind before tip-off, the newest version replaces the old one. Once a game starts, its picks are locked.'),
@@ -1042,7 +1650,7 @@ function renderMethod(){
       li('Pushes and voids.', 'A push returns the stake. A prop where the player did not play, or a game that was never played, is voided.'),
       li('Not edited afterward.', 'Results are never changed by hand.'))),
     sec('What it does not know', el('ul', {},
-      el('li', {text:'Referee assignments, travel, play-calling, timeouts and true player tracking (speed, defender distance).'}),
+      el('li', {text:'Travel, play-calling, timeouts and true player tracking (speed, defender distance). Referee crews are used only once the NBA has posted them.'}),
       el('li', {text:'News after the last run. Lines move and injuries change, so check both before you bet. The site runs twice a day.'}),
       el('li', {text:'Anything about a coach\'s plans that is not in the box scores. Claude may mention it from memory, and tags it that way.'}))),
     sec('Data and credits', [
@@ -1059,7 +1667,7 @@ function renderStatus(){
   root.append(el('div', {class:'note'}, el('b', {text:'Last run: '}), new Date(L.generated_at).toLocaleString(), el('br'),
     'Written analysis: ' + (L.model ? 'on, model ' + L.model : 'OFF (no API key)'), el('br'),
     'Model settings: home edge ' + L.params.home_edge + ' pts, margin spread ' + L.params.sd_margin + ', total spread ' + L.params.sd_total + ', back-to-back ' + L.params.b2b_points + ' pts.'));
-  var sources = L.status.sources, names = {espn_games:'Game results and box scores', ratings:'Team ratings', espn_injuries:'Injury report', anthropic:'Claude analysis', props_parse:'Props read by Claude', prior_season:'Last season as a starting point', shot_data:'Shot locations (play-by-play)', calibration:'Self-check against graded results', position_defense:'Defense by position', team_profiles:'Coaching tendencies (measured)', notes:'Your notes (notes.txt)', odds_api:'Player prop prices (Odds API)'};
+  var sources = L.status.sources, names = {espn_games:'Game results and box scores', ratings:'Team ratings', espn_injuries:'Injury report', anthropic:'Claude analysis', props_parse:'Props read by Claude', prior_season:'Last season as a starting point', shot_data:'Shot locations (play-by-play)', calibration:'Self-check against graded results', position_defense:'Defense by position', team_profiles:'Coaching tendencies (measured)', notes:'Your notes (notes.txt)', referees:'Referees (measured from box scores)', odds_api:'Player prop prices (Odds API)'};
   var box = el('div', {class:'note'}, el('div', {class:'src'}, Object.keys(sources).map(function(k){
     return [el('span', {class:'dot' + (sources[k].ok ? '' : ' bad')}), el('div', {}, el('b', {text:(names[k] || k) + (sources[k].ok ? '' : ' (problem)')}), el('p', {class:'small mut', text:sources[k].msg || ''}))];
   }).reduce(function(a, b){ return a.concat(b); }, [])));
@@ -1067,7 +1675,7 @@ function renderStatus(){
   var anyBad = ['espn_games', 'ratings', 'espn_injuries', 'anthropic', 'props_parse', 'odds_api'].some(function(k){ return sources[k] && !sources[k].ok; });
   if (!Object.keys(sources).length) root.append(el('div', {class:'note warn', text:'No source reports in the last run.'}));
   if (L.status.notes && L.status.notes.length) root.append(el('div', {class:'note warn'}, el('b', {text:'Notes from the last run'}), el('ul', {}, L.status.notes.map(function(n){ return el('li', {text:n}); }))));
-  root.append(el('div', {class:'note'}, el('b', {text:'What this site does not know'}), el('p', {class:'small', text:'Referee data, travel distance, play-calling and timeouts, and true player tracking are not loaded. Coaching tendencies shown are measured from box scores and your notes. Anything else about coaching or scheme in the analysis is Claude\'s memory and is tagged that way. The market line already reflects public injury news, so the model only moves off it by a small, capped amount.'})));
+  root.append(el('div', {class:'note'}, el('b', {text:'What this site does not know'}), el('p', {class:'small', text:'Travel distance, play-calling and timeouts, and true player tracking are not loaded. Referee crews are shown once the NBA posts them, with only a small, capped effect on the total. Coaching tendencies shown are measured from box scores and your notes. Anything else about coaching or scheme in the analysis is Claude\'s memory and is tagged that way. The market line already reflects public injury news, so the model only moves off it by a small, capped amount.'})));
   if (anyBad) root.append(el('div', {class:'note warn', text:'A source failed. Picks that depend on it are capped at Low confidence or skipped. Send this page\'s text to Claude to get it fixed.'}));
 }
 
@@ -1108,6 +1716,7 @@ Promise.all([getJson('data/latest.json'), getJson('data/history.json', [])]).the
   var h = (location.hash || '').slice(1);
   showTab(['slate', 'picks', 'parlays', 'players', 'props', 'track', 'method', 'status'].indexOf(h) >= 0 ? h : 'slate');
   startLive();
+  if (/^(game|player)\//.test(h)) go(h);
 }).catch(function(e){
   S.err = 'The first daily run has not published data yet, or the file could not be read. (' + e.message + ')';
   $('#sync').textContent = 'No data yet'; renderSlate(); moveInd();
