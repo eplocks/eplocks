@@ -34,7 +34,7 @@ HCA = float(os.environ.get('EPLOCKS_HOME_EDGE') or 2.2)      # home-court points
 SD_MARGIN, SD_TOTAL = 12.0, 17.5                              # typical NBA error vs closing lines
 B2B_PTS = 1.5                                                 # heuristic back-to-back penalty (points of margin)
 MAX_PROP_ROWS = 60
-ENGINE_VERSION = '5.0'
+ENGINE_VERSION = '6.0'
 SZ_V = 3               # box-score format version: 2 adds player positions, 3 adds officials and team fouls (older stored games are re-read once)
 PRIOR_V = 2            # last-season summary format version (2 adds defense by position)
 CLAUDE_BUDGET = float(os.environ.get('EPLOCKS_CLAUDE_SECONDS') or 1500)   # stop asking Claude after this many seconds so a run always finishes
@@ -641,16 +641,12 @@ def fetch_assignments(events, workers=6):
         except Exception:  # noqa
             return ev['id'], None
     evs = [e for e in events if e.get('state') == 'pre']
-    if not evs:
-        return out, 0
-    bad = 0
-    with ThreadPoolExecutor(max_workers=workers) as ex:
-        for k, v in ex.map(one, evs):
-            if v is None:
-                bad += 1
-            elif v:
-                out[k] = v
-    return out, bad
+    if evs:
+        with ThreadPoolExecutor(max_workers=workers) as ex:
+            for k, v in ex.map(one, evs):
+                if v:
+                    out[k] = v
+    return out
 
 
 def parse_refs_file(path, events):
@@ -1486,7 +1482,7 @@ def matchup_lines(home, away, prof, lg, ratings, pd):
             if p.get('b2b_n', 0) >= 3 and p.get('rest_margin') is not None:
                 L.append('%s: average margin %+.1f on back-to-backs (%d games) versus %+.1f otherwise.' % (t, p['b2b_margin'], p['b2b_n'], p['rest_margin']))
     if pd:
-        for att, dfn in ((away, home), (home, away)):
+        for _, dfn in ((away, home), (home, away)):
             tb = pos_table(pd, dfn)
             bits = []
             for pos in ('G', 'F', 'C'):
@@ -1737,6 +1733,7 @@ RULES
 - Owner notes, when present, are the owner's own unverified opinions. Treat them as context to check against the numbers, never as facts and never as a reason to change a number by themselves.
 - The market line already reflects public injury news. When a market line is given, keep margin_adj and total_adj at 0 unless the packet shows a specific, quantifiable reason the line misses (a rating or rest mismatch with numbers). Never exceed +/-2.0 margin or +/-5.0 total when a line exists.
 - Officials, when given, are measured from this season's box scores and shrunk hard. A crew number is a small nudge to totals and free throws, never a reason for a pick on its own.
+- Smart signals (hit-rate, form, cushion, matchup, role, pace, minutes) are pattern flags computed from history. They are context, never a reason to move a number.
 - Early season samples are small. Say so when it matters and do not overstate.
 - You do not decide probabilities, confidence or stake sizes. The code computes them from your adjustments.
 - For props, mult scales the player's expected output (0.90 to 1.10). Change it only for a stated reason that is in the DATA (a starter listed out raising usage, a minutes change visible in the last games). Use skip=true for any player listed Out, Doubtful or Questionable, or whose role looks unclear.
@@ -1860,8 +1857,111 @@ def packet(g):
             m_ = r['model']
             L.append('%s | %s %s | %s %s | %s/%s | n=%d | %s/%s/%s | mean %s | P(over) %s | L10 over %d/%d | min %s/%s | vs opp %s | adjustments: %s' % (
                 r['id'], r['player'], r['team'], STAT_NAMES.get(r['stat'], r['stat']), r['line'], r['over'], r['under'], m_['n'], m_['season'], m_['l10'], m_['l5'], m_['mean'],
-                m_['p_over'], m_['hit_l10'], m_['n_l10'], m_['min_avg'], m_['min_l5'], ('%s avg in %d g' % (r['vs_opp']['avg'], r['vs_opp']['n'])) if r.get('vs_opp') else 'none', adj_text(r)))
+                m_['p_over'], m_['hit_l10'], m_['n_l10'], m_['min_avg'], m_['min_l5'], ('%s avg in %d g' % (r['vs_opp']['avg'], r['vs_opp']['n'])) if r.get('vs_opp') else 'none', adj_text(r)) + (
+                ' | signals (%s): %s' % (r['sig']['side'], ', '.join(i['k'] for i in r['sig']['items'])) if r.get('sig') else ''))
     return '\n'.join(L)
+
+
+# ----------------------------------------------------------------------------- smart signals
+# A signal is a pattern in the history that supports the side of a bet. Signals never change a probability or a stake.
+# They are shown to the user, and every graded pick remembers which signals it had so the site can report each signal's own record.
+SIG_TIERS = ((4.0, 'Strong'), (2.5, 'Solid'), (1.5, 'Notable'))
+
+
+def sig_pack(items):
+    if not items:
+        return None
+    w = sum(i['w'] for i in items)
+    return {'items': items, 'w': r1(w), 'tier': next((n for t, n in SIG_TIERS if w >= t), None), 'score': int(min(100, round(w / 6.0 * 100)))}
+
+
+def prop_signals(row, side=None):
+    """Patterns behind one prop row, for the side given (or the side the model prefers). Players on the injury report get none."""
+    m = row.get('model')
+    if not m or is_blocked(row.get('injury')):
+        return None
+    line = row['line']
+    if side is None:
+        eo = m['p_over'] - impl(row['over'] if row.get('over') is not None else -110)
+        eu = m['p_under'] - impl(row['under'] if row.get('under') is not None else -110)
+        side = 'over' if eo >= eu else 'under'
+    over = side == 'over'
+    nm = STAT_NAMES.get(row['stat'], row['stat']).lower()
+    items = []
+    n10 = m['n_l10']
+    hit = m['hit_l10'] if over else n10 - m['hit_l10']
+    if n10 >= 8 and hit / float(n10) >= 0.8:
+        items.append({'k': 'hit', 'w': 1.5, 't': '%s %g %s in %d of his last %d games' % ('Cleared' if over else 'Stayed at or under', line, nm, hit, n10)})
+    if m['n'] >= 6 and m['season'] > 0:
+        if over and m['l5'] >= 1.10 * m['season'] and m['l5'] > line:
+            items.append({'k': 'form', 'w': 1.0, 't': 'Trending up: %s over the last 5 against %s for the season' % (m['l5'], m['season'])})
+        elif not over and m['l5'] <= 0.90 * m['season'] and m['l5'] < line:
+            items.append({'k': 'form', 'w': 1.0, 't': 'Trending down: %s over the last 5 against %s for the season' % (m['l5'], m['season'])})
+    if m['sd'] and ((m['mean'] - line) / m['sd']) * (1 if over else -1) >= 0.55:
+        items.append({'k': 'cushion', 'w': 1.5, 't': 'The model expects %s against a line of %g, well clear of his usual swing (about %s)' % (m['mean'], line, m['sd'])})
+    pf = row.get('pf') or 1.0
+    if (over and pf >= 1.03) or (not over and pf <= 0.97):
+        items.append({'k': 'matchup', 'w': 1.0, 't': row.get('pf_note') or ('Opponent defense by position favors this side (x%.2f)' % pf)})
+    rm = row.get('rm') or 1.0
+    if (over and rm >= 1.04) or (not over and rm <= 0.96):
+        items.append({'k': 'role', 'w': 1.0, 't': (row.get('rm_note') or 'Role and minutes expected to change') + ' (x%.2f)' % rm})
+    env = row.get('env') or 1.0
+    if (over and env >= 1.02) or (not over and env <= 0.98):
+        items.append({'k': 'pace', 'w': 0.5, 't': 'The game is projected %s than the league norm for pace and scoring' % ('faster and higher scoring' if over else 'slower and lower scoring')})
+    vo = row.get('vs_opp')
+    if vo and vo['n'] >= 2 and ((vo['avg'] - line) / max(line, 1.0)) * (1 if over else -1) >= 0.08:
+        items.append({'k': 'opp', 'w': 0.5, 't': 'Averaged %s against this opponent in %d games (line %g)' % (vo['avg'], vo['n'], line)})
+    mn, ma = m.get('min_l5') or 0, m.get('min_avg') or 0
+    if ma and mn >= 20 and ((over and mn >= 1.08 * ma) or (not over and mn <= 0.92 * ma)):
+        items.append({'k': 'mins', 'w': 0.5, 't': 'Minutes %s: %s over the last 5 against %s for the season' % ('rising' if over else 'falling', mn, ma)})
+    out = sig_pack(items)
+    if out:
+        out['side'] = side
+    return out
+
+
+def game_signals(g, p, lg_pace):
+    """Patterns behind a game pick (spread, moneyline or total)."""
+    fin, mk, mo = g.get('final'), g.get('market'), g.get('model')
+    a, h = g['away'], g['home']
+    side, typ = p['side'], p['type']
+    items = []
+    if fin and mk:
+        if typ in ('spread', 'moneyline') and mk.get('spread_home') is not None:
+            gap = (fin['margin'] + mk['spread_home']) * (1 if side == 'home' else -1)
+            if gap >= 3:
+                items.append({'k': 'gap', 'w': 1.5, 't': 'Our number is %.1f points more favorable to %s than the market (%s %+g)' % (gap, g[side]['abbr'], h['abbr'], mk['spread_home'])})
+        if typ == 'total' and fin.get('total') is not None and mk.get('total') is not None:
+            gap = (fin['total'] - mk['total']) * (1 if side == 'over' else -1)
+            if gap >= 4:
+                items.append({'k': 'gap', 'w': 1.5, 't': 'Our total of %s is %.1f points %s the market (%g)' % (fin['total'], gap, 'above' if side == 'over' else 'below', mk['total'])})
+    if typ in ('spread', 'moneyline'):
+        me, opp = (h, a) if side == 'home' else (a, h)
+        r = me.get('ratings') or {}
+        if r.get('n', 0) >= 5 and r.get('last5_net') is not None and r.get('net') is not None and r['last5_net'] - r['net'] >= 4:
+            items.append({'k': 'tform', 'w': 1.0, 't': '%s are playing above their season level: last-5 net rating %+.1f against %+.1f for the season' % (me['abbr'], r['last5_net'], r['net'])})
+        if opp.get('b2b') and not me.get('b2b'):
+            items.append({'k': 'rest', 'w': 1.0, 't': '%s are on the second night of a back-to-back and %s are rested' % (opp['abbr'], me['abbr'])})
+        sp = ((g.get('shot_profile') or {}).get('matchup')) or {}
+        if sp.get('home_pps') is not None and sp.get('away_pps') is not None:
+            d = (sp['home_pps'] - sp['away_pps']) * (1 if side == 'home' else -1)
+            if d >= 0.03:
+                items.append({'k': 'shots', 'w': 1.0, 't': 'Shot quality favors %s: %.2f expected points per shot against %.2f' % (me['abbr'], sp['home_pps' if side == 'home' else 'away_pps'], sp['away_pps' if side == 'home' else 'home_pps'])})
+    if typ == 'total':
+        over = side == 'over'
+        if mo and lg_pace and ((over and mo['pace'] >= lg_pace + 1.5) or (not over and mo['pace'] <= lg_pace - 1.5)):
+            items.append({'k': 'pace', 'w': 1.0, 't': 'Projected pace %.1f against a league average of %.1f' % (mo['pace'], lg_pace)})
+        sp = ((g.get('shot_profile') or {}).get('matchup')) or {}
+        if sp.get('home_pps') is not None and sp.get('away_pps') is not None and sp.get('league_pps') is not None:
+            d = ((sp['home_pps'] + sp['away_pps']) / 2.0 - sp['league_pps']) * (1 if over else -1)
+            if d >= 0.02:
+                items.append({'k': 'shots', 'w': 1.0, 't': 'Shot quality points to %s scoring in this matchup' % ('higher' if over else 'lower')})
+        cr = g.get('crew')
+        if cr and cr.get('adj_total') and cr['adj_total'] * (1 if over else -1) > 0:
+            items.append({'k': 'crew', 'w': 0.5, 't': 'This crew\'s games run %s totals (effect %+.1f points)' % ('higher' if over else 'lower', cr['effect']['tot'])})
+    if p.get('edge', 0) >= 0.05:
+        items.append({'k': 'cushion', 'w': 1.0, 't': 'The model sees a %.1f-point edge over the price' % (p['edge'] * 100)})
+    return sig_pack(items)
 
 
 # ----------------------------------------------------------------------------- pricing
@@ -2016,7 +2116,7 @@ def grade_history(history, games, today=None):
 def team_block(ev_team, ratings, logs, injuries, inj_ok, today, name_to_abbr):
     a = ev_team['abbr']
     rt = ratings.get(a)
-    rest_txt, b2b, rest_days = rest_info(rt, today)
+    rest_txt, b2b, _ = rest_info(rt, today)
     roster = [L for L in logs.values() if L['team'] == a]
     roster.sort(key=lambda L: -mean(g['min'] for g in L['games']))
     rot = []
@@ -2124,9 +2224,9 @@ def main(argv):
         src('referees', True, ('%d officials measured from %d games' % (len(rstats['refs']), rstats['games'])) if rstats else 'not enough games with officials stored yet (they fill in as the season goes)')
     except Exception as e:  # noqa
         src('referees', False, 'referee stats failed: %s' % str(e)[:120])
-    assign, assign_bad, manual = {}, 0, {}
+    assign, manual = {}, {}
     try:
-        assign, assign_bad = fetch_assignments(slate_events)
+        assign = fetch_assignments(slate_events)
         manual, mbad = parse_refs_file(os.path.join(HERE, 'refs.txt'), slate_events)
         if manual:
             assign.update(manual)
@@ -2238,7 +2338,6 @@ def main(argv):
                 h2h.append('%s beat %s %d-%d at %s on %s' % (w_['ab'], l_['ab'], w_['pts'], l_['pts'], gm['home']['ab'], gm['date']))
         g = {'id': ev['id'], 'tip': ev['tip'], 'utc': ev['utc'], 'state': ev['state'], 'away': away, 'home': home, 'market': mk,
              'model': {k: r1(v) for k, v in mo.items()} if mo else None, 'blend': blend, 'h2h': h2h, 'crew': crew}
-        g['model_raw'] = mo
         # props for this game
         rows = []
         if mo:
@@ -2248,6 +2347,7 @@ def main(argv):
                     continue
                 tm_ = home if p['team'] == home['abbr'] else away
                 bm = blowout_mult(logs[p['pid']], blend['margin'] if blend else mo['margin'])
+                pf, pf_note = 1.0, ''
                 try:
                     opp_ab = away['abbr'] if p['team'] == home['abbr'] else home['abbr']
                     pf, pf_note = pos_factor(pdef, opp_ab, logs[p['pid']].get('pos'), p['stat'])
@@ -2261,7 +2361,7 @@ def main(argv):
                     continue
                 opp = away['abbr'] if p['team'] == home['abbr'] else home['abbr']
                 st = inj_names_by_team.get(p['team'], {}).get(norm_name(p['name']), '')
-                rows.append(dict(p, model=pm, vs_opp=vs_opp(logs[p['pid']], p['stat'], opp), injury=st, env=r3(env), rm=r3(rm), rm_note=rm_note))
+                rows.append(dict(p, model=pm, vs_opp=vs_opp(logs[p['pid']], p['stat'], opp), injury=st, env=r3(env), rm=r3(rm), rm_note=rm_note, pf=r3(pf), pf_note=pf_note))
             def best_edge(r):
                 m_ = r['model']
                 e = []
@@ -2291,6 +2391,11 @@ def main(argv):
             g['shot_profile'] = None
             note('Shot profile failed for %s @ %s: %s' % (away['abbr'], home['abbr'], str(e)[:100]))
 
+        for r in rows:
+            try:
+                r['sig'] = prop_signals(r)       # computed before Claude so the packet can show them; recomputed below after any adjustment
+            except Exception:  # noqa
+                r['sig'] = None
         # Claude
         analysis, adjust_m, adjust_t, pnotes = None, 0.0, 0.0, {}
         if API_KEY and mo and ev['state'] == 'pre':
@@ -2339,21 +2444,35 @@ def main(argv):
             uncertain = any(0 < inj_weight(i['status']) < 1.0 and (i.get('avg') or {}).get('min', 0) >= 24
                             for t in (home, away) for i in t['injuries'])
             picks = game_picks(g, fm, ft, min_n, inj_ok, uncertain, abs(adjust_m) + abs(adjust_t) / 3.0)
+            for p_ in picks:
+                try:
+                    p_['sig'] = game_signals(g, p_, lg_pace)
+                except Exception as e:  # noqa
+                    note('Signals skipped for a pick in %s: %s' % (ev['id'], str(e)[:80]))
             if not mk:
                 g['final']['note'] = 'No market line loaded, so no bet can be priced for this game.'
         for r in rows:
+            r['sig'] = None
             pn = pnotes.get(r['id'], {})
             mult = pn.get('mult', 1.0)
             if mult != 1.0:
                 r['model'] = prop_model(logs[r['pid']], r['stat'], r['line'], env=r['env'], mult=mult, rm=r.get('rm', 1.0))
             r['mult'], r['note'] = mult, pn.get('note', '')
             r['skipped'] = bool(pn.get('skip'))
+            try:
+                r['sig'] = prop_signals(r)
+            except Exception as e:  # noqa
+                note('Signals skipped for %s: %s' % (r.get('player'), str(e)[:80]))
             if ev['state'] != 'pre' or r['skipped'] or is_blocked(r['injury']):
                 r['skipped'] = r['skipped'] or is_blocked(r['injury'])
                 continue
             pk = prop_pick(r, mult, bool(r['injury']))
             if pk:
                 pk['reason'] = r['note']
+                try:
+                    pk['sig'] = prop_signals(r, pk['side'])
+                except Exception:  # noqa
+                    pk['sig'] = None
                 if not sane:
                     pk['conf'] = 'Low'
                 picks.append(pk)
@@ -2379,6 +2498,7 @@ def main(argv):
         if p['id'] not in have and p['game_id'] in pre_ids:
             history.append({k: p[k] for k in ('id', 'date', 'game_id', 'away', 'home', 'type', 'side', 'label', 'line', 'odds', 'est', 'est_raw', 'edge', 'kind', 'conf', 'units') if k in p}
                            | ({'player': p['player'], 'stat': p['stat'], 'pid': p['pid']} if p['type'] == 'prop' else {})
+                           | ({'sig': [i['k'] for i in p['sig']['items']], 'sig_tier': p['sig']['tier']} if p.get('sig') else {})
                            | {'posted': started.strftime('%Y-%m-%dT%H:%M:%SZ'), 'v': ENGINE_VERSION})
     jsave(hist_path, history)
     jsave(acache_path, acache)
@@ -2392,7 +2512,7 @@ def main(argv):
         'engine': ENGINE_VERSION, 'prop_source': 'odds_api' if auto else ('props.txt' if lines else 'none'),
         'generated_at': started.strftime('%Y-%m-%dT%H:%M:%SZ'), 'for_date': today_s, 'model': MODEL if API_KEY else None, 'league': league,
         'params': {'home_edge': HCA, 'sd_margin': SD_MARGIN, 'sd_total': SD_TOTAL, 'b2b_points': B2B_PTS, 'calibration': {k: r3(v) for k, v in CAL.items()}},
-        'status': {k: v for k, v in STATUS.items() if not k.startswith('_')}, 'games': [{k: v for k, v in g.items() if k not in ('model_raw',)} for g in out_games],
+        'status': {k: v for k, v in STATUS.items() if not k.startswith('_')}, 'games': out_games,
         'picks': [dict(p, label=p['label']) for p in all_picks], 'props_unmatched': unmatched[:60], 'props_not_playing': [dict(p) for p in not_playing][:60],
         'props_lines': len(lines) + (len(auto) if auto else 0)}
     # drop heavy duplicates
