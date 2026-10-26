@@ -207,7 +207,28 @@ code{font:500 13px var(--f-mono);background:var(--surface2);padding:1px 5px;bord
 .t-odds{font:700 34px/1 var(--f-disp);color:var(--acc);font-variant-numeric:tabular-nums}
 .chip{font:600 11px var(--f-body);letter-spacing:.06em;text-transform:uppercase;padding:2px 8px;border-radius:999px;background:var(--acc);color:var(--on-acc)}
 .ctl .seg{max-width:100%;flex-wrap:wrap}
-@media (max-width:480px){.hero h1{font-size:30px}.ult .big{font-size:44px}.ab{font-size:34px}.tiles{grid-template-columns:repeat(2,1fr)}.lines{grid-template-columns:1fr 1fr}}
+
+.av{display:inline-flex;align-items:center;justify-content:center;flex:none;overflow:hidden;border-radius:50%;background:var(--surface2);width:var(--s,40px);height:var(--s,40px);font:700 11px var(--f-body);color:var(--mut)}
+.av img{width:100%;height:100%;display:block}
+.av.logo{background:#fff;padding:12%;box-shadow:0 0 0 1px rgba(11,31,58,.12)}
+.av.logo img{object-fit:contain}
+.av.face{box-shadow:0 0 0 2px var(--acc)}
+.av.face img{object-fit:cover;object-position:50% 0}
+.avs{display:flex;align-items:center}
+.avs .av{--s:36px}.avs .av+.av{margin-left:-8px}
+.tm-row{display:flex;align-items:center;gap:10px}
+.team.home .tm-row{flex-direction:row-reverse;justify-self:end}
+.team .av{--s:48px}
+.p-main{display:flex;gap:12px;align-items:flex-start}
+.p-main>.av,.p-main>.avs{--s:56px}
+.p-main>.avs .av{--s:40px}
+.p-body{display:grid;gap:8px;min-width:0;flex:1}
+.leg{display:flex;gap:10px;align-items:center}
+.leg .av,.leg .avs{--s:36px}
+.leg-body{display:grid;gap:2px;min-width:0}
+.who{display:inline-flex;align-items:center;gap:8px}
+.who .av{--s:28px}
+@media (max-width:480px){.team .av{--s:38px}.hero h1{font-size:30px}.ult .big{font-size:44px}.ab{font-size:34px}.tiles{grid-template-columns:repeat(2,1fr)}.lines{grid-template-columns:1fr 1fr}}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{transition:none!important;animation:none!important}}
 </style>
 </head>
@@ -282,6 +303,24 @@ function lockSvg(level){
   t.innerHTML = '<svg class="lock ' + l + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path class="sh" d="M8 11V8a4 4 0 0 1 8 0v3"/><rect x="5" y="11" width="14" height="9" rx="2"/></svg>';
   return t.content.firstChild;
 }
+var LOGO = {GSW:'gs', NYK:'ny', SAS:'sa', NOP:'no', UTA:'utah', WAS:'wsh'};
+function logoUrl(ab){ return 'https://a.espncdn.com/i/teamlogos/nba/500/' + (LOGO[ab] || String(ab).toLowerCase()) + '.png'; }
+function imgAv(cls, url, alt, fb){
+  var w = el('span', {class:'av ' + cls, title:alt}), im = document.createElement('img');
+  im.alt = alt; im.loading = 'lazy'; im.referrerPolicy = 'no-referrer';
+  im.onerror = function(){ im.remove(); w.classList.remove('logo'); w.classList.remove('face'); w.textContent = fb; };
+  im.src = url; w.append(im); return w;
+}
+function logoEl(ab){ return imgAv('logo', logoUrl(ab), ab + ' logo', ab); }
+function ini(n){ return String(n || '?').split(/\s+/).map(function(x){ return x[0]; }).slice(0, 2).join('').toUpperCase(); }
+function faceEl(pid, name){ return pid ? imgAv('face', 'https://a.espncdn.com/i/headshots/nba/players/full/' + pid + '.png', name, ini(name)) : null; }
+function whoEl(pid, name){ return el('span', {class:'who'}, faceEl(pid, name), el('span', {text:name})); }
+function pickAvatar(p, g){
+  if (p.type === 'prop' && p.pid) return faceEl(p.pid, p.player || p.label);
+  if (p.type === 'total') return el('span', {class:'avs'}, logoEl(p.away), logoEl(p.home));
+  var ab = p.side === 'home' ? p.home : p.side === 'away' ? p.away : null;
+  return ab ? logoEl(ab) : null;
+}
 function impl(o){ return o > 0 ? 100 / (o + 100) : -o / (-o + 100); }
 function pct(x){ return x == null ? 'n/a' : Math.round(x * 100) + '%'; }
 function fo(o){ return o == null ? 'n/a' : (o > 0 ? '+' : '') + o; }
@@ -312,7 +351,7 @@ function meterEl(p){
 function tileEl(k, v, tip){ return el('div', {class:'tile', 'data-tip':tip, tabindex:'0'}, el('span', {text:k}), el('b', {text:v})); }
 function table(head, rows, numFrom){
   return el('div', {class:'tscroll'}, el('table', {}, el('thead', {}, el('tr', {}, head.map(function(h, i){ return el('th', {class:i >= (numFrom == null ? 1 : numFrom) ? 'num' : '', text:h}); }))),
-    el('tbody', {}, rows.map(function(r){ return el('tr', {}, r.map(function(c, i){ return el('td', {class:i >= (numFrom == null ? 1 : numFrom) ? 'num' : '', text:c == null ? 'n/a' : String(c)}); })); }))));
+    el('tbody', {}, rows.map(function(r){ return el('tr', {}, r.map(function(c, i){ var cl = i >= (numFrom == null ? 1 : numFrom) ? 'num' : ''; return c && c.nodeType ? el('td', {class:cl}, c) : el('td', {class:cl, text:c == null ? 'n/a' : String(c)}); })); }))));
 }
 function listBlock(title, arr){
   if (!arr || !arr.length) return null;
@@ -367,7 +406,7 @@ function gameCard(g, idx){
   if (g.prop_rows && g.prop_rows.length){
     var rows = g.prop_rows.map(function(r){
       var b = bestSide(r);
-      return [r.player + ' (' + r.team + ')' + (r.injury ? ' [' + r.injury + ']' : ''), (STAT[r.stat] || r.stat) + ' ' + r.line, r.model.mean, r.model.hit_l10 + '/' + r.model.n_l10, b.side + ' ' + fe(b.edge) + (r.skipped ? ' skip' : '')];
+      return [whoEl(r.pid, r.player + ' (' + r.team + ')' + (r.injury ? ' [' + r.injury + ']' : '')), (STAT[r.stat] || r.stat) + ' ' + r.line, r.model.mean, r.model.hit_l10 + '/' + r.model.n_l10, b.side + ' ' + fe(b.edge) + (r.skipped ? ' skip' : '')];
     });
     propsBox = el('details', {}, el('summary', {text:g.prop_rows.length + ' props from your board, priced from game logs'}),
       table(['Player', 'Prop', 'Model mean', 'Over L10', 'Best side edge'], rows, 2),
@@ -375,14 +414,14 @@ function gameCard(g, idx){
   }
   var colors = teamColors(a.abbr, h.abbr);
   var rotation = [a, h].map(function(t){
-    return t.rotation && t.rotation.length ? table([t.abbr + ' rotation', 'Min', 'Pts', 'Reb', 'Ast', '3PM', 'L5 pts'], t.rotation.map(function(p){ return [p.name, p.min, p.pts, p.reb, p.ast, p.tpm, p.pts_l5]; })) : null;
+    return t.rotation && t.rotation.length ? table([t.abbr + ' rotation', 'Min', 'Pts', 'Reb', 'Ast', '3PM', 'L5 pts'], t.rotation.map(function(p){ return [p.id ? whoEl(p.id, p.name) : p.name, p.min, p.pts, p.reb, p.ast, p.tpm, p.pts_l5]; })) : null;
   });
   var root = el('article', {class:'game', style:'--ca:' + colors[0] + ';--ch:' + colors[1] + ';--i:' + Math.min(idx, 12)},
     el('div', {class:'g-top'}, el('span', {class:'tip', text:g.tip || ''}), flags),
     el('div', {class:'matchup'},
-      el('div', {class:'team', 'data-side':'away'}, el('b', {class:'ab', text:a.abbr}), el('span', {class:'nm', text:a.name}), el('span', {class:'rec', text:a.record})),
+      el('div', {class:'team', 'data-side':'away'}, el('div', {class:'tm-row'}, logoEl(a.abbr), el('b', {class:'ab', text:a.abbr})), el('span', {class:'nm', text:a.name}), el('span', {class:'rec', text:a.record})),
       el('span', {class:'at', text:'AT'}),
-      el('div', {class:'team home', 'data-side':'home'}, el('b', {class:'ab', text:h.abbr}), el('span', {class:'nm', text:h.name}), el('span', {class:'rec', text:h.record}))),
+      el('div', {class:'team home', 'data-side':'home'}, el('div', {class:'tm-row'}, logoEl(h.abbr), el('b', {class:'ab', text:h.abbr})), el('span', {class:'nm', text:h.name}), el('span', {class:'rec', text:h.record}))),
     wp, cells, pk, ana, propsBox,
     el('details', {}, el('summary', {text:'Ratings, injuries and rotation'}),
       el('div', {style:'display:grid;gap:10px;margin-top:6px'},
@@ -418,11 +457,14 @@ function renderSlate(){
 /* ---- picks ---- */
 function pickCard(p, idx){
   var g = S.latest.games.filter(function(x){ return x.id === p.game_id; })[0];
+  var av = pickAvatar(p, g);
   return el('article', {class:'pick'},
+    el('div', {class:'p-main'}, av, el('div', {class:'p-body'},
     el('div', {class:'p-head'}, el('span', {class:'rank', text:'#' + (idx + 1)}), lockSvg(p.conf), el('span', {class:'conf ' + p.conf, text:p.conf}), el('span', {class:'pill', text:p.type}),
       p.kind === 'assumed' ? el('span', {class:'pill warn', text:'no price, -110 assumed'}) : null),
     el('h3', {class:'p-title'}, p.label, el('span', {class:'mono', text:fo(p.odds)})),
-    el('p', {class:'small mut', text:p.away + ' @ ' + p.home + (g && g.tip ? ' · ' + g.tip : '')}),
+    el('p', {class:'small mut', text:p.away + ' @ ' + p.home + (g && g.tip ? ' · ' + g.tip : '')})
+    )),
     meterEl(p),
     el('div', {class:'nums'}, el('span', {}, 'Est ', el('b', {text:pct(p.est)})), el('span', {}, 'Price ', el('b', {text:pct(p.implied)})),
       el('span', {}, 'Edge ', el('b', {class:p.edge >= 0 ? 'pos' : 'neg', text:fe(p.edge)})), el('span', {}, 'Stake ', el('b', {text:p.units + 'u'})),
@@ -446,7 +488,14 @@ function renderPicks(){
     root.append(el('div', {class:'empty'}, el('b', {text:all.length ? 'Nothing matches' : 'No picks yet'}), all.length ? 'Change the filter above.' : 'No bet clears the edge bar today, or the lines have not loaded.'));
     return;
   }
-  var pg = el('div', {class:'cards'}); list.forEach(function(p, i){ pg.append(pickCard(p, i)); }); root.append(pg);
+  var n = 0;
+  function block(title, arr){
+    if (!arr.length) return;
+    root.append(el('h2', {text:title + ' (' + arr.length + ')'}));
+    var pg = el('div', {class:'cards'}); arr.forEach(function(p){ pg.append(pickCard(p, n++)); }); root.append(pg);
+  }
+  block('Best bets', list.filter(function(p){ return p.conf !== 'Low'; }));
+  block('Leans, low confidence', list.filter(function(p){ return p.conf === 'Low'; }));
 }
 
 
@@ -482,9 +531,9 @@ function mkTicket(legs){
   return {legs:legs, n:legs.length, D:D, odds:amer(D), P:P, Pc:Pc, ev:ev, evc:evc, g:g, stake:stake, conf:conf, profit:b};
 }
 function legRow(p, core, showCore){
-  return el('div', {class:'leg ' + p.conf},
+  return el('div', {class:'leg ' + p.conf}, pickAvatar(p, null), el('div', {class:'leg-body'},
     el('b', {}, lockSvg(p.conf), ' ', p.label, ' ', el('span', {class:'mono mut', text:fo(p.odds)}), showCore ? el('span', {class:'core', text:core ? '★ core' : '+ added'}) : null),
-    el('span', {class:'small mut', text:p.away + ' @ ' + p.home + ' · ' + p.type + ' · ' + p.conf + ' · est ' + pct(p.est) + ' vs price ' + pct(p.implied) + ' · edge ' + fe(p.edge) + (p.kind === 'assumed' ? ' (no price, -110 assumed)' : '')}));
+    el('span', {class:'small mut', text:p.away + ' @ ' + p.home + ' · ' + p.type + ' · ' + p.conf + ' · est ' + pct(p.est) + ' vs price ' + pct(p.implied) + ' · edge ' + fe(p.edge) + (p.kind === 'assumed' ? ' (no price, -110 assumed)' : '')})));
 }
 function ticketNums(t){
   return el('div', {class:'nums'},
@@ -582,7 +631,7 @@ function renderProps(){
     totals += g.prop_rows.length;
     var rows = g.prop_rows.map(function(r){
       var b = bestSide(r);
-      return [r.player + (r.injury ? ' [' + r.injury + ']' : ''), (STAT[r.stat] || r.stat) + ' ' + r.line, r.model.season, r.model.l10, r.model.l5, r.model.mean, pct(b.side === 'over' ? r.model.p_over : r.model.p_under), b.side + ' ' + fe(b.edge)];
+      return [whoEl(r.pid, r.player + (r.injury ? ' [' + r.injury + ']' : '')), (STAT[r.stat] || r.stat) + ' ' + r.line, r.model.season, r.model.l10, r.model.l5, r.model.mean, pct(b.side === 'over' ? r.model.p_over : r.model.p_under), b.side + ' ' + fe(b.edge)];
     });
     root.append(el('div', {class:'pgroup'}, el('div', {class:'pg-h'}, el('div', {}, el('b', {text:g.away.abbr + ' @ ' + g.home.abbr}), el('span', {text:g.prop_rows.length + ' props'}))),
       table(['Player', 'Prop', 'Season', 'L10', 'L5', 'Mean', 'Chance', 'Best side'], rows, 2)));
