@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """EpLocks AI daily engine.
- 
+
 What it does every run (GitHub Actions calls it once a day, and again when props.txt changes):
   1. Pulls every finished NBA game and its box score from ESPN's public endpoints (cached in data/games.json).
   2. Builds team ratings (opponent-adjusted offense, defense, pace, four factors, recent form) and player game logs
@@ -12,7 +12,7 @@ What it does every run (GitHub Actions calls it once a day, and again when props
   6. Asks Claude (Anthropic API) to write the analysis and to propose small, bounded adjustments. All probabilities,
      edges, confidence tiers and unit sizes are computed here in code, never by the model.
   7. Grades yesterday's picks from real box scores and writes everything to docs/data/*.json for the website.
- 
+
 Only the Python standard library is used. Every data source is wrapped so one failure never stops the run; the
 Status tab on the site shows what loaded and what did not.
 """
@@ -21,7 +21,7 @@ import datetime as dt
 import urllib.request, urllib.error
 from concurrent.futures import ThreadPoolExecutor
 from zoneinfo import ZoneInfo
- 
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 DATA = os.path.join(HERE, 'data')
 OUT = DATA   # the website reads data/latest.json and data/history.json from the repository root
@@ -33,9 +33,14 @@ API_KEY = os.environ.get('ANTHROPIC_API_KEY', '').strip()
 HCA = float(os.environ.get('EPLOCKS_HOME_EDGE') or 2.2)      # home-court points
 SD_MARGIN, SD_TOTAL = 12.0, 17.5                              # typical NBA error vs closing lines
 B2B_PTS = 1.5                                                 # heuristic back-to-back penalty (points of margin)
-MAX_PROP_ROWS = 30
-BLOCK_STATUS = ('out', 'doubtful', 'questionable', 'day-to-day', 'game time decision', 'gtd')  # no prop picks on these players                                            # props per game sent to Claude
- 
+MAX_PROP_ROWS = 60
+ENGINE_VERSION = '4.0'
+SZ_V = 2               # box-score format version: 2 adds player positions (older stored games are re-read once)
+PRIOR_V = 2            # last-season summary format version (2 adds defense by position)
+CLAUDE_BUDGET = float(os.environ.get('EPLOCKS_CLAUDE_SECONDS') or 1500)   # stop asking Claude after this many seconds so a run always finishes
+PROP_ROWS_TO_CLAUDE = 30
+T0 = time.time()
+
 # Last season as a starting point, and shot locations (both optional: if either fails the run carries on without it)
 PRIOR_ON = (os.environ.get('EPLOCKS_PRIOR') or 'on').lower() not in ('off', '0', 'no', 'false')
 PRIOR_START = os.environ.get('EPLOCKS_PRIOR_START') or '2025-10-21'
@@ -49,70 +54,70 @@ ZONES = ('rim', 'pnt', 'ms', 'ml', 'c3', 'a3')
 ZONE_LABEL = {'rim': 'Rim (0-4 ft)', 'pnt': 'Close (4-8 ft)', 'ms': 'Short mid (8-16 ft)', 'ml': 'Long mid (16 ft to the arc)', 'c3': 'Corner 3', 'a3': 'Above-the-break 3'}
 RECENCY_HL = 40.0      # team games back at which a game counts half as much in the ratings
 ZONE_PTS = {'rim': 2, 'pnt': 2, 'ms': 2, 'ml': 2, 'c3': 3, 'a3': 3}
- 
+
 STATUS = {'sources': {}, 'notes': []}
- 
- 
+
+
 def src(name, ok, msg=''):
     STATUS['sources'][name] = {'ok': bool(ok), 'msg': str(msg)[:300]}
- 
- 
+
+
 def note(m):
     STATUS['notes'].append(str(m)[:300])
     print('NOTE', m, flush=True)
- 
- 
+
+
 # ----------------------------------------------------------------------------- small helpers
 def today_ct():
     o = os.environ.get('EPLOCKS_TODAY')
     return dt.date.fromisoformat(o) if o else dt.datetime.now(CT).date()
- 
- 
+
+
 def jload(path, default):
     try:
         with open(path, encoding='utf8') as f:
             return json.load(f)
     except Exception:
         return default
- 
- 
+
+
 def jsave(path, obj):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     tmp = path + '.tmp'
     with open(tmp, 'w', encoding='utf8') as f:
         json.dump(obj, f, separators=(',', ':'), ensure_ascii=False)
     os.replace(tmp, path)
- 
- 
+
+
 def phi(x):
     return 0.5 * (1.0 + math.erf(x / math.sqrt(2.0)))
- 
- 
+
+
 def impl(o):
     return 100.0 / (o + 100.0) if o > 0 else (-o) / (-o + 100.0)
- 
- 
+
+
 def mean(xs):
     xs = list(xs)
     return sum(xs) / len(xs) if xs else 0.0
- 
- 
+
+
 def pstdev(xs):
     xs = list(xs)
     if len(xs) < 2:
         return 0.0
     m = mean(xs)
     return math.sqrt(sum((x - m) ** 2 for x in xs) / len(xs))
- 
- 
+
+
 def r1(x):
     return None if x is None else round(float(x), 1)
- 
- 
+
+
 def r3(x):
     return None if x is None else round(float(x), 3)
- 
- 
+
+
 def norm_name(s):
     s = unicodedata.normalize('NFKD', str(s)).encode('ascii', 'ignore').decode().lower()
     s = re.sub(r"[.'`]", '', s).replace('-', ' ')
@@ -121,16 +126,16 @@ def norm_name(s):
     while parts and parts[-1] in ('jr', 'sr', 'ii', 'iii', 'iv', 'v'):
         parts.pop()
     return ' '.join(parts)
- 
- 
+
+
 ABBR = {'GS': 'GSW', 'NY': 'NYK', 'SA': 'SAS', 'NO': 'NOP', 'UTAH': 'UTA', 'WSH': 'WAS', 'PHO': 'PHX', 'NOR': 'NOP'}
- 
- 
+
+
 def ab(x):
     x = (x or '').upper()
     return ABBR.get(x, x)
- 
- 
+
+
 def http_json(url, tries=3, timeout=25):
     last = None
     for i in range(tries):
@@ -142,8 +147,8 @@ def http_json(url, tries=3, timeout=25):
             last = e
             time.sleep(1.5 * (i + 1))
     raise RuntimeError('%s: %s' % (url, last))
- 
- 
+
+
 # ----------------------------------------------------------------------------- ESPN: events, odds, box scores
 def parse_odds(o, ev):
     """ESPN odds block -> {spread_home, total, ml_home, ml_away, spread_odds_home, spread_odds_away, provider}."""
@@ -175,7 +180,7 @@ def parse_odds(o, ev):
         except (TypeError, ValueError):
             sp = None
     m['spread_home'] = sp
- 
+
     def toint(v):
         try:
             v = int(v)
@@ -190,8 +195,8 @@ def parse_odds(o, ev):
     if m['total'] is None and m['spread_home'] is None and m['ml_home'] is None:
         return None
     return m
- 
- 
+
+
 def parse_event(e):
     comp = (e.get('competitions') or [{}])[0]
     st = ((comp.get('status') or e.get('status') or {}).get('type')) or {}
@@ -225,8 +230,8 @@ def parse_event(e):
     odds = (comp.get('odds') or [None])[0]
     out['market'] = parse_odds(odds, out) if odds else None
     return out
- 
- 
+
+
 def lookup(stats, names=(), labels=()):
     for s in stats or []:
         nm = str(s.get('name') or '').lower()
@@ -234,20 +239,20 @@ def lookup(stats, names=(), labels=()):
         if (nm and nm in names) or (lb and lb in labels):
             return s.get('displayValue', s.get('value'))
     return None
- 
- 
+
+
 def pair(v):
     m = re.match(r'^\s*(\d+)\s*-\s*(\d+)\s*$', str(v if v is not None else ''))
     return (int(m.group(1)), int(m.group(2))) if m else (None, None)
- 
- 
+
+
 def toi(v):
     try:
         return int(float(str(v).strip()))
     except (TypeError, ValueError):
         return None
- 
- 
+
+
 # ----------------------------------------------------------------------------- shot locations (ESPN play-by-play)
 def median(xs):
     xs = sorted(xs)
@@ -255,19 +260,19 @@ def median(xs):
         return 0.0
     n = len(xs)
     return xs[n // 2] if n % 2 else (xs[n // 2 - 1] + xs[n // 2]) / 2.0
- 
- 
+
+
 def _num(v):
     try:
         f = float(v)
         return f if math.isfinite(f) and abs(f) < 1e5 else None   # ESPN uses huge sentinel numbers for "no coordinate"
     except (TypeError, ValueError):
         return None
- 
- 
+
+
 RIM_WORDS = ('layup', 'dunk', 'tip shot', 'tip-in', 'putback', 'finger roll', 'alley')
- 
- 
+
+
 def zone_from_text(s):
     """Fallback when a shot has no usable coordinates: classify from the play description."""
     tl, ft = s['tl'], s.get('feet')
@@ -280,8 +285,8 @@ def zone_from_text(s):
     if ft is None:
         return None
     return 'rim' if ft <= 4 else 'pnt' if ft <= 8 else 'ms' if ft <= 16 else 'ml'
- 
- 
+
+
 def classify_shots(shots):
     """Sets s['z'] on every shot. Uses coordinates when most shots have them (self-calibrating for the unit scale and the
     hoop position, so it does not depend on how ESPN happens to number its court), otherwise the play text.
@@ -327,8 +332,8 @@ def classify_shots(shots):
     for s in shots:
         s['z'] = zone_from_text(s)
     return 'text' if any(s['z'] for s in shots) else 'none'
- 
- 
+
+
 def parse_plays(js, ev, pid_team):
     """ESPN play-by-play -> shot counts by zone, per team and per player. None when the feed has no shot plays."""
     ids = {ev['home']['id']: ev['home']['abbr'], ev['away']['id']: ev['away']['abbr']}
@@ -370,8 +375,8 @@ def parse_plays(js, ev, pid_team):
                 cell[0] += 1
                 cell[1] += 1 if s['made'] else 0
     return sz
- 
- 
+
+
 def parse_summary(js, ev):
     """Box score -> compact team + player stats."""
     box = js.get('boxscore') or {}
@@ -401,7 +406,7 @@ def parse_summary(js, ev):
                 if a.get('didNotPlay'):
                     continue
                 st = a.get('stats') or []
- 
+
                 def g(l):
                     i = idx.get(l)
                     return st[i] if i is not None and i < len(st) else None
@@ -409,7 +414,7 @@ def parse_summary(js, ev):
                 if not mn:
                     continue
                 ath = a.get('athlete') or {}
-                players.append({'id': str(ath.get('id')), 'name': ath.get('displayName') or '', 'tid': tid, 'min': mn,
+                players.append({'id': str(ath.get('id')), 'name': ath.get('displayName') or '', 'tid': tid, 'min': mn, 'pos': posgrp((ath.get('position') or {}).get('abbreviation')),
                                 'pts': toi(g('PTS')) or 0, 'reb': toi(g('REB')) or 0, 'ast': toi(g('AST')) or 0,
                                 'tpm': (pair(g('3PT'))[0] or 0), 'stl': toi(g('STL')) or 0, 'blk': toi(g('BLK')) or 0, 'tov': toi(g('TO')) or 0})
     out = {'id': ev['id'], 'date': ev['date'], 'utc': ev['utc'], 'players': []}
@@ -425,66 +430,80 @@ def parse_summary(js, ev):
     except Exception as e:  # noqa
         out['sz'] = None
         note('shot locations could not be read for game %s: %s' % (ev.get('id'), str(e)[:100]))
-    out['sz_v'] = 1
+    out['sz_v'] = SZ_V
     return out
- 
- 
+
+
 def update_games(today):
-    """Fetch any missing finished games (and their box scores) from SEASON_START to today. Returns the cache."""
+    """Fetch any missing finished games (and their box scores) from SEASON_START to today. Returns the cache and today's events.
+    One bad day never stops the others: each day is fetched on its own and retried next run."""
     path = os.path.join(DATA, 'games.json')
     cache = jload(path, {'games': {}, 'days_done': []})
     games, done = cache.setdefault('games', {}), set(cache.setdefault('days_done', []))
     d = dt.date.fromisoformat(SEASON_START)
-    fetched = failed = 0
+    fetched = failed = bad_days = consec = 0
+    today_ok = True
     slate_events = []
-    try:
-        while d <= today:
-            ds = d.isoformat()
-            if ds in done:
-                d += dt.timedelta(days=1)
-                continue
-            js = http_json('%s/scoreboard?dates=%s&limit=100' % (ESPN, d.strftime('%Y%m%d')))
-            events = [parse_event(e) for e in js.get('events') or []]
-            all_final = True
-            for ev in events:
-                if 'home' not in ev or 'away' not in ev:
-                    continue
-                if d == today:
-                    slate_events.append(ev)
-                if not ev['completed']:
-                    all_final = False
-                    continue
-                if ev['season_type'] not in (None, 2, 3) or (ev['id'] in games and games[ev['id']].get('sz_v')):
-                    continue
-                try:
-                    games[ev['id']] = parse_summary(http_json('%s/summary?event=%s' % (ESPN, ev['id'])), ev)
-                    fetched += 1
-                except Exception as e:  # noqa
-                    failed += 1
-                    all_final = False
-                    note('box score failed for game %s: %s' % (ev['id'], str(e)[:120]))
-            if d < today and all_final:
-                done.add(ds)
+    while d <= today:
+        ds = d.isoformat()
+        if ds in done:
             d += dt.timedelta(days=1)
-        src('espn_games', True, '%d games stored, %d new, %d failed' % (len(games), fetched, failed))
-    except Exception as e:  # noqa
-        src('espn_games', False, str(e))
-        note('Game history could not be fully updated: %s' % str(e)[:160])
+            continue
+        try:
+            js = http_json('%s/scoreboard?dates=%s&limit=100' % (ESPN, d.strftime('%Y%m%d')))
+            consec = 0
+        except Exception as e:  # noqa
+            bad_days += 1
+            consec += 1
+            note('Scoreboard for %s could not be read (it will be retried next run): %s' % (ds, str(e)[:120]))
+            if d == today:
+                today_ok = False
+            if consec >= 3 and d < today:
+                d = today          # ESPN is not answering for older days; still try today's slate
+                consec = 0
+            else:
+                d += dt.timedelta(days=1)
+            continue
+        events = [parse_event(e) for e in js.get('events') or []]
+        all_final, had_fail = True, False
+        for ev in events:
+            if 'home' not in ev or 'away' not in ev:
+                continue
+            if d == today:
+                slate_events.append(ev)
+            if not ev['completed']:
+                all_final = False
+                continue
+            if ev['season_type'] not in (None, 2, 3) or (ev['id'] in games and (games[ev['id']].get('sz_v') or 0) >= SZ_V):
+                continue
+            try:
+                games[ev['id']] = parse_summary(http_json('%s/summary?event=%s' % (ESPN, ev['id'])), ev)
+                fetched += 1
+            except Exception as e:  # noqa
+                failed += 1
+                had_fail = True
+                note('box score failed for game %s: %s' % (ev['id'], str(e)[:120]))
+        # a day is finished once every game on it is final and stored; a postponed game must not make us re-read the day forever
+        if d < today and not had_fail and (all_final or (today - d).days > 3):
+            done.add(ds)
+        d += dt.timedelta(days=1)
+    src('espn_games', today_ok, '%d games stored, %d new, %d failed%s' % (len(games), fetched, failed, ('; %d day(s) will be retried next run' % bad_days) if bad_days else '') if today_ok
+        else 'ESPN did not return today\'s scoreboard')
     try:
         n_re = refresh_shots(games)
         if n_re:
-            note('Re-read %d older box scores to collect shot locations' % n_re)
+            note('Re-read %d older box scores to add player positions and shot locations' % n_re)
     except Exception as e:  # noqa
         note('Shot-location refresh failed: %s' % str(e)[:120])
     cache['days_done'] = sorted(done)
     jsave(path, cache)
     return cache, slate_events
- 
- 
+
+
 def fetch_summaries(evs, workers=6):
     """Box scores for several games at once. Returns {game id: parsed game or the exception}."""
     out = {}
- 
+
     def one(ev):
         try:
             return ev['id'], parse_summary(http_json('%s/summary?event=%s' % (ESPN, ev['id'])), ev)
@@ -496,11 +515,11 @@ def fetch_summaries(evs, workers=6):
         for k, v in ex.map(one, evs):
             out[k] = v
     return out
- 
- 
+
+
 def refresh_shots(games, budget=420):
     """Games stored before shot locations were collected get their box score fetched again, once."""
-    stale = [g for g in games.values() if not g.get('sz_v') and (g.get('home') or {}).get('id') and (g.get('away') or {}).get('id')]
+    stale = [g for g in games.values() if (g.get('sz_v') or 0) < SZ_V and (g.get('home') or {}).get('id') and (g.get('away') or {}).get('id')]
     if not stale:
         return 0
     t0, done = time.time(), 0
@@ -519,19 +538,25 @@ def refresh_shots(games, budget=420):
                 games[ev['id']] = r
                 done += 1
     return done
- 
- 
+
+
 # ----------------------------------------------------------------------------- last season as a starting point
 def zadd(dst, z, a, m, w=1.0):
     c = dst.setdefault(z, [0.0, 0.0])
     c[0] += a * w
     c[1] += m * w
- 
- 
+
+
 def fold_prior_game(st, g):
     ab_h, ab_a = g['home']['ab'], g['away']['ab']
     keep = {k: v for k, v in g.items() if k not in ('players', 'sz')}
     st['games'][g['id']] = keep
+    for p in g.get('players') or []:
+        if p.get('pos'):
+            opp_ = ab_a if p['t'] == ab_h else ab_h
+            c = st.setdefault('posdef', {}).setdefault(opp_, {}).setdefault(p['pos'], [0, 0, 0, 0, 0])
+            for i, k in enumerate(('min', 'pts', 'reb', 'ast', 'tpm')):
+                c[i] += p.get(k) or 0
     for p in g.get('players') or []:
         pr = st['players'].setdefault(p['id'], {'name': p['name'], 'team': p['t'], 'last': g['date'] or '', 'n': 0, 'min': 0, 'pts': 0, 'reb': 0, 'ast': 0, 'tpm': 0, 'stl': 0, 'blk': 0, 'tov': 0})
         pr['n'] += 1
@@ -550,8 +575,8 @@ def fold_prior_game(st, g):
         for pid, zs in (sz.get('p') or {}).items():
             for z, (a, m) in zs.items():
                 zadd(st['zones_p'].setdefault(pid, {}), z, a, m)
- 
- 
+
+
 def update_prior(today):
     """Loads last regular season in chunks (it resumes on the next run if the time budget runs out) and keeps a compact summary
     in data/prior.json. Returns the state dict, or None when switched off."""
@@ -560,8 +585,8 @@ def update_prior(today):
     path = os.path.join(DATA, 'prior.json')
     rng = [PRIOR_START, PRIOR_END]
     st = jload(path, None)
-    if not st or st.get('range') != rng:
-        st = {'range': rng, 'days_done': [], 'gids': [], 'games': {}, 'players': {}, 'zones_off': {}, 'zones_def': {}, 'zones_p': {}, 'complete': False}
+    if not st or st.get('range') != rng or st.get('v') != PRIOR_V:
+        st = {'v': PRIOR_V, 'range': rng, 'posdef': {}, 'days_done': [], 'gids': [], 'games': {}, 'players': {}, 'zones_off': {}, 'zones_def': {}, 'zones_p': {}, 'complete': False}
     if st.get('complete'):
         return st
     t0 = time.time()
@@ -599,16 +624,16 @@ def update_prior(today):
     st['complete'] = last >= d1 and len(done) >= total_days
     jsave(path, st)
     return st
- 
- 
+
+
 def prior_ratings(st):
     """Team ratings for last season, built with the same code as this season's."""
     if not st or not st.get('complete') or len(st.get('games') or {}) < PRIOR_MIN_GAMES:
         return None
     r, lo, lp = build_ratings(st['games'])
     return (r, lo, lp) if r else None
- 
- 
+
+
 def prior_player_means(st):
     out = {}
     for pid, p in ((st or {}).get('players') or {}).items():
@@ -616,17 +641,17 @@ def prior_player_means(st):
         if n >= PRIOR_MIN_GP:
             out[pid] = {'n': n, 'team': p.get('team'), **{k: p[k] / n for k in ('min', 'pts', 'reb', 'ast', 'tpm', 'stl', 'blk', 'tov')}}
     return out
- 
- 
+
+
 # ----------------------------------------------------------------------------- shot profiles
 def zfull(zs):
     return {z: list((zs or {}).get(z, (0, 0))) for z in ZONES}
- 
- 
+
+
 def ztot(zs):
     return sum(v[0] for v in zs.values())
- 
- 
+
+
 def build_shot_data(games, prior=None):
     off, dfn, pl = {}, {}, {}
     ng = tot = coord = text = unc = 0
@@ -663,8 +688,8 @@ def build_shot_data(games, prior=None):
             zadd(league, z, a, m)
     lfg = {z: league[z][1] / league[z][0] for z in ZONES if league.get(z) and league[z][0] >= 50}
     return {'off': off, 'def': dfn, 'pl': pl, 'lg': league, 'lfg': lfg, 'games': ng, 'shots': tot, 'coord': coord, 'text': text, 'unclassified': unc, 'with_prior': used_prior}
- 
- 
+
+
 def zone_profile(zs, lfg, k=12.0):
     """{zone: [attempts, makes, shrunk FG%]}. FG% is pulled toward the league zone average so small samples do not paint false hot zones."""
     out = {}
@@ -674,8 +699,8 @@ def zone_profile(zs, lfg, k=12.0):
         fg = (m + k * fl) / (a + k) if fl is not None else None
         out[z] = [round(a, 1), round(m, 1), r3(fg) if fg is not None else None]
     return out
- 
- 
+
+
 def zone_quality(zs, lfg):
     zs = zfull(zs)
     tot = ztot(zs)
@@ -684,8 +709,8 @@ def zone_quality(zs, lfg):
     mix = {z: zs[z][0] / tot for z in ZONES}
     return {'n': round(tot), 'mix': {z: r3(v) for z, v in mix.items()},
             'xpps': r3(sum(mix[z] * lfg[z] * ZONE_PTS[z] for z in ZONES)), 'pps': r3(sum(zs[z][1] * ZONE_PTS[z] for z in ZONES) / tot)}
- 
- 
+
+
 def matchup_pps(off_zs, def_zs, lfg, k=12.0):
     """Expected points per shot for an offense against a defense: average their shot mixes, and combine the two teams' zone
     accuracy as (offense accuracy + defense-allowed accuracy - league)."""
@@ -700,8 +725,8 @@ def matchup_pps(off_zs, def_zs, lfg, k=12.0):
         fd = (d[z][1] + k * lfg[z]) / (d[z][0] + k)
         tot += share * clamp(fo + fd - lfg[z], 0.05, 0.95) * ZONE_PTS[z]
     return tot
- 
- 
+
+
 def shot_profile(home, away, sd, logs, extra_pids):
     if not sd or sd['games'] < 3 or len(sd['lfg']) < len(ZONES):
         return None
@@ -736,13 +761,13 @@ def shot_profile(home, away, sd, logs, extra_pids):
             break
     out['players'] = players
     return out
- 
- 
+
+
 def fmt_shots(g):
     sp = g.get('shot_profile')
     if not sp:
         return None
- 
+
     def mixs(q):
         return ', '.join('%s %d%%' % (z, round(100 * q['mix'][z])) for z in ZONES) if q else 'n/a'
     L = ['Shot profile from ESPN play-by-play locations (zones: rim 0-4 ft, pnt 4-8 ft, ms short mid, ml long mid, c3 corner three, a3 above-break three; early-season samples are small, treat as context):']
@@ -762,8 +787,8 @@ def fmt_shots(g):
     if hot:
         L.append('  Hot zones: ' + '; '.join(hot[:8]))
     return '\n'.join(L)
- 
- 
+
+
 def fetch_injuries(name_to_abbr):
     try:
         js = http_json(ESPN + '/injuries')
@@ -786,8 +811,8 @@ def fetch_injuries(name_to_abbr):
         return None
     src('espn_injuries', True, '%d teams listed' % len(out))
     return out
- 
- 
+
+
 # ----------------------------------------------------------------------------- ratings
 def build_ratings(games, prior=None):
     recs = {}
@@ -798,7 +823,7 @@ def build_ratings(games, prior=None):
         h, a = g['home'], g['away']
         if h.get('pts') is None or a.get('pts') is None:
             continue
- 
+
         def poss(t):
             if None in (t.get('fga'), t.get('orb'), t.get('tov'), t.get('fta')):
                 return None
@@ -855,7 +880,7 @@ def build_ratings(games, prior=None):
         rs = sorted(rs, key=lambda r: r['date'] or '')
         n = len(rs)
         w = sum(1 for r in rs if r['pts'] > r['opp_pts'])
- 
+
         def ff(side):
             fga = sum(r[side]['fga'] or 0 for r in rs)
             fgm = sum(r[side]['fgm'] or 0 for r in rs)
@@ -883,8 +908,8 @@ def build_ratings(games, prior=None):
             'last_date': rs[-1]['date'] if rs else None,
             'recent': [{'res': 'W' if r['pts'] > r['opp_pts'] else 'L', 'score': '%d-%d' % (r['pts'], r['opp_pts']), 'loc': r['loc'], 'opp': r['opp'], 'date': r['date']} for r in reversed(rs[-5:])]}
     return ratings, lg_ortg, lg_pace
- 
- 
+
+
 def rest_info(rt, today):
     last = (rt or {}).get('last_date')
     if not last:
@@ -895,8 +920,8 @@ def rest_info(rt, today):
     if d == 1:
         return 'back-to-back (played yesterday)', True, 1
     return '%d day(s) off' % (d - 1), False, d
- 
- 
+
+
 def project(hab, aab, ratings, lg_ortg, lg_pace, today):
     rh, ra = ratings.get(hab), ratings.get(aab)
     if not rh or not ra:
@@ -908,8 +933,8 @@ def project(hab, aab, ratings, lg_ortg, lg_pace, today):
     _, ab2, _ = rest_info(ra, today)
     margin = ph - pa + HCA - (B2B_PTS if hb else 0) + (B2B_PTS if ab2 else 0)
     return {'margin': margin, 'total': ph + pa, 'pace': P, 'home_pts': ph + HCA / 2, 'away_pts': pa - HCA / 2}
- 
- 
+
+
 # ----------------------------------------------------------------------------- player logs and props
 STAT_NAMES = {'points': 'Points', 'rebounds': 'Rebounds', 'assists': 'Assists', 'threes': '3-pointers', 'pra': 'Pts+Reb+Ast', 'pts_reb': 'Pts+Reb',
               'pts_ast': 'Pts+Ast', 'reb_ast': 'Reb+Ast', 'steals': 'Steals', 'blocks': 'Blocks', 'turnovers': 'Turnovers'}
@@ -925,8 +950,8 @@ STAT_ALIAS = {
     'pra': 'pra', 'pts+reb+ast': 'pra', 'pts+rebs+asts': 'pra', 'points+rebounds+assists': 'pra', 'pts+reb': 'pts_reb', 'pts+rebs': 'pts_reb',
     'points+rebounds': 'pts_reb', 'pts+ast': 'pts_ast', 'pts+asts': 'pts_ast', 'points+assists': 'pts_ast', 'reb+ast': 'reb_ast', 'rebs+asts': 'reb_ast',
     'rebounds+assists': 'reb_ast', 'stl': 'steals', 'steals': 'steals', 'blk': 'blocks', 'blocks': 'blocks', 'to': 'turnovers', 'tov': 'turnovers', 'turnovers': 'turnovers'}
- 
- 
+
+
 def build_player_logs(games, prior_means=None):
     logs = {}
     for g in sorted(games.values(), key=lambda g: (g.get('date') or '', g['id'])):
@@ -938,11 +963,13 @@ def build_player_logs(games, prior_means=None):
     index = {}
     for pid, L in logs.items():
         index.setdefault(norm_name(L['name']), []).append(pid)
+        ps_ = [g.get('pos') for g in L['games'] if g.get('pos')]
+        L['pos'] = max(set(ps_), key=ps_.count) if ps_ else None
         if prior_means and pid in prior_means:
             L['prior'] = prior_means[pid]
     return logs, index
- 
- 
+
+
 def prop_model(log, stat, line, env=1.0, mult=1.0, rm=1.0):
     fn = STAT_FN.get(stat)
     if not fn or not log:
@@ -987,22 +1014,21 @@ def prop_model(log, stat, line, env=1.0, mult=1.0, rm=1.0):
             'season': r1(season), 'l10': r1(l10), 'l5': r1(l5), 'mean': r1(mu), 'sd': r1(sd), 'p_over': r3(p_over), 'p_under': r3(p_under),
             'hit_l10': sum(1 for v in last10 if v > line), 'n_l10': len(last10), 'hit_all': sum(1 for v in vals if v > line),
             'min_avg': r1(mean(g['min'] for g in gl)), 'min_l5': r1(mean(g['min'] for g in gl[-5:]))}
- 
- 
+
+
 # ----------------------------------------------------------------------------- role changes, injuries, calibration
-INJ_W = {'out': 1.0, 'doubtful': 0.8, 'questionable': 0.3, 'day-to-day': 0.3, 'game time decision': 0.3, 'gtd': 0.3}   # how much of a listed absence to assume
 STAT_COMP = {'points': ['pts'], 'rebounds': ['reb'], 'assists': ['ast'], 'threes': ['tpm'], 'pra': ['pts', 'reb', 'ast'], 'pts_reb': ['pts', 'reb'],
              'pts_ast': ['pts', 'ast'], 'reb_ast': ['reb', 'ast'], 'steals': ['stl'], 'blocks': ['blk'], 'turnovers': ['tov']}
- 
- 
+
+
 def team_gids(games):
     out = {}
     for g in sorted(games.values(), key=lambda g: (g.get('date') or '', g['id'])):
         for s in ('home', 'away'):
             out.setdefault(g[s]['ab'], []).append(g['id'])
     return out
- 
- 
+
+
 def injury_role(pid, team_inj, logs, tg):
     """Extra minutes and shots a player should absorb tonight because rotation teammates are out or doubtful (rule-based and bounded).
     A player who has been out for weeks is already baked into the recent averages, so only the part not yet reflected is applied."""
@@ -1019,7 +1045,7 @@ def injury_role(pid, team_inj, logs, tg):
     lost_min = lost_pts = 0.0
     names, out_ids = [], set()
     for i in team_inj or []:
-        w = INJ_W.get(str(i.get('status', '')).lower())
+        w = inj_weight(i.get('status'))
         xid = i.get('id')
         if not w or not xid or xid == pid or xid not in logs:
             continue
@@ -1043,18 +1069,18 @@ def injury_role(pid, team_inj, logs, tg):
     new_min = min(40.0, my_min + extra)
     team_pts = sum(avg(x, 'pts') for x in roster) or 1.0
     return {'mf': new_min / my_min, 'usage': 1.0 + min(0.12, 0.25 * lost_pts / team_pts), 'names': names, 'extra_min': new_min - my_min}
- 
- 
+
+
 def blowout_mult(L, margin):
     """Starters sit more in lopsided games: shave a point of minutes per point of spread beyond 8, floor 7%."""
     gap = abs(margin) - 8.0
     return max(0.93, 1.0 - 0.01 * gap) if (gap > 0 and mean(g['min'] for g in L['games']) >= 26) else 1.0
- 
- 
-def role_mult(role, L, stat, bm):
+
+
+def role_mult(role, L, stat, bm, pf=1.0, pf_note=''):
     comp = STAT_COMP.get(stat)
     if not comp:
-        return bm, ''
+        return bm * pf, pf_note
     notes, m = [], 1.0
     if role:
         base = {k: max(mean(g[k] for g in L['games']), 0.01) for k in comp}
@@ -1063,9 +1089,11 @@ def role_mult(role, L, stat, bm):
         notes.append('teammates out: %s (about %+d min)' % (', '.join(role['names'][:3]), round(role['extra_min'])))
     if bm < 1.0:
         notes.append('blowout risk trims minutes')
-    return clamp(m * bm, 0.85, 1.3), '; '.join(notes)
- 
- 
+    if pf_note:
+        notes.append(pf_note)
+    return clamp(m * bm * pf, 0.85, 1.3), '; '.join(notes)
+
+
 def adj_text(r):
     parts = []
     if r.get('rm_note'):
@@ -1076,13 +1104,54 @@ def adj_text(r):
         parts.append({'traded': 'traded this season, only games with the new team used', 'new team': 'new team this season (was %s), last season counted less' % m.get('prior_team'),
                       'role': 'minutes changed a lot from last season, last season counted less'}.get(ch, ch))
     return '; '.join(parts) or 'none'
- 
- 
+
+
+BOARD_STATS = ['points', 'rebounds', 'assists', 'threes', 'pra', 'pts_reb', 'pts_ast', 'reb_ast', 'steals', 'blocks', 'turnovers']
+
+
+def build_player_board(teams, logs, tg, env, margin, inj_by_team, pd=None):
+    """Projection for every rotation player in the game on every market, whether or not a line was posted:
+    [model mean, season average, last-5 average] with the same role, injury, blowout and last-season rules as the priced props."""
+    out = []
+    for ti, t in enumerate(teams):
+        opp = teams[1 - ti]['abbr']
+        for rot in (t.get('rotation') or [])[:8]:
+            L = logs.get(rot['id'])
+            if not L:
+                continue
+            status = inj_by_team.get(t['abbr'], {}).get(norm_name(L['name']), '')
+            if is_out(status):
+                continue
+            try:
+                role = injury_role(L['id'], t.get('injuries'), logs, tg)
+            except Exception:  # noqa
+                role = None
+            bm = blowout_mult(L, margin)
+            proj = {}
+            for st in BOARD_STATS:
+                pf, pn_ = pos_factor(pd, opp, L.get('pos'), st)
+                rm, _ = role_mult(role, L, st, bm, pf, pn_)
+                pm = prop_model(L, st, 0.5, env=env, rm=rm)
+                if pm:
+                    proj[st] = [pm['mean'], pm['season'], pm['l5']]
+            if proj:
+                pf, pn_ = pos_factor(pd, opp, L.get('pos'), 'points')
+                rmv, rmn = role_mult(role, L, 'points', bm, pf, pn_)
+                out.append({'pid': L['id'], 'name': L['name'], 'team': t['abbr'], 'min': rot['min'], 'inj': status, 'pos': L.get('pos'), 'proj': proj,
+                            'note': adj_text({'rm_note': rmn, 'rm': rmv, 'model': pm_changed(L)})})
+    return out
+
+
+def pm_changed(L):
+    pm = prop_model(L, 'points', 0.5)
+    return {'changed': pm['changed'], 'prior_team': pm['prior_team']} if pm else {}
+
+
 CAL_PRIOR = {'game': 1.0, 'prop': 0.7}   # starting belief about how much of our edge is real (props are less proven than game bets)
 CAL_STRENGTH = 1.0                       # a few hundred graded picks before the results outweigh the starting belief (results are noisy)
 CAL = dict(CAL_PRIOR)
- 
- 
+
+
 def cal_p(p, odds, cls):
     """Shrink a model probability toward the market price by the learned factor."""
     lam = CAL.get(cls, 1.0)
@@ -1090,14 +1159,14 @@ def cal_p(p, odds, cls):
         return p
     q = impl(odds)
     return clamp(q + lam * (p - q), 0.01, 0.99)
- 
- 
+
+
 def build_calibration(history):
     """Learns, from graded picks, how much of the model's edge over the price is real: outcome - price ~ lambda * (estimate - price).
     Ridge-shrunk toward a starting belief because a few hundred picks say very little."""
     rows = {'game': [], 'prop': []}
     for h in history:
-        if h.get('result') not in ('W', 'L') or h.get('odds') is None:
+        if h.get('result') not in ('W', 'L') or h.get('odds') is None or h.get('kind', 'priced') != 'priced':
             continue
         est = h.get('est_raw', h.get('est'))
         if est is None:
@@ -1109,25 +1178,270 @@ def build_calibration(history):
         sxy, sxx = sum(x * y for x, y in rs), sum(x * x for x, y in rs)
         res[k] = clamp((sxy + CAL_STRENGTH * CAL_PRIOR[k]) / (sxx + CAL_STRENGTH), 0.3, 1.0)
     return res, {k: len(v) for k, v in rows.items()}
- 
- 
+
+
+# ----------------------------------------------------------------------------- coaching tendencies, matchups and position defense
+POS_GROUP = {'PG': 'G', 'SG': 'G', 'G': 'G', 'SF': 'F', 'PF': 'F', 'F': 'F', 'GF': 'F', 'FG': 'G', 'C': 'C', 'FC': 'C', 'CF': 'C'}
+POS_NAME = {'G': 'guards', 'F': 'forwards', 'C': 'centers'}
+POS_STATS = ('pts', 'reb', 'ast', 'tpm')
+POS_K = 300.0          # minutes of league-average play each team starts with before its own results count
+
+
+def posgrp(a):
+    return POS_GROUP.get(str(a or '').upper())
+
+
+def build_pos_defense(games, prior=None):
+    """What each defense gives up to guards, forwards and centers, per minute, against the league rate for that position.
+    Sums are [minutes, points, rebounds, assists, threes]; last season counts half."""
+    dfn = {}
+    lg = {}
+
+    def add(team, pos, row, w=1.0):
+        c = dfn.setdefault(team, {}).setdefault(pos, [0.0] * 5)
+        L = lg.setdefault(pos, [0.0] * 5)
+        for i, v in enumerate(row):
+            c[i] += v * w
+            L[i] += v * w
+    n = 0
+    for g in games.values():
+        used = False
+        for p in g.get('players') or []:
+            pos = p.get('pos')
+            if not pos:
+                continue
+            opp = g['away']['ab'] if p['t'] == g['home']['ab'] else g['home']['ab']
+            add(opp, pos, [p['min'], p['pts'], p['reb'], p['ast'], p['tpm']])
+            used = True
+        n += 1 if used else 0
+    used_prior = False
+    for team, pd in ((prior or {}).get('posdef') or {}).items():
+        for pos, row in pd.items():
+            add(team, pos, row, 0.5)
+            used_prior = True
+    if n < 8 and not used_prior:
+        return None
+    return {'def': dfn, 'lg': lg, 'games': n, 'prior': used_prior}
+
+
+def pos_table(pd, opp):
+    """{pos: {stat: ratio}}: how many points, rebounds, assists and threes this defense allows to each position versus the league."""
+    out = {}
+    for pos, row in ((pd or {}).get('def', {}).get(opp) or {}).items():
+        lgrow = pd['lg'].get(pos)
+        if not lgrow or lgrow[0] <= 0 or row[0] <= 0:
+            continue
+        r = {}
+        for i, k in enumerate(POS_STATS, start=1):
+            lrate = lgrow[i] / lgrow[0]
+            if lrate <= 0:
+                continue
+            r[k] = (row[i] + POS_K * lrate) / ((row[0] + POS_K) * lrate)
+        out[pos] = r
+    return out
+
+
+def pos_factor(pd, opp, pos, stat):
+    """Small, bounded multiplier (at most 6%) for how this opponent defends this player's position on the stats in the market."""
+    comp = [k for k in STAT_COMP.get(stat, []) if k in POS_STATS]
+    if not pd or not pos or not comp:
+        return 1.0, ''
+    r = pos_table(pd, opp).get(pos)
+    if not r:
+        return 1.0, ''
+    lg = pd['lg'][pos]
+    w = {k: lg[1 + POS_STATS.index(k)] / lg[0] for k in comp}
+    tot = sum(w.values())
+    if tot <= 0:
+        return 1.0, ''
+    ratio = sum(w[k] * r.get(k, 1.0) for k in comp) / tot
+    m = clamp(1.0 + 0.5 * (ratio - 1.0), 0.94, 1.06)
+    note = ('%s defense vs %s %+d%%' % (opp, POS_NAME.get(pos, pos), round((ratio - 1.0) * 100))) if abs(ratio - 1.0) >= 0.04 else ''
+    return m, note
+
+
+def build_team_profiles(games):
+    """How each team actually plays, measured from this season's box scores: rotation depth, how hard the starters are played,
+    how soon they come out of blowouts, how stable the core is, shot choices and how the team fares on back-to-backs."""
+    per = {}
+    for g in sorted(games.values(), key=lambda g: (g.get('date') or '', g['id'])):
+        h, a = g['home'], g['away']
+        if h.get('pts') is None or a.get('pts') is None:
+            continue
+        for me, op, mg in ((h, a, h['pts'] - a['pts']), (a, h, a['pts'] - h['pts'])):
+            ps = sorted([p for p in g.get('players') or [] if p['t'] == me['ab']], key=lambda p: -p['min'])
+            per.setdefault(me['ab'], []).append({'date': g.get('date'), 'margin': mg, 'ps': ps, 'me': me, 'op': op})
+    out = {}
+    for t, gs in per.items():
+        tot_min = {}
+        for g in gs:
+            for p in g['ps']:
+                tot_min[p['id']] = tot_min.get(p['id'], 0) + p['min']
+        core = {pid for pid, _ in sorted(tot_min.items(), key=lambda kv: -kv[1])[:5]}
+
+        def starters(sel):
+            vals = [mean(p['min'] for p in g['ps'][:5]) for g in sel if len(g['ps']) >= 5]
+            return (r1(mean(vals)) if vals else None), len(vals)
+        close = [g for g in gs if abs(g['margin']) <= 8]
+        blow = [g for g in gs if abs(g['margin']) >= 15]
+        fga = sum(g['me'].get('fga') or 0 for g in gs)
+        tpa = sum(g['me'].get('tpa') or 0 for g in gs)
+        fgm = sum(g['me'].get('fgm') or 0 for g in gs)
+        ast = sum(g['me'].get('ast') or 0 for g in gs)
+        ofga = sum(g['op'].get('fga') or 0 for g in gs)
+        otpa = sum(g['op'].get('tpa') or 0 for g in gs)
+        b2b, rest = [], []
+        for i, g in enumerate(gs):
+            try:
+                gap = (dt.date.fromisoformat(g['date']) - dt.date.fromisoformat(gs[i - 1]['date'])).days if i and g['date'] and gs[i - 1]['date'] else None
+            except ValueError:
+                gap = None
+            if gap == 1:
+                b2b.append(g['margin'])
+            elif gap is not None:
+                rest.append(g['margin'])
+        s_all, _ = starters(gs)
+        s_close, n_close = starters(close)
+        s_blow, n_blow = starters(blow)
+        out[t] = {
+            'n': len(gs), 'depth': r1(mean(sum(1 for p in g['ps'] if p['min'] >= 12) for g in gs)), 'starter_min': s_all,
+            'close_min': s_close, 'n_close': n_close, 'blow_min': s_blow, 'n_blow': n_blow,
+            'core': r1(mean(len([p for p in g['ps'][:5] if p['id'] in core]) for g in gs)),
+            'three_rate': r3(tpa / fga) if fga else None, 'd_three_rate': r3(otpa / ofga) if ofga else None, 'ast_rate': r3(ast / fgm) if fgm else None,
+            'b2b_n': len(b2b), 'b2b_margin': r1(mean(b2b)) if b2b else None, 'rest_margin': r1(mean(rest)) if rest else None}
+    lg = {}
+    for k in ('depth', 'starter_min', 'core', 'three_rate', 'd_three_rate', 'ast_rate'):
+        v = [p[k] for p in out.values() if p.get(k) is not None]
+        lg[k] = r3(mean(v)) if v else None
+    return out, lg
+
+
+def matchup_lines(home, away, prof, lg, ratings, pd):
+    """Plain-language matchup tendencies for one game, with numbers. Used both for the site and for Claude's packet."""
+    L = []
+    ph, pa = prof.get(home), prof.get(away)
+    rh, ra = ratings.get(home) or {}, ratings.get(away) or {}
+    if rh.get('pace') is not None and ra.get('pace') is not None:
+        L.append('Pace: %s %s, %s %s possessions per game (the faster team usually sets the tempo).' % (away, ra['pace'], home, rh['pace']))
+    if pa and ph:
+        if pa.get('three_rate') is not None and ph.get('d_three_rate') is not None:
+            L.append('Threes: %s take %d%% of shots from three; %s allow %d%% (league %d%%).' % (away, round(100 * pa['three_rate']), home, round(100 * ph['d_three_rate']), round(100 * (lg.get('three_rate') or 0))))
+            L.append('Threes: %s take %d%% of shots from three; %s allow %d%% (league %d%%).' % (home, round(100 * ph['three_rate']), away, round(100 * pa['d_three_rate']), round(100 * (lg.get('three_rate') or 0))))
+        for t, p in ((away, pa), (home, ph)):
+            if p.get('starter_min') is not None and p.get('n', 0) >= 4:
+                s = '%s: starters average %s min, %s players get 12+ minutes' % (t, p['starter_min'], p['depth'])
+                if p.get('blow_min') is not None and p.get('close_min') is not None and p['n_blow'] >= 2 and p['n_close'] >= 2:
+                    s += '; starters play %s min in blowouts versus %s in close games (%d and %d games)' % (p['blow_min'], p['close_min'], p['n_blow'], p['n_close'])
+                L.append(s + '.')
+            if p.get('b2b_n', 0) >= 3 and p.get('rest_margin') is not None:
+                L.append('%s: average margin %+.1f on back-to-backs (%d games) versus %+.1f otherwise.' % (t, p['b2b_margin'], p['b2b_n'], p['rest_margin']))
+    if pd:
+        for att, dfn in ((away, home), (home, away)):
+            tb = pos_table(pd, dfn)
+            bits = []
+            for pos in ('G', 'F', 'C'):
+                r = tb.get(pos)
+                if not r:
+                    continue
+                for k, nm in (('pts', 'points'), ('reb', 'rebounds'), ('ast', 'assists'), ('tpm', 'threes')):
+                    if k in r and abs(r[k] - 1.0) >= 0.06:
+                        bits.append('%s %s %+d%%' % (POS_NAME[pos], nm, round((r[k] - 1.0) * 100)))
+            if bits:
+                L.append('%s defense allows (per minute, versus league): %s.' % (dfn, ', '.join(bits[:6])))
+    return L
+
+
+def parse_notes(path, name_to_abbr, name_index, logs):
+    """notes.txt: one note per line, 'TEAM: note' (TEAM is the three-letter code or the team name) or 'Player Name: note'.
+    Notes are the owner's own opinions: they are shown to Claude and on the site as context and never change a number by themselves."""
+    try:
+        with open(path, encoding='utf8') as f:
+            raw = f.read()
+    except Exception:
+        return None
+    teams, players, bad = {}, {}, []
+    known = set(name_to_abbr.values())
+    n = 0
+    for ln in raw.splitlines():
+        ln = ln.strip()
+        if not ln or ln.startswith('#') or ':' not in ln:
+            if ln and not ln.startswith('#'):
+                bad.append(ln[:60])
+            continue
+        who, txt = [x.strip() for x in ln.split(':', 1)]
+        txt = txt[:300]
+        if not who or not txt:
+            bad.append(ln[:60])
+            continue
+        ab_ = ab(who)
+        if ab_ in known:
+            teams.setdefault(ab_, []).append(txt)
+        elif who.lower() in name_to_abbr:
+            teams.setdefault(name_to_abbr[who.lower()], []).append(txt)
+        else:
+            ids = name_index.get(norm_name(who))
+            if ids:
+                pid = max(ids, key=lambda i: len(logs[i]['games']))
+                players.setdefault(pid, []).append(txt)
+            else:
+                bad.append(ln[:60])
+                continue
+        n += 1
+    return {'teams': teams, 'players': players, 'bad': bad, 'n': n}
+
+
+def notes_for_game(notes, home, away, logs):
+    if not notes:
+        return []
+    out = []
+    for ab_ in (away, home):
+        for t in notes['teams'].get(ab_, []):
+            out.append({'who': ab_, 'text': t})
+    for pid, ts in notes['players'].items():
+        L = logs.get(pid)
+        if L and L['team'] in (home, away):
+            for t in ts:
+                out.append({'who': L['name'], 'text': t})
+    return out[:12]
+
+
+def inj_weight(s):
+    s = str(s or '').lower()
+    if 'out' in s or 'suspen' in s:
+        return 1.0
+    if 'doubtful' in s:
+        return 0.8
+    if any(k in s for k in ('questionable', 'day-to-day', 'game time', 'gtd')):
+        return 0.3
+    return 0.0
+
+
+def is_out(s):
+    s = str(s or '').lower()
+    return 'out' in s or 'suspen' in s
+
+
+def is_blocked(s):
+    return inj_weight(s) > 0
+
+
 def vs_opp(log, stat, opp):
     fn = STAT_FN[stat]
     v = [fn(g) for g in log['games'] if g['opp'] == opp and g['min'] > 0]
     return {'n': len(v), 'avg': r1(mean(v))} if v else None
- 
- 
+
+
 PROP_PIPE = re.compile(r'^\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|\s*(-?\d+(?:\.\d+)?)\s*(?:\|\s*([+-]?\d{3,4})?\s*(?:\|\s*([+-]?\d{3,4})?\s*)?)?$')
- 
- 
+
+
 def odds_or_none(v):
     try:
         v = int(str(v).replace('+', ''))
         return v if abs(v) >= 100 else None
     except (TypeError, ValueError):
         return None
- 
- 
+
+
 def parse_props_local(lines):
     """Deterministic parse of 'Player | Stat | line | over | under' lines. Returns (props, leftovers)."""
     props, left = [], []
@@ -1139,8 +1453,8 @@ def parse_props_local(lines):
         else:
             left.append(ln)
     return props, left
- 
- 
+
+
 def clean_prop(r):
     if not isinstance(r, dict):
         return None
@@ -1153,15 +1467,15 @@ def clean_prop(r):
     if not player or stat not in STAT_FN:
         return None
     return {'player': player, 'stat': stat, 'line': line, 'over': odds_or_none(r.get('over')), 'under': odds_or_none(r.get('under')), 'raw': str(r.get('raw') or '')[:100]}
- 
- 
+
+
 ODDS_KEY = os.environ.get('ODDS_API_KEY', '').strip()
 ODDS_BOOK = os.environ.get('EPLOCKS_BOOKMAKER') or 'draftkings'
 ODDS_MARKETS = {'player_points': 'points', 'player_rebounds': 'rebounds', 'player_assists': 'assists', 'player_threes': 'threes',
                 'player_points_rebounds_assists': 'pra', 'player_points_rebounds': 'pts_reb', 'player_points_assists': 'pts_ast',
                 'player_rebounds_assists': 'reb_ast', 'player_steals': 'steals', 'player_blocks': 'blocks', 'player_turnovers': 'turnovers'}
- 
- 
+
+
 def fetch_odds_props(slate_events):
     """Optional: pull player props from The Odds API for today's games. Returns a list of prop dicts, or None on failure."""
     if not ODDS_KEY:
@@ -1213,14 +1527,14 @@ def fetch_odds_props(slate_events):
     src('odds_api', ok, '%d props for %d games (about %d credits used)%s' % (len(out), len(mine), used, ('; %d games failed' % fails) if fails else '') if ok else
         'The key worked but returned no player props. Your plan may not include them, or lines are not posted yet.')
     return out if ok else None
- 
- 
+
+
 PARSE_SYS = ('You convert pasted sportsbook or pick-em text into JSON. Reply with only a JSON array. '
              'One object per player, stat and line: {"player":"full name","stat":"points|rebounds|assists|threes|pra|pts_reb|pts_ast|reb_ast|steals|blocks|turnovers|other",'
              '"line":number,"over":American odds integer or null,"under":American odds integer or null,"raw":"short source text"}. '
              'A matchup header applies to nothing here; ignore it. Never invent a line or a price. Skip anything that is not a player prop.')
- 
- 
+
+
 def parse_props_llm(lines, cache):
     out = []
     for i in range(0, len(lines), 40):
@@ -1236,8 +1550,8 @@ def parse_props_llm(lines, cache):
             cache[key] = got
         out.extend(got)
     return out
- 
- 
+
+
 def route_props(props, logs, index, slate_abbrs):
     """Attach each prop to a player log (so team and game are known from real data)."""
     keys = list(index.keys())
@@ -1262,28 +1576,34 @@ def route_props(props, logs, index, slate_abbrs):
         L = logs[pid]
         routed.append(dict(p, pid=pid, team=L['team'], how=how, name=L['name']))
     return routed, unmatched
- 
- 
+
+
 # ----------------------------------------------------------------------------- Claude
 SYSTEM = """You are EpLocks AI, a disciplined NBA betting analyst. You are given a data packet for one game: team ratings built from real box scores, a projection, the market line, injuries, player production and a table of player props with game-log numbers.
- 
+
 RULES
 - The DATA section is the only source of 2026-27 facts. Never invent a stat, an injury, a line or a price. If something is missing, say it is missing.
-- Roster changes, coaching tendencies and scheme come from your own memory and may be out of date after the 2026 offseason. Tag every such claim (from memory) and never let one drive a pick on its own.
+- Measured coaching and matchup tendencies (rotation, minutes, blowout habits, shot mix, defense by position) are in the DATA. Use them and cite the numbers. Anything about roster changes or scheme beyond the DATA comes from your own memory and may be out of date after the 2026 offseason: tag it (from memory) and never let it drive a pick on its own.
+- Owner notes, when present, are the owner's own unverified opinions. Treat them as context to check against the numbers, never as facts and never as a reason to change a number by themselves.
 - The market line already reflects public injury news. When a market line is given, keep margin_adj and total_adj at 0 unless the packet shows a specific, quantifiable reason the line misses (a rating or rest mismatch with numbers). Never exceed +/-2.0 margin or +/-5.0 total when a line exists.
 - Early season samples are small. Say so when it matters and do not overstate.
 - You do not decide probabilities, confidence or stake sizes. The code computes them from your adjustments.
 - For props, mult scales the player's expected output (0.90 to 1.10). Change it only for a stated reason that is in the DATA (a starter listed out raising usage, a minutes change visible in the last games). Use skip=true for any player listed Out, Doubtful or Questionable, or whose role looks unclear.
 - Plain language. No hype. Be specific and cite the numbers you use.
- 
+
 Reply with one JSON object only:
 {"margin_adj": number, "total_adj": number,
  "analysis": {"lean": "one sentence", "why": ["3 to 5 short data-led points"], "risks": ["1 to 3 short points"], "matchups": ["0 to 3 short matchup notes, tagged (from memory) when they are"], "verify": ["what to check before betting"]},
  "props": [{"id": "p3", "mult": 1.0, "skip": false, "note": "one short sentence"}]}"""
- 
- 
+
+
 def call_claude(prompt, system, max_tokens=3500, tries=3):
     if not API_KEY:
+        return None
+    if time.time() - T0 > CLAUDE_BUDGET:
+        if not STATUS.get('_budget_note'):
+            STATUS['_budget_note'] = True
+            note('Claude time budget used up (%d s); the remaining games get numbers but no written analysis this run' % CLAUDE_BUDGET)
         return None
     body = json.dumps({'model': MODEL, 'max_tokens': max_tokens, 'system': system, 'messages': [{'role': 'user', 'content': prompt}]}).encode()
     last = None
@@ -1305,8 +1625,8 @@ def call_claude(prompt, system, max_tokens=3500, tries=3):
     src('anthropic', False, last)
     note('Claude call failed: %s' % str(last)[:160])
     return None
- 
- 
+
+
 def extract_json(t):
     if not t:
         return None
@@ -1320,20 +1640,20 @@ def extract_json(t):
         except ValueError:
             continue
     return None
- 
- 
+
+
 def clamp(x, lo, hi):
     return max(lo, min(hi, x))
- 
- 
+
+
 def num_or(x, d=0.0):
     try:
         v = float(x)
         return v if math.isfinite(v) else d
     except (TypeError, ValueError):
         return d
- 
- 
+
+
 def fmt_team_packet(t, side):
     r = t['ratings'] or {}
     L = ['%s: %s (%s), record %s' % (side, t['name'], t['abbr'], t['record'] or 'n/a')]
@@ -1354,8 +1674,8 @@ def fmt_team_packet(t, side):
     else:
         L.append('  Injury report: none listed' if t.get('injuries_ok') else '  Injury report: NOT LOADED')
     return '\n'.join(L)
- 
- 
+
+
 def packet(g):
     L = ['Game: %s at %s, tip %s' % (g['away']['name'], g['home']['name'], g['tip']), fmt_team_packet(g['away'], 'Away'), fmt_team_packet(g['home'], 'Home')]
     m = g['market']
@@ -1372,8 +1692,15 @@ def packet(g):
     sh = fmt_shots(g)
     if sh:
         L.append(sh)
-    L.append('Not loaded: coaching data, referee data, travel distance, true player tracking (defender distance, speed, touches)' + ('' if sh else ', shot quality'))
-    rows = g.get('prop_rows') or []
+    td = g.get('tendencies')
+    if td and td.get('lines'):
+        L.append('Coaching and matchup tendencies measured from this season\'s box scores (small samples early; context only):')
+        L.extend('  ' + x for x in td['lines'])
+    if g.get('notes'):
+        L.append("Owner's notes (unverified opinions, context only):")
+        L.extend('  %s: %s' % (n_['who'], n_['text']) for n_ in g['notes'])
+    L.append('Not loaded: play-calling and timeout data, referee data, travel distance, true player tracking (defender distance, speed, touches)' + ('' if sh else ', shot quality'))
+    rows = (g.get('prop_rows') or [])[:PROP_ROWS_TO_CLAUDE]
     if rows:
         L.append('\nPROP TABLE (id | player team | stat line | over/under price | n games | season/L10/L5 avg | model mean | model P(over) | hit L10 over | minutes avg/L5 | vs this opponent):')
         for r in rows:
@@ -1382,21 +1709,21 @@ def packet(g):
                 r['id'], r['player'], r['team'], STAT_NAMES.get(r['stat'], r['stat']), r['line'], r['over'], r['under'], m_['n'], m_['season'], m_['l10'], m_['l5'], m_['mean'],
                 m_['p_over'], m_['hit_l10'], m_['n_l10'], m_['min_avg'], m_['min_l5'], ('%s avg in %d g' % (r['vs_opp']['avg'], r['vs_opp']['n'])) if r.get('vs_opp') else 'none', adj_text(r)))
     return '\n'.join(L)
- 
- 
+
+
 # ----------------------------------------------------------------------------- pricing
 def conf_weight(c):
     return {'High': 1.0, 'Medium': 0.75, 'Low': 0.4}.get(c, 0.4)
- 
- 
+
+
 def kelly_units(p, odds):
     b = (odds / 100.0) if odds > 0 else (100.0 / -odds)
     f = (p * b - (1 - p)) / b
     if f <= 0:
         return 0.5
     return clamp(round(f * 100 * 0.25 * 2) / 2, 0.5, 2.0)
- 
- 
+
+
 def game_conf(edge, min_n, inj_ok, uncertain_key, adj_abs, market_ok):
     s = 2 if min_n >= 15 else 1 if min_n >= 8 else 0
     s += 2 if edge >= 0.05 else 1 if edge >= 0.03 else 0
@@ -1409,8 +1736,8 @@ def game_conf(edge, min_n, inj_ok, uncertain_key, adj_abs, market_ok):
     if not market_ok or min_n < 8:
         return 'Low'
     return 'High' if (s >= 4 and min_n >= 15) else 'Medium' if s >= 2 else 'Low'
- 
- 
+
+
 def game_picks(g, final_margin, final_total, min_n, inj_ok, uncertain_key, adj_abs):
     m = g['market']
     picks = []
@@ -1446,8 +1773,8 @@ def game_picks(g, final_margin, final_total, min_n, inj_ok, uncertain_key, adj_a
         picks.append({'type': c[0], 'side': c[1], 'label': c[2], 'line': c[3], 'odds': c[4], 'est': r3(c[5]), 'est_raw': r3(c[6]), 'implied': r3(impl(c[4])), 'edge': r3(edge),
                       'kind': 'priced', 'conf': conf, 'units': kelly_units(c[5], c[4]), 'flag': flag})
     return picks
- 
- 
+
+
 def prop_pick(row, mult, injured_flag):
     """Choose the better side of a prop row from the model numbers; returns a pick dict or None."""
     pm = row['model']
@@ -1478,21 +1805,28 @@ def prop_pick(row, mult, injured_flag):
     return {'type': 'prop', 'side': side, 'label': '%s %s %g %s' % (row['player'], side, row['line'], STAT_NAMES.get(row['stat'], row['stat']).lower()), 'line': row['line'], 'odds': pr,
             'est': r3(p), 'est_raw': r3(p_raw), 'implied': r3(impl(pr)), 'edge': r3(edge), 'kind': kind, 'conf': conf, 'units': kelly_units(p, pr), 'player': row['player'], 'stat': row['stat'],
             'pid': row['pid'], 'mean': pm['mean'], 'hit_l10': '%d/%d' % (pm['hit_l10'], pm['n_l10']), 'flag': flag}
- 
- 
+
+
 def rank_key(p):
     tier = {'priced': 2, 'assumed': 1}.get(p['kind'], 0)
     return (tier, (p['edge'] or 0) * conf_weight(p['conf']))
- 
- 
+
+
 # ----------------------------------------------------------------------------- grading
-def grade_history(history, games):
+def grade_history(history, games, today=None):
     changed = 0
     for h in history:
         if h.get('result'):
             continue
         g = games.get(h['game_id'])
         if not g or g['home'].get('pts') is None:
+            try:
+                old = today is not None and (today - dt.date.fromisoformat(h['date'])).days > 4
+            except (ValueError, KeyError, TypeError):
+                old = False
+            if old:            # postponed or never found: void it so it does not sit open forever
+                h['result'], h['profit'], h['final'] = 'V', 0.0, 'No result found (postponed or removed)'
+                changed += 1
             continue
         res = None
         if h['type'] == 'prop':
@@ -1523,8 +1857,8 @@ def grade_history(history, games):
             h['final'] = '%s %d - %s %d' % (g['away']['ab'], g['away']['pts'], g['home']['ab'], g['home']['pts'])
             changed += 1
     return changed
- 
- 
+
+
 # ----------------------------------------------------------------------------- main
 def team_block(ev_team, ratings, logs, injuries, inj_ok, today, name_to_abbr):
     a = ev_team['abbr']
@@ -1549,8 +1883,8 @@ def team_block(ev_team, ratings, logs, injuries, inj_ok, today, name_to_abbr):
         inj.append(e)
     return {'abbr': a, 'name': ev_team['name'], 'record': ev_team['record'] or ('%d-%d' % (rt['w'], rt['l']) if rt else ''), 'rest': rest_txt, 'b2b': b2b,
             'ratings': rt, 'rotation': rot, 'injuries': inj, 'injuries_ok': inj_ok}
- 
- 
+
+
 def main(argv):
     only_data = '--no-llm' in argv
     global API_KEY
@@ -1559,7 +1893,7 @@ def main(argv):
     today = today_ct()
     started = dt.datetime.now(dt.timezone.utc)
     print('EpLocks run for', today, flush=True)
- 
+
     cache, slate_events = update_games(today)
     games = {k: v for k, v in cache['games'].items() if v.get('date') and v['date'] <= today.isoformat()}
     prior_state = None
@@ -1583,8 +1917,11 @@ def main(argv):
             src('prior_season', True, 'still loading last season: %d of %d days done. It finishes over the next run or two; until then picks use this season only.' % (
                 len(prior_state['days_done']), (dt.date.fromisoformat(PRIOR_END) - dt.date.fromisoformat(PRIOR_START)).days + 1))
     ratings, lg_ortg, lg_pace = build_ratings(games, pr_pack) if games else ({}, 112.0, 99.0)
+    sane = (not games) or (95.0 <= lg_ortg <= 135.0 and 85.0 <= lg_pace <= 112.0)
+    if not sane:
+        note('League averages look wrong (%.1f points per 100, pace %.1f). The box-score data may be damaged, so every pick is capped at Low.' % (lg_ortg, lg_pace))
     logs, name_index = build_player_logs(games, prior_player_means(prior_state) if pr_pack else None)
-    src('ratings', bool(ratings), '%d teams rated from %d games%s' % (len(ratings), len(games), ' (with last season as a starting point)' if pr_pack else ''))
+    src('ratings', bool(ratings) and sane, ('%d teams rated from %d games%s' % (len(ratings), len(games), ' (with last season as a starting point)' if pr_pack else '')) if sane else 'league averages look wrong, so picks are capped at Low')
     shot_data = None
     try:
         shot_data = build_shot_data(games, prior_state if pr_pack else None)
@@ -1603,7 +1940,7 @@ def main(argv):
         src('shot_data', False, 'shot maps failed: %s' % str(e)[:140])
     if shot_data is not None and STATUS['sources'].get('shot_data', {}).get('ok') is False:
         shot_data = None
- 
+
     name_to_abbr = {}
     for ev in slate_events:
         for s in ('home', 'away'):
@@ -1614,11 +1951,30 @@ def main(argv):
     injuries = fetch_injuries(name_to_abbr)
     tg = team_gids(games)
     inj_ok = injuries is not None
- 
+    pdef = profiles = prof_lg = None
+    try:
+        pdef = build_pos_defense(games, prior_state if pr_pack else None)
+        src('position_defense', bool(pdef), ('defense by position from %d games%s' % (pdef['games'], ' plus last season' if pdef['prior'] else '')) if pdef else 'not enough games with positions yet')
+    except Exception as e:  # noqa
+        src('position_defense', False, 'failed: %s' % str(e)[:120])
+    try:
+        profiles, prof_lg = build_team_profiles(games)
+        src('team_profiles', bool(profiles), '%d teams profiled from this season\'s box scores' % len(profiles))
+    except Exception as e:  # noqa
+        profiles, prof_lg = {}, {}
+        src('team_profiles', False, 'failed: %s' % str(e)[:120])
+    notes_data = None
+    try:
+        notes_data = parse_notes(os.path.join(HERE, 'notes.txt'), name_to_abbr, name_index, logs)
+        if notes_data and (notes_data['n'] or notes_data['bad']):
+            src('notes', True, '%d notes loaded from notes.txt%s' % (notes_data['n'], ('; %d lines could not be matched to a team or player: %s' % (len(notes_data['bad']), ' | '.join(notes_data['bad'][:3]))) if notes_data['bad'] else ''))
+    except Exception as e:  # noqa
+        src('notes', False, 'notes.txt could not be read: %s' % str(e)[:120])
+
     # grade finished picks first
     hist_path = os.path.join(OUT, 'history.json')
     history = jload(hist_path, [])
-    ch = grade_history(history, games)
+    ch = grade_history(history, games, today)
     if ch:
         note('Graded %d finished picks' % ch)
     try:
@@ -1628,7 +1984,7 @@ def main(argv):
             CAL['game'], CAL['prop'], cal_n['game'], cal_n['prop']))
     except Exception as e:  # noqa
         src('calibration', False, 'self-calibration failed: %s' % str(e)[:120])
- 
+
     # props
     props_txt = ''
     try:
@@ -1655,11 +2011,11 @@ def main(argv):
     routed, unmatched = route_props(parsed, logs, name_index, slate_abbrs)
     not_playing = [p for p in routed if p['team'] not in slate_abbrs]
     routed = [p for p in routed if p['team'] in slate_abbrs]
- 
+
     # previous output, to keep analysis for games that already started
     prev = jload(os.path.join(OUT, 'latest.json'), {})
     prev_games = {g['id']: g for g in prev.get('games', [])} if prev.get('for_date') == today.isoformat() else {}
- 
+
     out_games, all_picks = [], []
     inj_names_by_team = {t: {norm_name(i['name']): i['status'].lower() for i in lst} for t, lst in (injuries or {}).items()}
     lg_total = 2 * lg_ortg * lg_pace / 100.0
@@ -1678,7 +2034,7 @@ def main(argv):
             r_ = t['ratings'] or {}
             return r_.get('n_eff', r_.get('n', 0))
         min_real = min((home['ratings'] or {}).get('n', 0), (away['ratings'] or {}).get('n', 0))
-        min_n = min(n_eff_(home), n_eff_(away))
+        min_n = min(n_eff_(home), n_eff_(away)) if sane else 0
         mk = ev['market']
         blend = None
         if mo:
@@ -1708,7 +2064,9 @@ def main(argv):
                 tm_ = home if p['team'] == home['abbr'] else away
                 bm = blowout_mult(logs[p['pid']], blend['margin'] if blend else mo['margin'])
                 try:
-                    rm, rm_note = role_mult(injury_role(p['pid'], tm_['injuries'], logs, tg), logs[p['pid']], p['stat'], bm)
+                    opp_ab = away['abbr'] if p['team'] == home['abbr'] else home['abbr']
+                    pf, pf_note = pos_factor(pdef, opp_ab, logs[p['pid']].get('pos'), p['stat'])
+                    rm, rm_note = role_mult(injury_role(p['pid'], tm_['injuries'], logs, tg), logs[p['pid']], p['stat'], bm, pf, pf_note)
                 except Exception as e:  # noqa
                     rm, rm_note = 1.0, ''
                     note('Role adjustment skipped for %s: %s' % (p['name'], str(e)[:80]))
@@ -1731,11 +2089,23 @@ def main(argv):
                 r['id'] = 'p%d' % (i + 1)
         g['prop_rows'] = rows
         try:
+            g['tendencies'] = {'away': (profiles or {}).get(away['abbr']), 'home': (profiles or {}).get(home['abbr']), 'league': prof_lg,
+                               'lines': matchup_lines(home['abbr'], away['abbr'], profiles or {}, prof_lg or {}, ratings, pdef)} if profiles else None
+        except Exception as e:  # noqa
+            g['tendencies'] = None
+            note('Tendencies skipped for %s @ %s: %s' % (away['abbr'], home['abbr'], str(e)[:100]))
+        g['notes'] = notes_for_game(notes_data, home['abbr'], away['abbr'], logs)
+        try:
+            g['player_board'] = build_player_board([home, away], logs, tg, env, (blend['margin'] if blend else mo['margin']), inj_names_by_team, pdef) if mo else []
+        except Exception as e:  # noqa
+            g['player_board'] = []
+            note('Player board skipped for %s: %s' % (ev['id'], str(e)[:100]))
+        try:
             g['shot_profile'] = shot_profile(home, away, shot_data, logs, [r['pid'] for r in rows]) if shot_data else None
         except Exception as e:  # noqa
             g['shot_profile'] = None
             note('Shot profile failed for %s @ %s: %s' % (away['abbr'], home['abbr'], str(e)[:100]))
- 
+
         # Claude
         analysis, adjust_m, adjust_t, pnotes = None, 0.0, 0.0, {}
         if API_KEY and mo and ev['state'] == 'pre':
@@ -1764,7 +2134,7 @@ def main(argv):
                 note('No usable analysis for %s @ %s' % (away['abbr'], home['abbr']))
         g['analysis'] = analysis
         g['adjust'] = {'margin': r1(adjust_m), 'total': r1(adjust_t)}
- 
+
         picks = []
         if blend and ev['state'] == 'pre':
             fm = blend['margin'] + adjust_m
@@ -1772,7 +2142,7 @@ def main(argv):
             g['final'] = {'margin': r1(fm), 'total': r1(ft), 'home_win': r3(phi(fm / SD_MARGIN))}
             if not mo:
                 g['final']['note'] = 'No team ratings yet, so this is the market number only.'
-            uncertain = any(i['status'].lower() in ('questionable', 'doubtful', 'day-to-day', 'game time decision', 'gtd') and (i.get('avg') or {}).get('min', 0) >= 24
+            uncertain = any(0 < inj_weight(i['status']) < 1.0 and (i.get('avg') or {}).get('min', 0) >= 24
                             for t in (home, away) for i in t['injuries'])
             picks = game_picks(g, fm, ft, min_n, inj_ok, uncertain, abs(adjust_m) + abs(adjust_t) / 3.0)
             if not mk:
@@ -1784,12 +2154,14 @@ def main(argv):
                 r['model'] = prop_model(logs[r['pid']], r['stat'], r['line'], env=r['env'], mult=mult, rm=r.get('rm', 1.0))
             r['mult'], r['note'] = mult, pn.get('note', '')
             r['skipped'] = bool(pn.get('skip'))
-            if ev['state'] != 'pre' or r['skipped'] or r['injury'] in BLOCK_STATUS:
-                r['skipped'] = r['skipped'] or r['injury'] in BLOCK_STATUS
+            if ev['state'] != 'pre' or r['skipped'] or is_blocked(r['injury']):
+                r['skipped'] = r['skipped'] or is_blocked(r['injury'])
                 continue
             pk = prop_pick(r, mult, bool(r['injury']))
             if pk:
                 pk['reason'] = r['note']
+                if not sane:
+                    pk['conf'] = 'Low'
                 picks.append(pk)
         for i, p in enumerate(picks):
             p['id'] = '%s-%s-%d' % (today.isoformat(), ev['id'], i)
@@ -1801,9 +2173,9 @@ def main(argv):
             r.pop('raw', None)
         out_games.append(g)
         all_picks.extend(picks)
- 
+
     all_picks.sort(key=lambda p: rank_key(p), reverse=True)
- 
+
     # history: replace today's picks for games still 'pre', keep the rest
     today_s = today.isoformat()
     pre_ids = {g['id'] for g in out_games if g.get('state') == 'pre'}
@@ -1812,20 +2184,21 @@ def main(argv):
     for p in all_picks:
         if p['id'] not in have and p['game_id'] in pre_ids:
             history.append({k: p[k] for k in ('id', 'date', 'game_id', 'away', 'home', 'type', 'side', 'label', 'line', 'odds', 'est', 'est_raw', 'edge', 'kind', 'conf', 'units') if k in p}
-                           | ({'player': p['player'], 'stat': p['stat'], 'pid': p['pid']} if p['type'] == 'prop' else {}))
+                           | ({'player': p['player'], 'stat': p['stat'], 'pid': p['pid']} if p['type'] == 'prop' else {})
+                           | {'posted': started.strftime('%Y-%m-%dT%H:%M:%SZ'), 'v': ENGINE_VERSION})
     jsave(hist_path, history)
     jsave(acache_path, acache)
     if reused:
         note('Reused the written analysis for %d games whose data had not changed' % reused)
- 
+
     league = {'ortg': r1(lg_ortg), 'pace': r1(lg_pace), 'games': len(games), 'avg_total': r1(lg_total),
               'zones': {z: r3(v) for z, v in (shot_data['lfg'] if shot_data else {}).items()}, 'zone_labels': ZONE_LABEL}
     src('anthropic', bool(API_KEY) and STATUS['sources'].get('anthropic', {}).get('ok', True), 'model %s' % MODEL if API_KEY else 'no API key set, so there is no written analysis')
     result = {
-        'prop_source': 'odds_api' if auto else ('props.txt' if lines else 'none'),
+        'engine': ENGINE_VERSION, 'prop_source': 'odds_api' if auto else ('props.txt' if lines else 'none'),
         'generated_at': started.strftime('%Y-%m-%dT%H:%M:%SZ'), 'for_date': today_s, 'model': MODEL if API_KEY else None, 'league': league,
         'params': {'home_edge': HCA, 'sd_margin': SD_MARGIN, 'sd_total': SD_TOTAL, 'b2b_points': B2B_PTS, 'calibration': {k: r3(v) for k, v in CAL.items()}},
-        'status': STATUS, 'games': [{k: v for k, v in g.items() if k not in ('model_raw',)} for g in out_games],
+        'status': {k: v for k, v in STATUS.items() if not k.startswith('_')}, 'games': [{k: v for k, v in g.items() if k not in ('model_raw',)} for g in out_games],
         'picks': [dict(p, label=p['label']) for p in all_picks], 'props_unmatched': unmatched[:60], 'props_not_playing': [dict(p) for p in not_playing][:60],
         'props_lines': len(lines) + (len(auto) if auto else 0)}
     # drop heavy duplicates
@@ -1835,14 +2208,14 @@ def main(argv):
     if not STATUS['sources'].get('espn_games', {}).get('ok', False) and prev.get('games'):
         # Game data failed today: keep the last good slate on the site instead of wiping it, and show the failure.
         note('Game data failed, so the site is still showing the previous run.')
-        prev['status'] = STATUS
+        prev['status'] = result['status']
         jsave(os.path.join(OUT, 'latest.json'), prev)
         print('Game data failed; kept previous output', flush=True)
         return 0
     jsave(os.path.join(OUT, 'latest.json'), result)
     print('Wrote %d games, %d picks' % (len(out_games), len(all_picks)), flush=True)
     return 0
- 
- 
+
+
 if __name__ == '__main__':
     sys.exit(main(sys.argv[1:]))
