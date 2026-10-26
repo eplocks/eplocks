@@ -1,21 +1,16 @@
 name: EpLocks daily run
- 
 on:
   schedule:
-    # 15:00 UTC = 10:00 AM CDT (9:00 AM CST after Nov 1). Games tip off in the evening.
     - cron: "0 15 * * *"
   workflow_dispatch: {}
   push:
     paths:
       - "props.txt"
- 
 permissions:
   contents: write
- 
 concurrency:
   group: eplocks
   cancel-in-progress: false
- 
 jobs:
   run:
     runs-on: ubuntu-latest
@@ -39,5 +34,3 @@ jobs:
           git config user.email "eplocks-bot@users.noreply.github.com"
           git add -A data
           git diff --cached --quiet && echo "Nothing changed" || (git commit -m "EpLocks daily update" && git pull --rebase origin ${{ github.ref_name }} && git push)
- 
-Claude finished the response
