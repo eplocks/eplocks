@@ -20,6 +20,7 @@ on:
       - "props.txt"
       - "notes.txt"
       - "refs.txt"
+      - "replay.txt"
 
 permissions:
   contents: write
@@ -49,6 +50,8 @@ jobs:
         run: |
           MODE="${{ inputs.mode }}"
           if [ "${{ github.event.schedule }}" = "*/20 22-23,0-5 * * *" ]; then MODE=closing; fi
+          # editing replay.txt (any change, from github.com or the app) starts the last-season replay
+          if [ "${{ github.event_name }}" = "push" ] && [ "${{ contains(github.event.head_commit.modified, 'replay.txt') || contains(github.event.head_commit.added, 'replay.txt') }}" = "true" ]; then MODE=replay; fi
           case "$MODE" in
             closing) python eplocks.py --closing ;;
             backtest) python eplocks.py --backtest ;;

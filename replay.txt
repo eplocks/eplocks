@@ -1,0 +1,5 @@
+# Change anything in this file and commit it to run the last-season replay on GitHub.
+# The replay re-checks the prop model, picks the best way to read game logs, and measures
+# who-is-playing and schedule effects on two full seasons. It takes 15 to 45 minutes and
+# continues by itself on the next replay if it runs out of time.
+# Last requested: 2026-10-27 (overnight overhaul)
