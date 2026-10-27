@@ -742,6 +742,160 @@ section.enter{animation:tabIn .16s ease both}
 
 .best{color:var(--acc);font-weight:700}
 .tracker-h{margin-top:18px}
+/* ===== v11 refresh: "arena broadcast" =====
+   One self-contained layer on top of everything above; delete this block to roll back.
+   Idea: the site is a TV broadcast of the slate. Navy arena, emerald signal light, gold only for Strong.
+   Two signature moments, everything else quiet: (1) each game card is lit in its two teams' colours,
+   (2) the edge meter is the broadcast gauge that shows where the model beats the price. */
+:root{
+  --night:#06101F; --court:#0C1C36; --court2:#12284A; --rail:#1C335C; --chalk:#EAF1FB; --fog:#93A7C4;
+  --signal:#2FE6A0; --signal-ink:#03241A; --gold2:#FFC24B;
+  --lift:inset 0 1px 0 rgba(255,255,255,.06);
+  --glow:0 0 0 1px rgba(47,230,160,.35),0 0 18px rgba(47,230,160,.18);
+  --r-card:10px; --r-ctl:6px;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:var(--night); --surface:var(--court); --surface2:var(--court2); --line:var(--rail); --fg:var(--chalk); --mut:var(--fog);
+    --acc:var(--signal); --good:var(--signal); --hdr:#040C19; --hdr2:#0A1A33; --hdr-acc:var(--signal); --strong:var(--gold2);
+  }
+}
+:root[data-theme="dark"]{
+  --bg:var(--night); --surface:var(--court); --surface2:var(--court2); --line:var(--rail); --fg:var(--chalk); --mut:var(--fog);
+  --acc:var(--signal); --good:var(--signal); --hdr:#040C19; --hdr2:#0A1A33; --hdr-acc:var(--signal); --strong:var(--gold2);
+}
+:root[data-theme="light"],
+:root:not([data-theme]){ --lift:inset 0 1px 0 rgba(255,255,255,.9); }
+@media (prefers-color-scheme:dark){ :root:not([data-theme="light"]){ --lift:inset 0 1px 0 rgba(255,255,255,.06); } }
+
+/* arena light: one soft wash from above the court, fixed so it never scrolls into the content */
+body{background:radial-gradient(1100px 520px at 50% -260px,color-mix(in srgb,var(--acc) 9%,transparent),transparent 70%) fixed,var(--bg)}
+::selection{background:color-mix(in srgb,var(--acc) 35%,transparent)}
+:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+
+/* ---------- header ---------- */
+.hdr{background:color-mix(in srgb,var(--hdr) 92%,transparent);-webkit-backdrop-filter:saturate(140%) blur(10px);backdrop-filter:saturate(140%) blur(10px);
+  border-bottom:1px solid rgba(255,255,255,.07);box-shadow:inset 0 3px 0 var(--hdr-acc),0 1px 0 rgba(0,0,0,.25)}
+.wm{text-shadow:0 0 22px color-mix(in srgb,var(--hdr-acc) 30%,transparent)}
+.sync[data-age="fresh"]::before{box-shadow:0 0 0 0 rgba(47,230,160,.6);animation:onair 2.4s ease-out infinite}
+@keyframes onair{0%{box-shadow:0 0 0 0 rgba(47,230,160,.55)}70%{box-shadow:0 0 0 7px rgba(47,230,160,0)}100%{box-shadow:0 0 0 0 rgba(47,230,160,0)}}
+.tabs .ind{height:3px;box-shadow:0 0 12px var(--hdr-acc)}
+
+/* ---------- surfaces: depth from a top highlight, not from shadows ---------- */
+.game,.pick,.blk,.tile,.tscroll,.note,.ctl,.method details,.mk-card,.pgroup,.ticket,.sigc,.cwrap{box-shadow:var(--lift)}
+.game,.pick,.blk,.ticket,.mk-card,.sigc{border-radius:var(--r-card)}
+.btn,.seg,.cell,.ib2,.slipbtn,.qchip{border-radius:var(--r-ctl)}
+
+/* ---------- signature 1: game cards lit in team colours ---------- */
+.game{overflow:hidden;
+  background:
+    radial-gradient(240px 150px at 6% 30%,color-mix(in srgb,var(--ca,var(--acc)) 24%,transparent),transparent 72%),
+    radial-gradient(240px 150px at 94% 30%,color-mix(in srgb,var(--ch,var(--acc)) 24%,transparent),transparent 72%),
+    linear-gradient(180deg,color-mix(in srgb,var(--surface) 88%,#fff 2%),var(--surface))}
+.game::before{height:5px;box-shadow:0 0 16px color-mix(in srgb,var(--ca,var(--acc)) 55%,transparent),0 0 16px color-mix(in srgb,var(--ch,var(--acc)) 35%,transparent)}
+.game .team[data-side="away"] .ab{text-shadow:0 0 26px color-mix(in srgb,var(--ca,var(--acc)) 65%,transparent)}
+.game .team.home .ab{text-shadow:0 0 26px color-mix(in srgb,var(--ch,var(--acc)) 65%,transparent)}
+.game:hover{border-color:color-mix(in srgb,var(--acc) 70%,var(--line))}
+.game .wp{height:8px;gap:3px}
+.game .wp i{border-radius:2px}
+.game .wp .a{background:var(--ca,var(--mut))}
+.game .wp .h{background:var(--ch,var(--fg))}
+.lines .cell{background:color-mix(in srgb,var(--bg) 70%,transparent);border-color:color-mix(in srgb,var(--line) 80%,transparent)}
+.lines .cell b{letter-spacing:.015em}
+.lpick{padding:6px 0 6px 12px;border-left-width:3px}
+.lpick.High{border-left-color:var(--good);background:linear-gradient(90deg,color-mix(in srgb,var(--good) 10%,transparent),transparent 60%)}
+.lpick.Medium{border-left-color:var(--gold);background:linear-gradient(90deg,color-mix(in srgb,var(--gold) 9%,transparent),transparent 60%)}
+
+/* ---------- hero scoreboard ---------- */
+.hero{background:
+    radial-gradient(500px 220px at 85% 0%,color-mix(in srgb,var(--hdr-acc) 14%,transparent),transparent 70%),
+    linear-gradient(160deg,var(--hdr2),var(--hdr))}
+.hero h1{text-shadow:0 2px 0 rgba(0,0,0,.25)}
+.hero .tiles .tile b{text-shadow:0 0 22px color-mix(in srgb,var(--hdr-acc) 40%,transparent);font-variant-numeric:tabular-nums}
+
+/* ---------- signature 2: the edge meter as a broadcast gauge ---------- */
+.meter{height:12px;border-radius:3px;margin:12px 0 4px;overflow:visible;
+  background:
+    repeating-linear-gradient(90deg,transparent 0 calc(10% - 1px),color-mix(in srgb,var(--mut) 28%,transparent) calc(10% - 1px) 10%),
+    var(--surface2)}
+.meter .fill{border-radius:2px;opacity:1;
+  background:linear-gradient(90deg,color-mix(in srgb,var(--good) 55%,transparent),var(--good));
+  box-shadow:0 0 14px color-mix(in srgb,var(--good) 55%,transparent);
+  animation:edgeIn .7s cubic-bezier(.2,.8,.2,1) both}
+.meter .fill.neg{background:linear-gradient(90deg,var(--bad),color-mix(in srgb,var(--bad) 55%,transparent));box-shadow:0 0 12px color-mix(in srgb,var(--bad) 45%,transparent)}
+@keyframes edgeIn{from{clip-path:inset(0 100% 0 0)}to{clip-path:inset(0 0 0 0)}}
+.meter .mk{top:-5px;height:22px;width:3px;border-radius:1px}
+.meter .mk.px{background:var(--mut)}
+.meter .mk.ex{background:var(--fg);box-shadow:0 0 0 2px var(--surface),0 0 12px color-mix(in srgb,var(--good) 70%,transparent)}
+.mlab{font:500 11.5px var(--f-mono)}
+.mlab span:last-child{color:var(--fg)}
+
+/* ---------- pick cards ---------- */
+.pick{padding:16px 16px 14px;
+  background:linear-gradient(180deg,color-mix(in srgb,var(--surface) 92%,#fff 2%),var(--surface))}
+.pick.c-High{box-shadow:var(--lift),inset 4px 0 0 var(--good),0 0 0 1px color-mix(in srgb,var(--good) 40%,transparent),0 8px 30px -12px color-mix(in srgb,var(--good) 45%,transparent)}
+.rank{font:900 34px/1 var(--f-disp);color:var(--acc);letter-spacing:.01em;text-shadow:0 0 18px color-mix(in srgb,var(--acc) 45%,transparent)}
+.p-title{font:800 32px/1 var(--f-disp);letter-spacing:.008em}
+.p-title .mono{margin-left:6px;color:var(--mut)}
+.nums{gap:8px 20px;align-items:baseline}
+.nums span{font:500 12px var(--f-mono);color:var(--mut)}
+.nums b{font:800 19px/1 var(--f-disp);letter-spacing:.02em;margin-left:3px}
+.nums b.pos{color:var(--good);text-shadow:0 0 14px color-mix(in srgb,var(--good) 45%,transparent)}
+.go-hint{font-weight:600;color:var(--acc)}
+.why{border-left:2px solid color-mix(in srgb,var(--acc) 60%,transparent);padding-left:10px}
+
+/* ---------- signal tiers ---------- */
+.tier.t-Strong{background:var(--strong);color:var(--on-strong);box-shadow:0 0 16px color-mix(in srgb,var(--strong) 50%,transparent)}
+.tier.t-Solid{box-shadow:0 0 12px color-mix(in srgb,var(--acc) 35%,transparent)}
+.sigban.t-Strong{background:linear-gradient(120deg,var(--strong),color-mix(in srgb,var(--strong) 80%,#fff 20%) 55%,var(--strong));
+  box-shadow:0 10px 34px -14px color-mix(in srgb,var(--strong) 75%,transparent)}
+
+.sigban.t-Strong .chev{color:var(--on-strong);font-weight:700}
+
+/* ---------- tracker and tables ---------- */
+.tiles .tile b{font-variant-numeric:tabular-nums}
+.tscroll{border-radius:var(--r-card)}
+thead th{position:sticky;top:0;background:var(--surface2);z-index:1}
+tbody tr:nth-child(even){background:color-mix(in srgb,var(--surface2) 35%,transparent)}
+tbody tr:hover{background:color-mix(in srgb,var(--acc) 9%,var(--surface))}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+.note{background:linear-gradient(180deg,color-mix(in srgb,var(--surface) 92%,#fff 2%),var(--surface))}
+.pill.good{box-shadow:0 0 10px color-mix(in srgb,var(--good) 30%,transparent)}
+
+/* ---------- game center sheet ---------- */
+.sheet .bk{-webkit-backdrop-filter:blur(4px);backdrop-filter:blur(4px)}
+.sc-head{background:
+    radial-gradient(320px 200px at 10% 40%,color-mix(in srgb,var(--ca,var(--hdr-acc)) 22%,transparent),transparent 70%),
+    radial-gradient(320px 200px at 90% 40%,color-mix(in srgb,var(--ch,var(--hdr-acc)) 22%,transparent),transparent 70%),
+    var(--hdr2)}
+.sc-team .big{text-shadow:0 0 30px color-mix(in srgb,var(--hdr-acc) 45%,transparent);font-variant-numeric:tabular-nums}
+.blk{border-radius:var(--r-card)}
+.blk h3{color:var(--acc)}
+
+/* ---------- phone: an app, not a web page ---------- */
+@media (max-width:640px){
+  .hdr{-webkit-backdrop-filter:none;backdrop-filter:none;background:var(--hdr)}   /* a filter here would trap the fixed tab bar inside the header */
+  .tabs{position:fixed;left:0;right:0;bottom:0;z-index:35;margin:0;padding:0 6px env(safe-area-inset-bottom,0px);
+    background:color-mix(in srgb,var(--hdr) 94%,transparent);-webkit-backdrop-filter:saturate(150%) blur(14px);backdrop-filter:saturate(150%) blur(14px);
+    border-top:1px solid rgba(255,255,255,.08);box-shadow:0 -10px 30px rgba(0,0,0,.35)}
+  .tabs button{min-height:56px;padding:16px 12px 14px;font-size:16px}
+  .tabs .ind{top:0;bottom:auto;height:3px;border-radius:0 0 2px 2px}
+  .bar{padding-bottom:12px}
+  main.in{padding-bottom:calc(120px + env(safe-area-inset-bottom,0px))}
+  .dock{bottom:calc(72px + env(safe-area-inset-bottom,0px))}
+  .p-title{font-size:28px}
+  .rank{font-size:30px}
+  .game{padding:14px 12px 12px}
+  .lines{gap:6px}
+  .nums b{font-size:17px}
+  .tscroll td:first-child{white-space:normal;min-width:150px;max-width:220px}   /* long step names wrap so the numbers stay on screen */
+}
+
+@media (prefers-reduced-motion:reduce){
+  .meter .fill{animation:none}
+  .sync[data-age="fresh"]::before{animation:none}
+}
+/* ===== end v11 refresh ===== */
 </style>
 </head>
 <body>
