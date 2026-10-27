@@ -986,6 +986,27 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
 /* ===== v12 part 6: the hero is always night-coloured, so its card uses the dark tokens in both themes ===== */
 .hero.clean,.ult.clean{--fg:#ECF2FB;--mut:#9AAECB;--acc:#2FE6A0;--good:#2FE6A0;--surface:#0C1C36;--surface2:#13294B;--line:#1D355F;--gold:#E6B02E;--blue:#6AA8FF}
 /* ===== end v12 part 6 ===== */
+/* ===== v12 part 7: tracker views and parlay tickets ===== */
+.trseg{justify-self:start}
+.pt{display:grid;gap:var(--s2);padding:var(--s3) var(--s4);background:var(--surface);border:1px solid var(--line);border-radius:var(--r2);border-left:4px solid var(--mut)}
+.pt.won{border-left-color:var(--good)}.pt.lost{border-left-color:var(--bad)}.pt.void{border-left-color:var(--line)}
+.pt-h{display:flex;justify-content:space-between;align-items:center;gap:var(--s2)}
+.pt-h>div:first-child{display:flex;align-items:center;gap:var(--s2)}
+.pt-h b{font:700 16px var(--f-body)}
+.pt-r{display:flex;align-items:center;gap:var(--s2)}
+.pt-odds{font:800 20px/1 var(--f-disp)}
+.pt-res{font:700 12px var(--f-body);padding:3px 8px;border-radius:999px;background:var(--surface2);color:var(--mut)}
+.pt-res.won{background:color-mix(in srgb,var(--good) 18%,transparent);color:var(--good)}
+.pt-res.lost{background:color-mix(in srgb,var(--bad) 18%,transparent);color:var(--bad)}
+.pt-legs{list-style:none;margin:0;padding:0;display:grid;gap:4px;font-size:14px}
+.pt-legs li{display:flex;gap:var(--s2);align-items:baseline}
+.pt-m{flex:none;width:2.6em;font:700 13px var(--f-mono);color:var(--mut)}
+.r-W .pt-m{color:var(--good)}.r-L .pt-m{color:var(--bad)}
+.pt-f{margin:0;font-size:var(--t-tiny);color:var(--mut)}
+/* ===== end v12 part 7 ===== */
+/* ===== v12 part 8 ===== */
+.wg input{max-width:160px}
+/* ===== end v12 part 8 ===== */
 </style>
 </head>
 <body>
@@ -2634,7 +2655,9 @@ function slipBody(){
     if (!armed){ armed = true; clr.textContent = 'Tap again to clear'; setTimeout(function(){ armed = false; clr.textContent = 'Clear slip'; }, 2500); return; }
     SLIP.legs = []; slipSave(); slipUi(false); toast('Slip cleared');
   };
-  wrap.append(el('div', {class:'row'}, copyBtn(ticketText(t, 'Slip')), el('button', {type:'button', class:'btn go', text:'Ask Ace to review ›', onclick:function(){ go('ace'); aceSend('Review my slip'); }}), clr));
+  var bet = el('button', {type:'button', class:'btn go', text:'I bet this'});
+  bet.onclick = function(){ iBetThis(SLIP.legs, parseFloat(($('#wager') || {}).value) || 0); bet.textContent = 'Saved to My bets'; bet.disabled = true; };
+  wrap.append(el('div', {class:'row'}, bet, copyBtn(ticketText(t, 'Slip')), el('button', {type:'button', class:'btn', text:'Ask Ace to review', onclick:function(){ go('ace'); aceSend('Review my slip'); }}), clr));
   wrap.append(el('p', {class:'small mut', text:'Your slip is saved in this browser only. This site does not place bets or hold money. Place the bet with a licensed sportsbook where it is legal.'}));
   return wrap;
 }
@@ -3269,8 +3292,132 @@ function renderAudit(root){
   root.append(help('"Learning" means fewer than 20 graded picks in that group, too few to judge. Ratings need a clear gap from break-even, and a bigger one under 50 picks.'));
 }
 
+/* ---- parlay tracker: tickets the daily run logged before tip-off, graded from the box scores ---- */
+function legMark(r){ return r === 'W' ? '✓' : r === 'L' ? '✗' : r === 'P' ? 'push' : r === 'V' ? 'void' : '•'; }
+function parlayCard(t){
+  var res = t.result, cls = res === 'W' ? 'won' : res === 'L' ? 'lost' : res === 'V' ? 'void' : 'open';
+  return el('article', {class:'pt ' + cls},
+    el('div', {class:'pt-h'}, el('div', {}, el('b', {text:t.n + '-leg parlay'}), t.ult ? el('span', {class:'pill good', text:'Ultimate'}) : null),
+      el('div', {class:'pt-r'}, el('span', {class:'pt-odds', text:fo(t.odds)}), el('span', {class:'pt-res ' + cls, text:res === 'W' ? 'Hit' : res === 'L' ? 'Miss' : res === 'V' ? 'Void' : 'Open'}))),
+    el('ul', {class:'pt-legs'}, t.legs.map(function(l){
+      return el('li', {class:'r-' + (l.result || 'open')}, el('span', {class:'pt-m', text:legMark(l.result)}), el('span', {text:l.label + ' ' + fo(l.odds)}), l.actual != null ? el('span', {class:'mut', text:' (' + l.actual + ')'}) : null);
+    })),
+    el('p', {class:'pt-f', text:dayLabel(t.date) + ' · model chance ' + pct(t.P) + (t.result === 'W' ? ' · paid ' + fo(dec2am(t.paid_dec || t.dec)) : '')}));
+}
+function dec2am(D){ return D >= 2 ? Math.round((D - 1) * 100) : -Math.round(100 / (D - 1)); }
+function renderParlayTrack(root){
+  var P = S.parlays || [], done = P.filter(function(t){ return t.result === 'W' || t.result === 'L'; });
+  var w = done.filter(function(t){ return t.result === 'W'; }).length, l = done.length - w;
+  var flat = done.reduce(function(a, t){ return a + (t.profit_flat || 0); }, 0);
+  var exp = done.length ? done.reduce(function(a, t){ return a + t.P; }, 0) / done.length : null;
+  var ult = done.filter(function(t){ return t.ult; }), uw = ult.filter(function(t){ return t.result === 'W'; }).length;
+  root.append(el('div', {class:'tiles'},
+    tileEl('Record', w + '-' + l, 'Graded parlays the bot logged. Voided tickets are left out.'),
+    tileEl('Hit rate', done.length ? Math.round(100 * w / done.length) + '%' : 'n/a', 'How often the logged parlays hit.'),
+    tileEl('Model expected', exp != null ? Math.round(100 * exp) + '%' : 'n/a', 'Average chance the model gave these tickets. If hit rate runs well below this over many tickets, the leg chances are too high.'),
+    tileEl('Units (1u each)', (flat >= 0 ? '+' : '') + flat.toFixed(2), 'Profit if every logged ticket was a flat 1 unit bet.')));
+  root.append(help(['Every day the run builds the parlay builder\'s tickets with its default settings (balanced, one leg per game, priced legs only) and logs them before tip-off. Each leg is graded from the final box score like a single pick.',
+    'One losing leg loses the ticket. A pushed or voided leg drops out and the price is worked out from the rest. Nothing is edited by hand.',
+    'Parlays lose more often than singles by design: every extra leg multiplies the bookmaker\'s margin. Judge them by hit rate against the model\'s expected rate, over many tickets.']));
+  if (ult.length) root.append(el('p', {class:'small', text:'Ultimate Pick: ' + uw + '-' + (ult.length - uw) + '.'}));
+  if (done.length){
+    var rows = [];
+    for (var n = 2; n <= 5; n++){
+      var g = done.filter(function(t){ return t.n === n; }); if (!g.length) continue;
+      var gw = g.filter(function(t){ return t.result === 'W'; }).length;
+      rows.push([n + ' legs', gw + '-' + (g.length - gw), Math.round(100 * gw / g.length) + '%', Math.round(100 * g.reduce(function(a, t){ return a + t.P; }, 0) / g.length) + '%', (function(u){ return (u >= 0 ? '+' : '') + u.toFixed(2); })(g.reduce(function(a, t){ return a + t.profit_flat; }, 0))]);
+    }
+    root.append(el('h2', {text:'By size'}));
+    root.append(table(['Size', 'W-L', 'Hit', 'Expected', 'Units'], rows, 1));
+    var brk = {}, seen = {};
+    done.forEach(function(t){ t.legs.forEach(function(lg){
+      var k = t.date + '|' + (lg.id || lg.label);
+      if (lg.result !== 'L' || seen[k]) return; seen[k] = 1;
+      var m = lg.type === 'prop' ? (STAT[lg.stat] || lg.stat) + ' props' : lg.type === 'total' ? 'Totals' : lg.type === 'spread' ? 'Spreads' : 'Moneylines';
+      brk[m] = (brk[m] || 0) + 1;
+    }); });
+    var bk = Object.keys(brk).sort(function(a, b){ return brk[b] - brk[a]; });
+    if (bk.length){
+      root.append(el('h2', {text:'Legs that broke parlays'}));
+      root.append(table(['Market', 'Losing legs'], bk.map(function(k){ return [k, brk[k]]; }), 1));
+    }
+  }
+  var today = (S.latest && S.latest.for_date) || '';
+  var open = P.filter(function(t){ return !t.result; });
+  if (open.length){
+    root.append(el('h2', {text:'Open tickets'}));
+    var og = el('div', {class:'cards'}); open.slice().reverse().forEach(function(t){ og.append(parlayCard(t)); }); root.append(og);
+  }
+  var hist = P.filter(function(t){ return t.result; }).slice().reverse().slice(0, 30);
+  if (hist.length){
+    root.append(el('h2', {text:'History'}));
+    var hg = el('div', {class:'cards'}); hist.forEach(function(t){ hg.append(parlayCard(t)); }); root.append(hg);
+  }
+  if (!P.length) root.append(el('div', {class:'empty'}, el('b', {text:'No parlays logged yet'}), 'The next daily run logs today\'s tickets, and they are graded after the games.'));
+}
+
+/* ---- my bets: what you actually placed, saved in this browser and graded against the bot's records ---- */
+function myBetsLoad(){ try { var a = JSON.parse(lsGet('eplocks_mybets_v1', '[]')); return Array.isArray(a) ? a : []; } catch(e){ return []; } }
+function myBetsSave(a){ lsSet('eplocks_mybets_v1', a.length ? JSON.stringify(a.slice(-300)) : null); }
+function legResult(lg){
+  var k = lg.key, hit = null;
+  (S.history || []).forEach(function(h){ if (legKey(h) === k && h.result) hit = h.result; });
+  if (!hit) (S.parlays || []).forEach(function(t){ t.legs.forEach(function(x){ if (legKey(x) === k && x.result) hit = x.result; }); });
+  return hit;
+}
+function gradeMine(b){
+  var rs = b.legs.map(legResult);
+  if (rs.indexOf('L') >= 0) return {res:'L', profit:-b.stake};
+  if (rs.some(function(r){ return !r; })) return {res:null, profit:0};
+  var D = 1, live = 0;
+  b.legs.forEach(function(lg, i){ if (rs[i] === 'W'){ D *= dec(lg.odds); live++; } });
+  if (!live) return {res:'V', profit:0};
+  return {res:'W', profit:b.stake * (D - 1)};
+}
+function iBetThis(legs, stake){
+  if (!legs.length) return;
+  var a = myBetsLoad();
+  a.push({id:Date.now(), date:(S.latest && S.latest.for_date) || '', stake:stake > 0 ? stake : 0, odds:legs.length > 1 ? mkTicket(legs).odds : legs[0].odds,
+    legs:legs.map(function(p){ return {key:legKey(p), label:p.label, odds:p.odds, lean:!!p.lean}; })});
+  myBetsSave(a);
+  toast('Saved to My bets', {label:'View', fn:function(){ closeSheet(); S.trTab = 'mine'; showTab('track'); }});
+}
+function renderMyBets(root){
+  var a = myBetsLoad().slice().reverse();
+  var g = a.map(function(b){ return {b:b, r:gradeMine(b)}; }), done = g.filter(function(x){ return x.r.res === 'W' || x.r.res === 'L'; });
+  var w = done.filter(function(x){ return x.r.res === 'W'; }).length, net = done.reduce(function(s, x){ return s + x.r.profit; }, 0);
+  root.append(el('div', {class:'tiles'},
+    tileEl('Record', w + '-' + (done.length - w), 'Your settled bets.'),
+    tileEl('Profit', (net >= 0 ? '+$' : '-$') + Math.abs(net).toFixed(2), 'At the stakes you entered on the slip.'),
+    tileEl('Open', String(g.length - done.length - g.filter(function(x){ return x.r.res === 'V'; }).length), 'Bets with a leg still to be graded.'),
+    tileEl('Saved', String(a.length), 'Every bet you marked with "I bet this".')));
+  root.append(help(['Open your slip and tap "I bet this" after you place a bet. It is saved in this browser only, so it is private and does not sync between devices.',
+    'Legs are graded from the bot\'s own records, so a lean (a reading that was not a logged pick) may stay open.']));
+  if (!a.length){ root.append(el('div', {class:'empty'}, el('b', {text:'No bets saved yet'}), 'Add picks to your slip, place the bet with your sportsbook, then tap "I bet this" on the slip.')); return; }
+  var list = el('div', {class:'cards'});
+  g.forEach(function(x){
+    var b = x.b, r = x.r.res, cls = r === 'W' ? 'won' : r === 'L' ? 'lost' : r === 'V' ? 'void' : 'open';
+    var del = el('button', {type:'button', class:'ib2', 'aria-label':'Delete this bet', text:'✕'});
+    del.onclick = function(){ myBetsSave(myBetsLoad().filter(function(y){ return y.id !== b.id; })); renderTracker(); };
+    list.append(el('article', {class:'pt ' + cls},
+      el('div', {class:'pt-h'}, el('b', {text:b.legs.length === 1 ? 'Single' : b.legs.length + '-leg parlay'}),
+        el('div', {class:'pt-r'}, el('span', {class:'pt-odds', text:fo(b.odds)}), el('span', {class:'pt-res ' + cls, text:r === 'W' ? 'Won' : r === 'L' ? 'Lost' : r === 'V' ? 'Void' : 'Open'}), del)),
+      el('ul', {class:'pt-legs'}, b.legs.map(function(lg){ var lr = legResult(lg); return el('li', {class:'r-' + (lr || 'open')}, el('span', {class:'pt-m', text:legMark(lr)}), el('span', {text:lg.label + ' ' + fo(lg.odds)})); })),
+      el('p', {class:'pt-f', text:dayLabel(b.date) + (b.stake ? ' · $' + b.stake + (r === 'W' ? ' · won $' + x.r.profit.toFixed(2) : '') : '')})));
+  });
+  root.append(list);
+}
 function renderTracker(){
   var root = $('#track'); root.textContent = '';
+  S.trTab = S.trTab || 'picks';
+  root.append(el('div', {class:'seg trseg', role:'group', 'aria-label':'Tracker view'}, [['picks', 'Picks'], ['parlays', 'Parlays'], ['mine', 'My bets']].map(function(o){
+    return el('button', {type:'button', 'aria-pressed':String(S.trTab === o[0]), text:o[1], onclick:function(){ S.trTab = o[0]; renderTracker(); mergeHelps(root); }});
+  })));
+  if (S.trTab === 'parlays') return renderParlayTrack(root);
+  if (S.trTab === 'mine') return renderMyBets(root);
+  renderPickTrack(root);
+}
+function renderPickTrack(root){
   var H = S.history, st = stats(H), dec = st.w + st.l;
   function tile(k, v, tip){ return el('div', {class:'tile', 'data-tip':tip, tabindex:'0'}, el('span', {text:k}), el('b', {text:v})); }
   root.append(el('div', {class:'tiles'},
@@ -3433,8 +3580,8 @@ if (document.fonts && document.fonts.ready) document.fonts.ready.then(moveInd);
 function getJson(url, fallback){
   return fetch(url + '?v=' + Date.now(), {cache:'no-store'}).then(function(r){ if (!r.ok) throw new Error(url + ' ' + r.status); return r.json(); }).catch(function(e){ if (fallback !== undefined) return fallback; throw e; });
 }
-Promise.all([getJson('data/latest.json'), getJson('data/history.json', []), getJson('data/backtest.json', null)]).then(function(r){
-  S.latest = r[0]; S.history = Array.isArray(r[1]) ? r[1] : []; S.bt = r[2] && typeof r[2] === 'object' ? r[2] : null;
+Promise.all([getJson('data/latest.json'), getJson('data/history.json', []), getJson('data/backtest.json', null), getJson('data/parlays.json', [])]).then(function(r){
+  S.latest = r[0]; S.history = Array.isArray(r[1]) ? r[1] : []; S.bt = r[2] && typeof r[2] === 'object' ? r[2] : null; S.parlays = Array.isArray(r[3]) ? r[3] : [];
   slipSync(); slipUi(false);
   renderCounts();
   var h = (location.hash || '').slice(1);

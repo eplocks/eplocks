@@ -2611,7 +2611,7 @@ def pct_s(x):
     return 'n/a' if x is None else '%.1f%%' % (100 * x)
 
 
-def run_audit(history, today, prev):
+def run_audit(history, today, prev, parlays=None):
     """Builds the audit, asks Claude for lessons when the record changed, and loads AUDIT for the picks step."""
     groups, n_total = audit_groups(history)
     last = audit_last_day(history)
@@ -2623,6 +2623,9 @@ def run_audit(history, today, prev):
         audit['summary'] = 'No graded picks yet. The auditor starts learning after the first games finish and are graded.'
     else:
         text = audit_fmt(groups, n_total, last, prev_lessons)
+        pl_ = audit_parlay_lines(parlays or [])
+        if pl_:
+            text += '\n\n' + '\n'.join(pl_)
         h = hashlib.sha1((AUDIT_SYS + text).encode('utf8')).hexdigest()
         if prev and prev.get('h') == h and prev.get('by') == 'claude':
             audit.update({k: prev[k] for k in ('summary', 'lessons', 'yesterday', 'by')})
@@ -3009,6 +3012,147 @@ def load_side_model():
             js.get('games', 0), ck.get('margin_error_before', 0), ck.get('margin_error_after', 0), ck.get('total_error_before', 0), ck.get('total_error_after', 0)))
     else:
         src('side_model', True, 'who-is-playing adjustment at a cautious starting size (%.2f points per point of player value); schedule spots shown but not counted until the replay measures them' % SIDE_PRIOR['impact'])
+
+
+# ----------------------------------------------------------------------------- parlay tracker
+# The website's parlay builder runs in the browser, so on its own nothing it suggests is ever recorded. Here the daily run builds the
+# same tickets with the builder's default settings (balanced, any confidence, games and props, priced legs only, one leg per game),
+# logs them in data/parlays.json before tip-off, and grades every leg from the real box scores, exactly like single picks.
+# A ticket is rebuilt on each run until the first of its games tips off, then it is locked. Results are never edited by hand.
+PARLAY_CW = {'High': 1.0, 'Medium': 0.75, 'Low': 0.4}
+PARLAY_MAX = 5
+
+
+def american_to_dec(o):
+    return 1 + o / 100.0 if o > 0 else 1 + 100.0 / -o
+
+
+def dec_to_american(d):
+    return int(round((d - 1) * 100)) if d >= 2 else -int(round(100 / (d - 1)))
+
+
+def parlay_ticket(legs):
+    """Same math as the site's builder: combined price, chance if legs are independent, edge, and a quarter-Kelly stake on half the edge."""
+    D, P, Pc = 1.0, 1.0, 1.0
+    for p in legs:
+        D *= american_to_dec(p['odds'])
+        P *= p['est']
+        Pc *= max(0.01, p['est'] - 0.5 * p['edge'])
+    b = D - 1
+    ev, evc = P * D - 1, Pc * D - 1
+    f = evc / b if evc > 0 else 0.0
+    g = Pc * math.log(1 + f * b) + (1 - Pc) * math.log(1 - f) if evc > 0 else evc
+    stake = max(0.25, min(1.0, round(f * 100 * 0.25 * 4) / 4)) if f > 0 else 0.0
+    conf = 'High' if all(p['conf'] == 'High' for p in legs) else 'Low' if any(p['conf'] == 'Low' for p in legs) else 'Medium'
+    return {'n': len(legs), 'dec': round(D, 4), 'odds': dec_to_american(D), 'P': r3(P), 'ev': r3(ev), 'evc': r3(evc), 'g': g, 'stake': stake, 'conf': conf}
+
+
+def build_parlays(picks, day, posted):
+    """Today's 2 to 5 leg tickets from the day's card, the way the builder makes them, plus which one is the Ultimate Pick."""
+    pool = [p for p in picks if (p.get('edge') or 0) > 0 and p.get('odds') is not None and p.get('est') is not None and p.get('kind', 'priced') == 'priced']
+    pool.sort(key=lambda p: -(p['edge'] * PARLAY_CW.get(p['conf'], 0.4)))
+    used, legs = set(), []
+    for p in pool:
+        if p['game_id'] in used:
+            continue
+        used.add(p['game_id'])
+        legs.append(p)
+    out = []
+    for n in range(2, min(PARLAY_MAX, len(legs)) + 1):
+        t = parlay_ticket(legs[:n])
+        t['legs'] = [{k: p.get(k) for k in ('id', 'label', 'type', 'side', 'line', 'odds', 'est', 'edge', 'conf', 'game_id', 'away', 'home', 'player', 'stat', 'pid', 'utc')} for p in legs[:n]]
+        out.append(t)
+    if not out:
+        return []
+    ult = max(out, key=lambda t: (t['g'], -t['n']))
+    for t in out:
+        t['ult'] = t is ult
+        t['id'] = '%s-P%d' % (day, t['n'])
+        t['date'], t['posted'], t['v'] = day, posted, ENGINE_VERSION
+        t.pop('g', None)
+    return out
+
+
+def grade_parlays(parlays, games, today=None):
+    """Grades each leg from the box scores (same rules as single picks), then the ticket: one losing leg loses it; pushed or voided legs
+    drop out and the price is recomputed from the rest; a ticket left with no live legs is void."""
+    changed = 0
+    for t in parlays:
+        if t.get('result'):
+            continue
+        for lg in t['legs']:
+            if lg.get('result'):
+                continue
+            h = dict(lg, date=t['date'], units=1.0)
+            grade_history([h], games, today)
+            if h.get('result'):
+                lg['result'] = h['result']
+                if h.get('actual') is not None:
+                    lg['actual'] = h['actual']
+        rs = [lg.get('result') for lg in t['legs']]
+        if 'L' in rs:
+            t['result'] = 'L'
+        elif all(rs):
+            live = [lg for lg in t['legs'] if lg['result'] == 'W']
+            if not live:
+                t['result'] = 'V'
+            else:
+                t['result'] = 'W'
+                t['paid_dec'] = round(math.prod(american_to_dec(lg['odds']) for lg in live), 4)
+        else:
+            continue
+        d = t.get('paid_dec', t['dec'])
+        t['profit_flat'] = round(d - 1, 3) if t['result'] == 'W' else (-1.0 if t['result'] == 'L' else 0.0)
+        t['profit'] = round(t['stake'] * (d - 1), 3) if t['result'] == 'W' else (-t['stake'] if t['result'] == 'L' else 0.0)
+        t['graded'] = dt.datetime.now(dt.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+        changed += 1
+    return changed
+
+
+def update_parlays(all_picks, out_games, games, today, posted):
+    """Grades old tickets and (re)builds today's unless one of today's ticket games has already tipped off."""
+    path = os.path.join(OUT, 'parlays.json')
+    parlays = jload(path, [])
+    n_graded = grade_parlays(parlays, games, today)
+    day = today.isoformat()
+    state = {g['id']: g.get('state') for g in out_games}
+    todays = [t for t in parlays if t['date'] == day]
+    locked = any(state.get(lg['game_id']) not in (None, 'pre') for t in todays for lg in t['legs'])
+    if not locked:
+        parlays = [t for t in parlays if t['date'] != day] + build_parlays([p for p in all_picks if state.get(p['game_id']) == 'pre'], day, posted)
+    jsave(path, parlays)
+    done = [t for t in parlays if t.get('result') in ('W', 'L')]
+    w = sum(1 for t in done if t['result'] == 'W')
+    src('parlays', True, '%d tickets logged today%s; %d graded so far (%d-%d)%s' % (
+        sum(1 for t in parlays if t['date'] == day), ' (locked: a game has started)' if locked else '', len(done), w, len(done) - w,
+        ', %d graded this run' % n_graded if n_graded else ''))
+    return parlays
+
+
+def audit_parlay_lines(parlays):
+    """A few lines for the auditor's prompt: how the logged parlays have done against what the model expected."""
+    done = [t for t in parlays if t.get('result') in ('W', 'L')]
+    if not done:
+        return []
+    L = ['PARLAYS (logged daily from the builder, graded): %d-%d, flat 1u each %+.2f units; model expected a %.0f%% hit rate, actual %.0f%%' % (
+        sum(1 for t in done if t['result'] == 'W'), sum(1 for t in done if t['result'] == 'L'), sum(t['profit_flat'] for t in done),
+        100 * mean(t['P'] for t in done), 100.0 * sum(1 for t in done if t['result'] == 'W') / len(done))]
+    for n in range(2, PARLAY_MAX + 1):
+        g = [t for t in done if t['n'] == n]
+        if g:
+            L.append('  %d legs: %d-%d, expected hit %.0f%%, flat units %+.2f' % (n, sum(1 for t in g if t['result'] == 'W'), sum(1 for t in g if t['result'] == 'L'),
+                                                                                    100 * mean(t['P'] for t in g), sum(t['profit_flat'] for t in g)))
+    brk, seen = {}, set()
+    for t in done:
+        for lg in t['legs']:
+            key = (t['date'], lg.get('id') or lg.get('label'))
+            if lg.get('result') == 'L' and key not in seen:     # the bigger tickets reuse the smaller ones' legs; count each leg once
+                seen.add(key)
+                k = ('prop:' + str(lg.get('stat'))) if lg.get('type') == 'prop' else lg.get('type')
+                brk[k] = brk.get(k, 0) + 1
+    if brk:
+        L.append('  legs that lost parlays most often: ' + ', '.join('%s %d' % kv for kv in sorted(brk.items(), key=lambda kv: -kv[1])[:4]))
+    return L
 
 
 # ----------------------------------------------------------------------------- injury news sniper and phone alerts
@@ -3839,6 +3983,12 @@ def main(argv):
     ch = grade_history(history, games, today)
     if ch:
         note('Graded %d finished picks' % ch)
+    parlays_ = jload(os.path.join(OUT, 'parlays.json'), [])
+    try:
+        if grade_parlays(parlays_, games, today):
+            jsave(os.path.join(OUT, 'parlays.json'), parlays_)
+    except Exception as e:  # noqa
+        note('Parlay grading failed: %s' % str(e)[:120])
     try:
         cal, cal_n = build_calibration(history)
         CAL.update(cal)
@@ -3858,7 +4008,7 @@ def main(argv):
     audit = None
     try:
         audit_path = os.path.join(OUT, 'audit.json')
-        audit = run_audit(history, today, jload(audit_path, {}))
+        audit = run_audit(history, today, jload(audit_path, {}), parlays_)
         jsave(audit_path, audit)
         src('auditor', True, '%d graded picks reviewed; %d lessons%s' % (audit['graded'], len(audit['lessons']), ' (written by Claude)' if audit.get('by') == 'claude' else ''))
     except Exception as e:  # noqa
@@ -4147,6 +4297,10 @@ def main(argv):
             row_.update({k: oh_[k] for k in ('close', 'clv', 'clv_pts') if k in oh_})
             history.append(row_)
     jsave(hist_path, history)
+    try:
+        update_parlays(all_picks, out_games, games, today, started.strftime('%Y-%m-%dT%H:%M:%SZ'))
+    except Exception as e:  # noqa
+        src('parlays', False, 'parlay tracker failed: %s' % str(e)[:120])
     jsave(acache_path, acache)
     if reused:
         note('Reused the written analysis for %d games whose data had not changed' % reused)
