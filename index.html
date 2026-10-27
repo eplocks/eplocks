@@ -951,6 +951,19 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
 .offc li{line-height:1.45}
 .offc .pill{margin-right:2px}
 /* ===== end v12 part 10 ===== */
+/* ===== v12 part 11: ticket fit and the plan ===== */
+.fit{display:grid;gap:var(--s2)}
+.fit-sum{margin:0;font-weight:600}
+.fit-why{margin:0;padding-left:18px;display:grid;gap:4px;font-size:14px}
+.fit-why b{font-weight:700}
+.fit-pairs{margin:var(--s2) 0 0;padding-left:18px;display:grid;gap:6px}
+.fit-pairs li::marker{color:var(--mut)}
+.fp-good::marker{color:var(--good)!important}.fp-mid::marker{color:var(--gold)!important}.fp-bad::marker{color:var(--bad)!important}
+.fp-bad{color:var(--fg)}
+.ult .fit-why,.ult .fit-sum{color:var(--hdr-fg)}
+#plan .wg input{max-width:180px}
+#plan .note ul{margin:6px 0}
+/* ===== end v12 part 11 ===== */
 </style>
 </head>
 <body>
@@ -974,6 +987,7 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
       <button role="tab" data-tab="signals" class="star" aria-selected="false">Signals<span class="count" id="cnt-sig"></span></button>
       <button role="tab" data-tab="picks" aria-selected="false">Picks<span class="count" id="cnt-picks"></span></button>
       <button role="tab" data-tab="parlays" class="star" aria-selected="false">Parlays</button>
+      <button role="tab" data-tab="plan" aria-selected="false">Plan</button>
       <button role="tab" data-tab="players" aria-selected="false">Players</button>
       <button role="tab" data-tab="props" aria-selected="false">Props<span class="count" id="cnt-props"></span></button>
       <button role="tab" data-tab="track" aria-selected="false">Tracker</button>
@@ -988,6 +1002,7 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
   <section id="signals" role="tabpanel" hidden></section>
   <section id="picks" role="tabpanel" hidden></section>
   <section id="parlays" role="tabpanel" hidden></section>
+  <section id="plan" class="narrow" role="tabpanel" hidden></section>
   <section id="players" role="tabpanel" hidden></section>
   <section id="props" class="narrow" role="tabpanel" hidden></section>
   <section id="track" class="narrow" role="tabpanel" hidden></section>
@@ -1481,16 +1496,155 @@ function legPool(){
   }).sort(function(a, b){ return legScore(b) - legScore(a); });
 }
 function orderLegs(pool){
-  var used = {}, legs = [], skip = {};
-  pool.forEach(function(p){
-    if (used[p.game_id]){ skip[p.label + '|' + p.game_id] = used[p.game_id]; return; }
-    used[p.game_id] = p.label; legs.push(p);
-  });
+  /* one leg per game (so the price is honest); when two candidates are close, prefer one that rests on a different reason */
+  var used = {}, legs = [], skip = {}, rest = pool.slice(), seenDrv = {};
+  while (rest.length){
+    var best = rest[0], top = legScore(best);
+    for (var i = 1; i < rest.length; i++){
+      var c = rest[i]; if (legScore(c) < top * .85) break;
+      if (!used[c.game_id] && seenDrv[legDrivers(best)[0]] && !seenDrv[legDrivers(c)[0]]){ best = c; break; }
+    }
+    rest.splice(rest.indexOf(best), 1);
+    if (used[best.game_id]){ skip[best.label + '|' + best.game_id] = used[best.game_id]; continue; }
+    used[best.game_id] = best.label; legs.push(best); seenDrv[legDrivers(best)[0]] = 1;
+  }
   return {legs:legs, skip:skip};
 }
+/* ---- how legs move together: measured correlations (data/correlations.json) and the true chance of a ticket ---- */
+var CORR = null;
+function corrVal(kind, key){
+  var t = CORR && CORR.corr && CORR.corr[kind]; if (!t) return 0;
+  var v = t[key]; return v && v.n >= (CORR.min_n || 400) ? v.r : 0;
+}
+var CORR_BASE = {points:'points', rebounds:'rebounds', assists:'assists', threes:'threes', pra:'pra', pts_reb:'pra', pts_ast:'pra', reb_ast:'pra'};
+var CORR_ORDER = ['points', 'rebounds', 'assists', 'threes', 'pra', 'pts_reb', 'pts_ast', 'reb_ast'];
+function teamOf(p){
+  if (p.team) return p.team;
+  var g = gameById(p.game_id); if (!g) return null;
+  var r = (g.prop_rows || []).filter(function(x){ return x.pid === p.pid; })[0];
+  if (r && r.team) return r.team;
+  var b = (g.player_board || []).filter(function(x){ return x.pid === p.pid; })[0];
+  return b && b.team || null;
+}
+/* the thing a leg bets on, and which way: a player's stat, the game total, or the home margin */
+function legVar(p){
+  var g = gameById(p.game_id), home = g ? g.home.abbr : p.home;
+  if (p.type === 'prop') return {k:'player', pid:p.pid, stat:p.stat, team:teamOf(p), home:home, sign:p.side === 'under' ? -1 : 1};
+  if (p.type === 'total') return {k:'total', sign:p.side === 'under' ? -1 : 1};
+  return {k:'margin', sign:p.side === 'away' ? -1 : 1};
+}
+/* correlation between two legs' bets, in their favorable directions */
+function legRho(a, b){
+  if (!a.game_id || a.game_id !== b.game_id) return 0;
+  var x = legVar(a), y = legVar(b), r = 0;
+  if (x.k === 'player' && y.k === 'player'){
+    if (x.pid === y.pid){
+      if (x.stat === y.stat) r = 1;
+      else { var i = CORR_ORDER.indexOf(x.stat), j = CORR_ORDER.indexOf(y.stat); r = corrVal('self', i < j ? x.stat + '|' + y.stat : y.stat + '|' + x.stat); }
+    } else {
+      var s1 = CORR_BASE[x.stat] || 'pra', s2 = CORR_BASE[y.stat] || 'pra', k = [s1, s2].sort().join('|');
+      r = corrVal(x.team && x.team === y.team ? 'team' : 'opp', k);
+    }
+  } else if (x.k === 'player' || y.k === 'player'){
+    var pl = x.k === 'player' ? x : y, ot = x.k === 'player' ? y : x;
+    if (ot.k === 'total') r = corrVal('ptot', pl.stat);
+    else r = corrVal('pmar', pl.stat) * (pl.team && pl.team === pl.home ? 1 : -1);
+  } else if (x.k !== y.k){ r = corrVal('tmar', ''); }
+  else r = 1;
+  return r * x.sign * y.sign;
+}
+function invPhi(p){   /* Acklam's inverse normal */
+  var a = [-39.6968302866538, 220.946098424521, -275.928510446969, 138.357751867269, -30.6647980661472, 2.50662827745924],
+      b = [-54.4760987982241, 161.585836858041, -155.698979859887, 66.8013118877197, -13.2806815528857],
+      c = [-7.78489400243029e-3, -0.322396458041136, -2.40075827716184, -2.54973253934373, 4.37466414146497, 2.93816398269878],
+      d = [7.78469570904146e-3, 0.32246712907004, 2.445134137143, 3.75440866190742];
+  p = Math.min(1 - 1e-9, Math.max(1e-9, p));
+  var q, r;
+  if (p < .02425){ q = Math.sqrt(-2 * Math.log(p)); return (((((c[0] * q + c[1]) * q + c[2]) * q + c[3]) * q + c[4]) * q + c[5]) / ((((d[0] * q + d[1]) * q + d[2]) * q + d[3]) * q + 1); }
+  if (p > 1 - .02425){ q = Math.sqrt(-2 * Math.log(1 - p)); return -(((((c[0] * q + c[1]) * q + c[2]) * q + c[3]) * q + c[4]) * q + c[5]) / ((((d[0] * q + d[1]) * q + d[2]) * q + d[3]) * q + 1); }
+  q = p - .5; r = q * q;
+  return (((((a[0] * r + a[1]) * r + a[2]) * r + a[3]) * r + a[4]) * r + a[5]) * q / (((((b[0] * r + b[1]) * r + b[2]) * r + b[3]) * r + b[4]) * r + 1);
+}
+function cholesky(R){
+  var n = R.length, L = [];
+  for (var i = 0; i < n; i++){ L.push(new Array(n).fill(0));
+    for (var j = 0; j <= i; j++){
+      var s = R[i][j]; for (var k = 0; k < j; k++) s -= L[i][k] * L[j][k];
+      if (i === j){ if (s <= 1e-9) return null; L[i][j] = Math.sqrt(s); } else L[i][j] = s / L[j][j];
+    } }
+  return L;
+}
+/* chance every leg hits, with the legs' measured correlation (Gaussian copula, fixed-seed simulation so the number never jumps) */
+function jointP(legs, probs){
+  var n = legs.length, R = [], any = false;
+  for (var i = 0; i < n; i++){ R.push([]); for (var j = 0; j < n; j++){ var v = i === j ? 1 : legRho(legs[i], legs[j]); if (i !== j && v) any = true; R[i].push(Math.max(-.95, Math.min(.95, v))); } }
+  var P = 1; probs.forEach(function(p){ P *= p; });
+  if (!any) return P;
+  var L = null, shrink = 1;
+  while (!(L = cholesky(R.map(function(row, i){ return row.map(function(v, j){ return i === j ? 1 : v * shrink; }); }))) && shrink > .1) shrink *= .8;
+  if (!L) return P;
+  var th = probs.map(function(p){ return invPhi(1 - p); }), seed = 12345, hits = 0, N = 20000;
+  function rnd(){ seed = (seed * 1103515245 + 12345) & 0x7fffffff; return (seed + .5) / 2147483648; }
+  for (var t = 0; t < N; t++){
+    var z = [], ok = true;
+    for (var a = 0; a < n; a += 2){ var u1 = rnd(), u2 = rnd(), m = Math.sqrt(-2 * Math.log(u1)); z.push(m * Math.cos(6.283185307 * u2)); if (a + 1 < n) z.push(m * Math.sin(6.283185307 * u2)); }
+    for (var i2 = 0; i2 < n && ok; i2++){ var x = 0; for (var k2 = 0; k2 <= i2; k2++) x += L[i2][k2] * z[k2]; if (x < th[i2]) ok = false; }
+    if (ok) hits++;
+  }
+  return hits / N;
+}
+/* why each leg is on the ticket, and how the legs relate */
+var DRIVER = {role:'role and minutes', mins:'role and minutes', matchup:'matchup', opp:'matchup', pace:'pace', cushion:'form and averages', hit:'form and averages', form:'form and averages',
+  avail:'who is playing', sched:'schedule', move:'market movement', price:'a better number', gap:'model vs market', tform:'team form', rest:'schedule', shots:'shot quality', crew:'officials'};
+function legDrivers(p){
+  var items = ((p.sig && p.sig.items) || []).slice().sort(function(a, b){ return b.w - a.w; }), out = [];
+  items.forEach(function(i){ var d = DRIVER[i.k] || i.k; if (out.indexOf(d) < 0) out.push(d); });
+  if (!out.length) out.push('model edge');
+  return out;
+}
+function legThesis(p){
+  var items = ((p.sig && p.sig.items) || []).slice().sort(function(a, b){ return b.w - a.w; });
+  if (items.length) return items[0].t;
+  if (p.reason) return p.reason;
+  return 'The model has it at ' + pct(p.est) + ' against a price of ' + pct(p.implied) + '.';
+}
+function leansOnTeammate(p){ return ((p.sig && p.sig.items) || []).some(function(i){ return i.k === 'role' && /out/i.test(i.t); }); }
+function ticketFit(legs){
+  var lines = [], warns = [], drivers = {}, same = 0;
+  legs.forEach(function(p){ legDrivers(p).slice(0, 1).forEach(function(d){ drivers[d] = (drivers[d] || 0) + 1; }); });
+  for (var i = 0; i < legs.length; i++) for (var j = i + 1; j < legs.length; j++){
+    var a = legs[i], b = legs[j], r = legRho(a, b), nm = shortLeg(a) + ' + ' + shortLeg(b);
+    if (a.game_id !== b.game_id){
+      var da = legDrivers(a)[0], db = legDrivers(b)[0];
+      if (da === db && da !== 'model edge') lines.push({t:nm + ': different games, so they win or lose on their own, but both lean on ' + da + '. If the model is misreading that kind of edge, both suffer.', c:'mid'});
+      else lines.push({t:nm + ': different games and different reasons (' + da + ', ' + db + '), so one missing does not drag the other down.', c:'good'});
+    } else {
+      same++;
+      if (r >= .08) lines.push({t:nm + ': same game, and they tend to hit together (measured correlation +' + r.toFixed(2) + '). The real chance of both is above the simple product, but books price same-game combos with that in mind.', c:'mid'});
+      else if (r <= -.08){ lines.push({t:nm + ': same game, and they work against each other (correlation ' + r.toFixed(2) + '). If one hits, the other gets less likely.', c:'bad'}); warns.push('Two legs pull against each other: ' + nm + '.'); }
+      else lines.push({t:nm + ': same game, but they barely move together (correlation ' + (r >= 0 ? '+' : '') + r.toFixed(2) + ').', c:'good'});
+    }
+  }
+  var tm = legs.filter(leansOnTeammate);
+  if (tm.length >= 2) warns.push(tm.length + ' legs lean on a teammate being out. Late scratches and returns can flip both at once, so check the injury report close to tip.');
+  var nd = Object.keys(drivers).length;
+  return {lines:lines, warns:warns, diverse:nd, sameGame:same};
+}
+function shortLeg(p){ return p.type === 'prop' ? (p.player || p.label).split(' ').slice(-1)[0] + ' ' + (p.side === 'over' ? 'o' : 'u') + p.line + ' ' + (SHORT[p.stat] || p.stat) : p.label; }
+function fitBlock(t){
+  var f = ticketFit(t.legs);
+  var kids = [el('p', {class:'fit-sum', text:(f.diverse >= t.n ? 'Every leg rests on a different reason' : f.diverse + ' different reasons across ' + t.n + ' legs') + (f.sameGame ? '' : ', all in different games') + '.'}),
+    el('ul', {class:'fit-why'}, t.legs.map(function(p){ return el('li', {}, el('b', {text:shortLeg(p) + ': '}), legThesis(p)); }))];
+  if (f.lines.length) kids.push(el('details', {class:'help'}, el('summary', {text:'How the legs fit together'}), el('ul', {class:'fit-pairs'}, f.lines.map(function(l){ return el('li', {class:'fp-' + l.c, text:l.t}); }))));
+  f.warns.forEach(function(w){ kids.push(el('p', {class:'small', style:'color:var(--warn);margin:0', text:w})); });
+  return el('div', {class:'fit'}, kids);
+}
+
 function mkTicket(legs){
-  var D = 1, P = 1, Pc = 1;
-  legs.forEach(function(p){ D *= dec(p.odds); P *= p.est; Pc *= Math.max(.01, p.est - .5 * p.edge); });
+  var D = 1;
+  legs.forEach(function(p){ D *= dec(p.odds); });
+  /* true chance with the legs' measured correlation (different games: the simple product) */
+  var P = jointP(legs, legs.map(function(p){ return p.est; })), Pc = jointP(legs, legs.map(function(p){ return Math.max(.01, p.est - .5 * p.edge); }));
   var b = D - 1, ev = P * D - 1, evc = Pc * D - 1, f = evc > 0 ? evc / b : 0;
   var g = evc > 0 ? Pc * Math.log(1 + f * b) + (1 - Pc) * Math.log(1 - f) : evc;
   var stake = f > 0 ? Math.max(.25, Math.min(1, Math.round(f * 100 * .25 * 4) / 4)) : 0;
@@ -1529,6 +1683,7 @@ function ultCard(u){
       el('div', {class:'big', text:fo(u.odds)})),
     el('div', {class:'legs'}, u.legs.map(function(p){ return legRow(p, true, false); })),
     ticketNums(u),
+    fitBlock(u),
     !u.stake ? el('p', {class:'small', style:'color:var(--warn);margin:0', text:'Thin edge: if only half of each edge is real, this loses money over time. Treat it as a pass.'}) : null,
     help(['Of the 2 to 5 leg tickets built from today\'s best legs, this one has the best long-run growth after assuming only half of each edge is real.',
       'Its shakiest leg is ' + best.label + ' (model chance ' + pct(best.est) + '). A 1 unit stake wins ' + u.profit.toFixed(2) + 'u. If only half of each edge is real, the edge is ' + (u.evc >= 0 ? '+' : '') + (u.evc * 100).toFixed(1) + '%.'], 'Why this ticket'),
@@ -1540,6 +1695,7 @@ function ticketCard(t, ult){
     el('div', {class:'t-head'}, el('h3', {text:t.n + '-leg parlay'}), el('div', {class:'t-odds', text:fo(t.odds)})),
     el('div', {class:'legs'}, t.legs.map(function(p, i){ return legRow(p, i < ult.n, true); })),
     ticketNums(t),
+    fitBlock(t),
     el('div', {class:'row'}, copyBtn(ticketText(t, t.n + '-leg parlay'))));
 }
 function segCtl(label, key, opts){ return segCtlFor(label, key, opts, renderParlays); }
@@ -1578,7 +1734,7 @@ function renderParlays(){
   });
   root.append(el('details', {}, el('summary', {text:'Every eligible leg (' + pool.length + ') and where it went'}), table(['#', 'Leg', 'Odds', 'Est', 'Edge', 'Conf', 'Status'], rows, 2)));
   root.append(el('div', {class:'note'}, el('b', {text:'How to read these numbers'}),
-    el('p', {class:'small', text:'"Hits about" multiplies each leg\'s model chance, which treats the legs as independent. The builder uses at most one leg per game to keep that close to true, but sportsbooks can still pay less than the multiplied price. "If half the edge is real" repeats the math after cutting each leg\'s edge in half, since the model\'s numbers are estimates. Stakes are quarter Kelly and capped at 1 unit because parlays lose far more often than single bets. Parlays are not logged to the Tracker yet; each leg is logged and graded on its own.'})));
+    el('p', {class:'small', text:'"Hits about" is the chance every leg hits. Legs in different games are independent, so it is their chances multiplied; legs from the same game use correlations measured on two seasons. The builder uses one leg per game so the price you are paid matches. "If half the edge is real" repeats the math after cutting each leg\'s edge in half, since the model\'s numbers are estimates. Stakes are quarter Kelly and capped at 1 unit because parlays lose far more often than single bets. Parlays are not logged to the Tracker yet; each leg is logged and graded on its own.'})));
 }
 
 /* ---- props ---- */
@@ -2312,7 +2468,7 @@ function playerBody(g, pid, stat){
 })();
 
 /* ---- v8: storage, toasts, theme, number animation ---- */
-var TABS = ['slate', 'signals', 'picks', 'parlays', 'players', 'props', 'track', 'method', 'status'];
+var TABS = ['slate', 'signals', 'picks', 'parlays', 'plan', 'players', 'props', 'track', 'method', 'status'];
 var REDUCE = !!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
 function lsGet(k, d){ try { var v = localStorage.getItem(k); return v == null ? d : v; } catch(e){ return d; } }
 function lsSet(k, v){ try { if (v == null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch(e){} }
@@ -2549,7 +2705,7 @@ function slipBody(){
   var t = mkTicket(legs), games = {};
   legs.forEach(function(p){ games[p.game_id] = (games[p.game_id] || 0) + 1; });
   var warns = [];
-  if (Object.keys(games).some(function(k){ return games[k] > 1; })) warns.push('Legs from the same game are linked (a blowout moves several of them at once). The chance above multiplies the legs as if they were independent, and sportsbooks price same-game parlays their own way, so the real payout and chance can differ.');
+  if (Object.keys(games).some(function(k){ return games[k] > 1; })) warns.push('Legs from the same game are linked. The chance above already accounts for how these kinds of bets move together (measured on two seasons of games), but sportsbooks price same-game parlays their own way, so the real payout can differ from the multiplied price.');
   if (legs.some(started)) warns.push('At least one of these games has already started. Live prices will have moved.');
   if (legs.some(function(p){ return p.kind === 'assumed'; })) warns.push('Some legs have no posted price, so -110 is assumed. Check the real price.');
   if (legs.some(function(p){ return p.lean; })) warns.push('A lean is a model reading that did not make the logged pick list. It is not tracked on the Tracker.');
@@ -2560,7 +2716,7 @@ function slipBody(){
     el('div', {class:'legs'}, legs.map(function(p){
       return el('div', {class:'slip-leg'}, legRow(p, false, false), el('button', {type:'button', class:'ib2', 'aria-label':'Remove ' + p.label, text:'✕', onclick:function(){ slipToggle(p); }}));
     })),
-    ticketNums(t)));
+    ticketNums(t), t.n > 1 ? fitBlock(t) : null));
   var inp = el('input', {type:'number', inputmode:'decimal', min:'0', step:'1', id:'wager', value:lsGet('eplocks_wager', '10'), 'aria-label':'Wager in dollars'});
   var out = el('p', {class:'small', id:'wagerOut'});
   function upd(){
@@ -3330,6 +3486,103 @@ function renderMyBets(root){
   });
   root.append(list);
 }
+/* ---- betting plan: bankroll, unit size, daily cap, today's exact bets, and how well the plan is being followed (all in this browser only) ---- */
+function planGet(){
+  var d = {bank:0, unitPct:1, capPct:8, parlayPct:15, minConf:'Low', start:'', startBank:0};
+  try { var o = JSON.parse(lsGet('eplocks_plan_v1', '{}')); for (var k in o) d[k] = o[k]; } catch(e){}
+  return d;
+}
+function planSet(o){ lsSet('eplocks_plan_v1', JSON.stringify(o)); }
+function money(x){ return (x < 0 ? '-$' : '$') + Math.abs(x).toFixed(Math.abs(x) >= 100 ? 0 : 2).replace(/\.00$/, ''); }
+function planBank(pl){
+  /* the bankroll you started the plan with, plus what My bets says you have won or lost since then */
+  var net = 0;
+  myBetsLoad().forEach(function(b){ if (!pl.start || b.date >= pl.start){ var r = gradeMine(b); if (r.res === 'W' || r.res === 'L') net += r.profit; } });
+  return {now:(pl.startBank || pl.bank) + net, net:net};
+}
+function renderPlan(){
+  var root = $('#plan'); root.textContent = '';
+  var L = S.latest; if (!L) return;
+  var pl = planGet();
+  root.append(el('div', {class:'hero clean'}, el('div', {}, el('h1', {text:'Your plan'}),
+    el('p', {class:'hero-sum', text:'What to bet today and how much, from your bankroll. Saved on this device only.'}))));
+  /* settings */
+  var bankIn = el('input', {type:'number', inputmode:'decimal', min:'0', step:'10', value:pl.bank ? String(pl.bank) : '', placeholder:'e.g. 500', 'aria-label':'Bankroll in dollars'});
+  function seg(label, key, opts){
+    return el('div', {class:'row'}, el('b', {text:label}), el('div', {class:'seg', role:'group', 'aria-label':label}, opts.map(function(o){
+      return el('button', {type:'button', 'aria-pressed':String(pl[key] === o[0]), text:o[1], onclick:function(){ pl[key] = o[0]; planSet(pl); renderPlan(); }});
+    })));
+  }
+  var save = el('button', {type:'button', class:'btn go', text:pl.bank ? 'Update bankroll' : 'Start my plan'});
+  save.onclick = function(){
+    var v = parseFloat(bankIn.value);
+    if (!(v > 0)){ toast('Enter your bankroll in dollars first.'); return; }
+    pl.bank = Math.round(v * 100) / 100; pl.startBank = pl.bank; pl.start = L.for_date; planSet(pl); toast('Plan saved'); renderPlan();
+  };
+  root.append(el('details', {class:'opts', open:pl.bank ? null : true}, el('summary', {}, el('span', {text:'Bankroll and rules'}), el('span', {class:'mut', text:pl.bank ? money(pl.bank) + ', 1 unit = ' + pl.unitPct + '%' : 'not set'})),
+    el('div', {class:'ctl'},
+      el('label', {class:'wg'}, el('span', {text:'Bankroll $'}), bankIn),
+      seg('1 unit is', 'unitPct', [[1, '1% (careful)'], [2, '2% (standard)']]),
+      seg('Most risked per day', 'capPct', [[5, '5%'], [8, '8%'], [12, '12%']]),
+      seg('Share for parlays', 'parlayPct', [[0, 'None'], [10, '10%'], [15, '15%']]),
+      seg('Bet picks rated', 'minConf', [['Low', 'Any'], ['Medium', 'Medium +'], ['High', 'High only']]),
+      el('div', {class:'row'}, save))));
+  if (!pl.bank){
+    root.append(el('div', {class:'empty'}, el('b', {text:'Set your bankroll to start'}), 'Use money you can afford to lose completely. The plan sizes every bet from it, caps how much you risk in a day and keeps parlays to a small slice.'));
+    return;
+  }
+  var bk = planBank(pl), unit = bk.now * pl.unitPct / 100, cap = bk.now * pl.capPct / 100, pBudget = cap * pl.parlayPct / 100, sBudget = cap - pBudget;
+  root.append(el('div', {class:'tiles'},
+    tileEl('Bankroll now', money(bk.now), 'Your starting bankroll plus results from My bets since the plan started.'),
+    tileEl('1 unit', money(unit), pl.unitPct + '% of the bankroll. Stakes are 0.5, 1 or 2 units by confidence.'),
+    tileEl('Daily limit', money(cap), pl.capPct + '% of the bankroll, singles and parlays together.'),
+    tileEl('Since start', (bk.net >= 0 ? '+' : '') + money(bk.net), 'Profit or loss from the bets you marked "I bet this" since ' + dayLabel(pl.start) + '.')));
+  /* today's singles, scaled to the limit */
+  var rk = {Low:1, Medium:2, High:3}, minR = rk[pl.minConf] || 1;
+  var singles = L.picks.filter(function(p){ return !started(p) && p.kind === 'priced' && (rk[p.conf] || 1) >= minR; })
+    .sort(function(a, b){ var x = rankKey(a), y = rankKey(b); return y[0] - x[0] || y[1] - x[1]; });
+  var want = singles.reduce(function(s, p){ return s + p.units * unit; }, 0), scale = want > sBudget && want > 0 ? sBudget / want : 1;
+  var rows = singles.map(function(p){ var st = Math.max(1, Math.round(p.units * unit * scale)); return {p:p, st:st}; });
+  var used = rows.reduce(function(s, r){ return s + r.st; }, 0);
+  root.append(el('h2', {text:'Today\'s bets'}));
+  if (!rows.length) root.append(el('div', {class:'empty'}, el('b', {text:'Nothing to bet right now'}), pl.minConf === 'Low' ? 'No priced pick is open. Check back after the afternoon run.' : 'No open pick meets your confidence setting today. Passing is part of the plan.'));
+  else {
+    root.append(table(['Bet', 'Odds', 'Book', 'Stake'], rows.map(function(r){ return [r.p.label, fo(r.p.odds), r.p.book || 'best price', money(r.st)]; }), 1, function(i){ var p = rows[i].p; return gameById(p.game_id) ? function(){ openLegOf(p); } : null; }));
+    if (scale < 1) root.append(el('p', {class:'small mut', text:'Stakes are scaled down so singles stay within ' + money(sBudget) + ' today.'}));
+  }
+  /* the parlay slice: the builder's Ultimate ticket with its default settings */
+  if (pl.parlayPct){
+    var keep = {pStyle:S.pStyle, pConf:S.pConf, pProps:S.pProps, pAssumed:S.pAssumed};
+    S.pStyle = 'bal'; S.pConf = pl.minConf === 'High' ? 'high' : pl.minConf === 'Medium' ? 'med' : 'any'; S.pProps = true; S.pAssumed = false;
+    var lg = orderLegs(legPool()).legs, ts = [];
+    for (var n = 2; n <= Math.min(5, lg.length); n++) ts.push(mkTicket(lg.slice(0, n)));
+    for (var k in keep) S[k] = keep[k];
+    var u = ts.slice().sort(function(a, b){ return b.g - a.g || a.n - b.n; })[0];
+    root.append(el('h2', {text:'Parlay slice'}));
+    if (u && u.stake){
+      var pst = Math.max(1, Math.round(Math.min(pBudget, u.stake * unit)));
+      root.append(el('div', {class:'note'}, el('b', {text:u.n + '-leg parlay ' + fo(u.odds) + ' for ' + money(pst)}),
+        el('ul', {class:'fit-why'}, u.legs.map(function(p){ return el('li', {text:p.label + ' ' + fo(p.odds)}); })),
+        el('p', {class:'small mut', text:'Hits about ' + pct(u.P) + '. Wins ' + money(pst * (u.D - 1)) + '. Kept to ' + pl.parlayPct + '% of your daily limit because every extra leg adds the book\'s margin.'})));
+      used += pst;
+    } else root.append(el('p', {class:'small mut', text:'No parlay today: the best ticket does not hold up once only half of each edge is assumed real. Passing is the plan.'}));
+  }
+  /* plan vs what you actually did today */
+  var mine = myBetsLoad().filter(function(b){ return b.date === L.for_date; }), placed = mine.reduce(function(s, b){ return s + (b.stake || 0); }, 0);
+  root.append(el('h2', {text:'Following the plan'}));
+  root.append(el('div', {class:'tiles'},
+    tileEl('Plan today', money(used), 'Everything above added up.'),
+    tileEl('You placed', money(placed), 'From the bets you marked "I bet this" today.'),
+    tileEl('Room left', money(Math.max(0, cap - placed)), 'Daily limit minus what you have placed.'),
+    tileEl('Bets placed', String(mine.length), 'Bets saved to My bets today.')));
+  if (placed > cap) root.append(el('div', {class:'note warn', text:'You are over today\'s limit by ' + money(placed - cap) + '. The plan only works if the limit holds on bad days too.'}));
+  var wk = myBetsLoad().filter(function(b){ var d = new Date(b.date + 'T12:00:00'); return (Date.now() - d) / 864e5 <= 7; });
+  var wkNet = 0, wkW = 0, wkL = 0; wk.forEach(function(b){ var r = gradeMine(b); if (r.res === 'W'){ wkW++; wkNet += r.profit; } else if (r.res === 'L'){ wkL++; wkNet += r.profit; } });
+  if (wk.length) root.append(el('p', {class:'small', text:'Last 7 days: ' + wkW + '-' + wkL + ', ' + (wkNet >= 0 ? '+' : '') + money(wkNet) + '.'}));
+  root.append(help(['The rules: bet only from a bankroll you can afford to lose; 1 unit stays at ' + pl.unitPct + '% of it; never go past the daily limit; singles first, parlays only as a small slice; take the best price on offer; mark every bet with "I bet this" so the plan can see it.',
+    'Do not chase losses with bigger bets, and do not raise stakes after a hot week. The unit grows or shrinks with the bankroll on its own.',
+    'Judge the plan over hundreds of bets, not days. If the Tracker shows the bot is not beating the closing line after about 300 picks, stop and rethink before betting more.'], 'The rules'));
+}
 function renderTracker(){
   var root = $('#track'); root.textContent = '';
   S.trTab = S.trTab || 'picks';
@@ -3449,6 +3702,8 @@ function renderMethod(){
     sec('How EpLocks learns from its own results', el('ul', {},
       li('Auditor.', 'Every morning it reviews every graded pick by market, confidence, signal and edge size, against the break-even of the prices taken and the closing line. Claude writes up to five short lessons that the bot reads before analyzing each game. A market that clearly loses over 50+ picks gets lower confidence and half the stake until it recovers.'),
       li('Prop model check.', 'Two full seasons are replayed game by game: before each game the prop model predicts every rotation player from his earlier games only, and the box score shows whether its chances held up. Several ways of reading a game log are compared on games the comparison never fit on, and the best one is used. Each stat\'s centre and range are then corrected, because stats like points and threes are skewed: a few big nights pull the average up, so he clears his average less than half the time. A correction is only kept if it helps on unseen games.'),
+      li('How parlay legs fit.', 'How bets move together was measured on two seasons: a player\'s points rise with the game total (correlation about +0.16), a player and his team\'s margin move together a little (+0.10), teammates\' points barely move together (+0.01). Every ticket\'s chance uses these instead of simply multiplying, and every ticket explains why each leg is on it and how the legs relate. Legs from different games are independent.'),
+      li('Your plan.', 'The Plan tab turns the card into dollar amounts from your bankroll: 1 unit is 1 or 2% of it, a daily limit caps the total, and parlays are kept to a small slice. It checks what you actually placed against the plan.'),
       li('Parlay tracker.', 'Every day the builder\'s tickets are logged before tip-off and graded leg by leg from the box scores, so the parlay record is as honest as the singles. Results feed the auditor too.'),
       li('Situations.', 'Win and loss streaks, coming off a loss, tanking late in the season and tight playoff races are measured for teams; for each player, how he plays after a team loss, as a clear underdog, on a back-to-back and against a team that beat his team last time. Each one is only used if it proves itself on two replayed seasons, and a player\'s own split is pulled hard toward his normal numbers while he has few such games.'),
       li('Off the court.', 'ESPN headlines from the last three days are read each run and sorted into personal matters, suspensions, illness, discipline, trade talk, contract news and coaching changes, using only what was reported. These can only hold a pick back, never push one.'),
@@ -3534,7 +3789,7 @@ function showTab(t){
     var b = $('.tabs [data-tab="' + x + '"]'); b.setAttribute('aria-selected', String(t === x));
   });
   moveInd();
-  ({slate:renderSlate, signals:renderSignals, picks:renderPicks, parlays:renderParlays, players:renderPlayers, props:renderProps, track:renderTracker, method:renderMethod, status:renderStatus})[t]();
+  ({slate:renderSlate, signals:renderSignals, picks:renderPicks, parlays:renderParlays, plan:renderPlan, players:renderPlayers, props:renderProps, track:renderTracker, method:renderMethod, status:renderStatus})[t]();
   var sec = $('#' + t); sec.classList.remove('enter'); void sec.offsetWidth; sec.classList.add('enter');
   mergeHelps(sec);
   try { var tb = $('.tabs [data-tab="' + t + '"]'); if (tb && tb.scrollIntoView) tb.scrollIntoView({block:'nearest', inline:'center'}); } catch(e){}
@@ -3556,7 +3811,8 @@ if (document.fonts && document.fonts.ready) document.fonts.ready.then(moveInd);
 function getJson(url, fallback){
   return fetch(url + '?v=' + Date.now(), {cache:'no-store'}).then(function(r){ if (!r.ok) throw new Error(url + ' ' + r.status); return r.json(); }).catch(function(e){ if (fallback !== undefined) return fallback; throw e; });
 }
-Promise.all([getJson('data/latest.json'), getJson('data/history.json', []), getJson('data/backtest.json', null), getJson('data/parlays.json', [])]).then(function(r){
+Promise.all([getJson('data/latest.json'), getJson('data/history.json', []), getJson('data/backtest.json', null), getJson('data/parlays.json', []), getJson('data/correlations.json', null)]).then(function(r){
+  CORR = r[4] && r[4].corr ? r[4] : null;
   S.latest = r[0]; S.history = Array.isArray(r[1]) ? r[1] : []; S.bt = r[2] && typeof r[2] === 'object' ? r[2] : null; S.parlays = Array.isArray(r[3]) ? r[3] : [];
   slipSync(); slipUi(false);
   renderCounts();

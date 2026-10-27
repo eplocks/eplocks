@@ -1,9 +1,9 @@
 /* EpLocks offline support.
    Page and data: network first, so you always get the newest picks when online; the last copy is used when offline.
    Icons and fonts: cache first. Live ESPN feeds are never cached (they are only useful live). */
-const CACHE = 'eplocks-v1';
+const CACHE = 'eplocks-v2';
 const SHELL = ['./', './index.html', './manifest.webmanifest', './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png',
-  './data/latest.json', './data/history.json', './data/parlays.json'];
+  './data/latest.json', './data/history.json', './data/parlays.json', './data/correlations.json'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => Promise.all(SHELL.map(u => c.add(u).catch(() => null)))).then(() => self.skipWaiting()));

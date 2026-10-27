@@ -3353,6 +3353,136 @@ def news_for_game(home, away):
     return out[:8]
 
 
+# ----------------------------------------------------------------------------- how bets move together (for parlays and the slip)
+# Measured from the replayed seasons. For every game, each rotation player's stat and the game's total and margin are turned into a
+# surprise: what happened minus what his (or the teams') average so far said, in units of his usual swing. Then the correlation of
+# those surprises is measured for every kind of pair a ticket can hold:
+#   self  - two stats of the same player         team - two teammates          opp - two opponents
+#   ptot  - a player and the game total          pmar - a player and his own team's margin
+#   tmar  - the game total and the home margin
+# Legs in different games are treated as independent (they are, to a very good approximation).
+CORR_STATS = ('points', 'rebounds', 'assists', 'threes', 'pra', 'pts_reb', 'pts_ast', 'reb_ast')
+CORR_MIN_N = 400          # pairs a value needs before it is used; below that it counts as 0
+
+
+class Running:
+    """Mean and spread so far, updated one value at a time."""
+    __slots__ = ('n', 'm', 's')
+
+    def __init__(self):
+        self.n, self.m, self.s = 0, 0.0, 0.0
+
+    def z(self, v, floor=1.0):
+        if self.n < 5:
+            return None
+        sd = math.sqrt(self.s / (self.n - 1)) if self.n > 1 else 0.0
+        return (v - self.m) / max(sd, floor)
+
+    def add(self, v):
+        self.n += 1
+        d = v - self.m
+        self.m += d / self.n
+        self.s += d * (v - self.m)
+
+
+def run_correlations(boxes):
+    keys = ('pts', 'reb', 'ast', 'tpm', 'stl', 'blk', 'tov')
+    acc = {}
+
+    def put(key, a, b):
+        c = acc.setdefault(key, [0, 0.0, 0.0, 0.0, 0.0, 0.0])
+        c[0] += 1
+        c[1] += a
+        c[2] += b
+        c[3] += a * a
+        c[4] += b * b
+        c[5] += a * b
+    for box in boxes:
+        pl, tf, ta = {}, {}, {}
+        for gid, g in sorted(box['games'].items(), key=lambda kv: (kv[1]['d'], kv[0])):
+            if not g.get('h') or not g.get('a') or g['h'][1] is None or g['a'][1] is None:
+                continue
+            hab, aab, hp, ap = g['h'][0], g['a'][0], g['h'][1], g['a'][1]
+            for t in (hab, aab):
+                tf.setdefault(t, Running())
+                ta.setdefault(t, Running())
+            ok = tf[hab].n >= 10 and tf[aab].n >= 10
+            exp_h = (tf[hab].m + ta[aab].m) / 2.0
+            exp_a = (tf[aab].m + ta[hab].m) / 2.0
+            zt = ((hp + ap) - (exp_h + exp_a)) / 17.5 if ok else None
+            zm = ((hp - ap) - (exp_h - exp_a)) / 12.0 if ok else None
+            if zt is not None:
+                put(('tmar', '', ''), zt, zm)
+            zs = {}
+            mins = {}
+            for r in g['p']:
+                pid, team, mn = r[0], r[1], r[2]
+                if mn <= 0:
+                    continue
+                p = dict(zip(keys, r[3:10]))
+                st = pl.setdefault(pid, {'min': Running()})
+                if st['min'].n >= 5 and st['min'].m >= 18:
+                    z = {}
+                    for s in CORR_STATS:
+                        rs = st.get(s)
+                        if rs is not None:
+                            v = rs.z(STAT_FN[s](p), floor=max(1.0, 0.25 * rs.m))
+                            if v is not None:
+                                z[s] = v
+                    if z:
+                        zs[(pid, team)] = z
+                        mins[(pid, team)] = st['min'].m
+                for s in CORR_STATS:
+                    st.setdefault(s, Running()).add(STAT_FN[s](p))
+                st['min'].add(mn)
+            # keep the top eight by minutes on each side, as a rotation would
+            for t in (hab, aab):
+                ks = sorted([k for k in zs if k[1] == t], key=lambda k: -mins[k])[8:]
+                for k in ks:
+                    zs.pop(k, None)
+            items = list(zs.items())
+            for (pid, team), z in items:
+                for i, s1 in enumerate(CORR_STATS):
+                    if s1 not in z:
+                        continue
+                    for s2 in CORR_STATS[i + 1:]:
+                        if s2 in z:
+                            put(('self', s1, s2), z[s1], z[s2])
+                    if zt is not None:
+                        put(('ptot', s1, ''), z[s1], zt)
+                        put(('pmar', s1, ''), z[s1], zm if team == hab else -zm)
+            for a in range(len(items)):
+                (pa, ta_), za = items[a]
+                for b in range(a + 1, len(items)):
+                    (pb, tb_), zb = items[b]
+                    kind = 'team' if ta_ == tb_ else 'opp'
+                    for s1 in ('points', 'rebounds', 'assists', 'threes', 'pra'):
+                        if s1 not in za:
+                            continue
+                        for s2 in ('points', 'rebounds', 'assists', 'threes', 'pra'):
+                            if s2 in zb:
+                                k1, k2 = sorted((s1, s2))
+                                put((kind, k1, k2), za[s1] if k1 == s1 else za[s2], zb[s2] if k2 == s2 else zb[s1])
+            tf[hab].add(hp)
+            tf[aab].add(ap)
+            ta[hab].add(ap)
+            ta[aab].add(hp)
+    out = {}
+    for (kind, a, b), c in acc.items():
+        n, sa, sb, saa, sbb, sab = c
+        if n < 50:
+            continue
+        va, vb = saa / n - (sa / n) ** 2, sbb / n - (sb / n) ** 2
+        if va <= 0 or vb <= 0:
+            continue
+        rho = (sab / n - (sa / n) * (sb / n)) / math.sqrt(va * vb)
+        out.setdefault(kind, {})['%s|%s' % (a, b) if b else a] = {'r': round(rho, 3), 'n': n}
+    res = {'made': dt.datetime.now(dt.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'), 'seasons': [b['range'] for b in boxes], 'min_n': CORR_MIN_N, 'corr': out}
+    jsave(os.path.join(DATA, 'correlations.json'), res)
+    print('Correlations: %s' % json.dumps({k: len(v) for k, v in out.items()}), flush=True)
+    return res
+
+
 # ----------------------------------------------------------------------------- parlay tracker
 # The website's parlay builder runs in the browser, so on its own nothing it suggests is ever recorded. Here the daily run builds the
 # same tickets with the builder's default settings (balanced, any confidence, games and props, priced legs only, one leg per game),
@@ -3936,6 +4066,10 @@ def run_replay():
     for c in cand:
         c.pop('rows', None)
     jsave(os.path.join(DATA, 'prop_replay.json'), out)
+    try:
+        run_correlations(boxes)
+    except Exception as e:  # noqa
+        print('Correlations failed: %s' % str(e)[:200], flush=True)
     # 3. who is playing and schedule spots, on every replayed season
     try:
         run_side_fit(boxes)
