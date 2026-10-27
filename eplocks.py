@@ -3539,7 +3539,7 @@ def run_backtest(prior_state=None, quiet=False):
         src('backtest', False, 'still collecting last season\'s lines: %d of %d days. It continues on the next run.' % (len(lc['days_done']), len(days)))
         return None
     if n_lined < 300:
-        src('backtest', False, 'ESPN no longer shows closing lines for last season (%d of %d games had one), so there is nothing to replay against' % (n_lined, len(games)))
+        src('backtest', True, 'not available: ESPN no longer keeps last season\'s closing lines (%d of %d games had one). The replay mode checks the model on last season without lines instead.' % (n_lined, len(games)))
         return None
     saved = dict(CAL)
     CAL.update({'game': 1.0, 'prop': 1.0})
@@ -4092,6 +4092,13 @@ def main(argv):
                 r['sig'] = prop_signals(r)
             except Exception as e:  # noqa
                 note('Signals skipped for %s: %s' % (r.get('player'), str(e)[:80]))
+            try:   # the chances the site shows for every prop: the same calibrated numbers the picks use, not the raw model
+                m_, fo_ = r['model'], r.get('fair_over')
+                ne_ = m_.get('n_eff', m_['n'])
+                r['cal'] = {'over': r3(cal_p(m_['p_over'], r['over'] if r['over'] is not None else -110, 'prop', fo_, ne_)),
+                            'under': r3(cal_p(m_['p_under'], r['under'] if r['under'] is not None else -110, 'prop', None if fo_ is None else 1 - fo_, ne_))}
+            except Exception:  # noqa
+                r['cal'] = None
             if ev['state'] != 'pre' or r['skipped'] or is_blocked(r['injury']):
                 r['skipped'] = r['skipped'] or is_blocked(r['injury'])
                 continue

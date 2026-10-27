@@ -742,17 +742,16 @@ section.enter{animation:tabIn .16s ease both}
 
 .best{color:var(--acc);font-weight:700}
 .tracker-h{margin-top:18px}
-/* ===== v11 refresh: "arena broadcast" =====
-   One self-contained layer on top of everything above; delete this block to roll back.
-   Idea: the site is a TV broadcast of the slate. Navy arena, emerald signal light, gold only for Strong.
-   Two signature moments, everything else quiet: (1) each game card is lit in its two teams' colours,
-   (2) the edge meter is the broadcast gauge that shows where the model beats the price. */
+/* ===== v12 clean: calm, readable, one focus per card =====
+   Replaces the v11 layer. One self-contained block; delete it to roll back to the older look.
+   Rules: one key number per card, details one tap away, generous space, larger text, few borders,
+   emerald for edge and actions, gold only for Strong signals, team colours only on the scoreboard. */
 :root{
-  --night:#06101F; --court:#0C1C36; --court2:#12284A; --rail:#1C335C; --chalk:#EAF1FB; --fog:#93A7C4;
-  --signal:#2FE6A0; --signal-ink:#03241A; --gold2:#FFC24B;
-  --lift:inset 0 1px 0 rgba(255,255,255,.06);
-  --glow:0 0 0 1px rgba(47,230,160,.35),0 0 18px rgba(47,230,160,.18);
-  --r-card:10px; --r-ctl:6px;
+  --night:#06101F; --court:#0C1C36; --court2:#13294B; --rail:#1D355F; --chalk:#ECF2FB; --fog:#9AAECB;
+  --signal:#2FE6A0; --gold2:#FFC24B;
+  --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s5:24px; --s6:32px;
+  --r1:8px; --r2:12px;
+  --t-body:16px; --t-small:13.5px; --t-tiny:12px;
 }
 @media (prefers-color-scheme:dark){
   :root:not([data-theme="light"]){
@@ -764,138 +763,229 @@ section.enter{animation:tabIn .16s ease both}
   --bg:var(--night); --surface:var(--court); --surface2:var(--court2); --line:var(--rail); --fg:var(--chalk); --mut:var(--fog);
   --acc:var(--signal); --good:var(--signal); --hdr:#040C19; --hdr2:#0A1A33; --hdr-acc:var(--signal); --strong:var(--gold2);
 }
-:root[data-theme="light"],
-:root:not([data-theme]){ --lift:inset 0 1px 0 rgba(255,255,255,.9); }
-@media (prefers-color-scheme:dark){ :root:not([data-theme="light"]){ --lift:inset 0 1px 0 rgba(255,255,255,.06); } }
 
-/* arena light: one soft wash from above the court, fixed so it never scrolls into the content */
-body{background:radial-gradient(1100px 520px at 50% -260px,color-mix(in srgb,var(--acc) 9%,transparent),transparent 70%) fixed,var(--bg)}
+/* ---------- base: bigger, calmer text ---------- */
+body{font:var(--t-body)/1.55 var(--f-body);background:radial-gradient(1000px 480px at 50% -240px,color-mix(in srgb,var(--acc) 7%,transparent),transparent 70%) fixed,var(--bg);-webkit-font-smoothing:antialiased}
+.small{font-size:var(--t-small)}
+.mut{color:var(--mut)}
+main.in{padding-top:var(--s5)}
+main.in>section{display:grid;gap:var(--s4);align-content:start}
+main.in>section>*{margin-top:0;margin-bottom:0}
 ::selection{background:color-mix(in srgb,var(--acc) 35%,transparent)}
 :focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+h2,h2.sec{font:800 24px/1.1 var(--f-disp);letter-spacing:.02em;text-transform:none;color:var(--fg);margin:var(--s4) 0 0}
+.legal{font-size:var(--t-tiny);color:var(--mut);max-width:70ch}
 
 /* ---------- header ---------- */
-.hdr{background:color-mix(in srgb,var(--hdr) 92%,transparent);-webkit-backdrop-filter:saturate(140%) blur(10px);backdrop-filter:saturate(140%) blur(10px);
-  border-bottom:1px solid rgba(255,255,255,.07);box-shadow:inset 0 3px 0 var(--hdr-acc),0 1px 0 rgba(0,0,0,.25)}
-.wm{text-shadow:0 0 22px color-mix(in srgb,var(--hdr-acc) 30%,transparent)}
-.sync[data-age="fresh"]::before{box-shadow:0 0 0 0 rgba(47,230,160,.6);animation:onair 2.4s ease-out infinite}
+.hdr{box-shadow:inset 0 3px 0 var(--hdr-acc);border-bottom:1px solid rgba(255,255,255,.06)}
+.sync[data-age="fresh"]::before{animation:onair 2.4s ease-out infinite}
 @keyframes onair{0%{box-shadow:0 0 0 0 rgba(47,230,160,.55)}70%{box-shadow:0 0 0 7px rgba(47,230,160,0)}100%{box-shadow:0 0 0 0 rgba(47,230,160,0)}}
-.tabs .ind{height:3px;box-shadow:0 0 12px var(--hdr-acc)}
+.tabs .ind{box-shadow:0 0 12px var(--hdr-acc)}
 
-/* ---------- surfaces: depth from a top highlight, not from shadows ---------- */
-.game,.pick,.blk,.tile,.tscroll,.note,.ctl,.method details,.mk-card,.pgroup,.ticket,.sigc,.cwrap{box-shadow:var(--lift)}
-.game,.pick,.blk,.ticket,.mk-card,.sigc{border-radius:var(--r-card)}
-.btn,.seg,.cell,.ib2,.slipbtn,.qchip{border-radius:var(--r-ctl)}
+/* ---------- hero: date, one sentence, the top play ---------- */
+.hero.clean{display:grid;gap:var(--s2);padding:var(--s5) var(--s4) var(--s4);
+  background:radial-gradient(520px 240px at 90% 0%,color-mix(in srgb,var(--hdr-acc) 13%,transparent),transparent 70%),linear-gradient(160deg,var(--hdr2),var(--hdr))}
+.hero.clean h1{font:900 clamp(44px,11vw,64px)/.95 var(--f-disp);margin:0}
+.hero.clean .hero-sum{margin:0;font-size:15px;color:var(--hdr-mut)}
+.hero.clean .tiles{margin-top:var(--s3)}
+.topplay{display:grid;gap:var(--s2);margin-top:var(--s3)}
+.tp-k{font:700 14px var(--f-body);color:var(--hdr-acc)}
+.topplay .bet{background:rgba(255,255,255,.045);border-color:rgba(255,255,255,.12);color:var(--hdr-fg)}
+.topplay .bet .bet-sub,.topplay .bet .bet-facts,.topplay .mlab{color:var(--hdr-mut)}
 
-/* ---------- signature 1: game cards lit in team colours ---------- */
-.game{overflow:hidden;
+/* ---------- help and options: details live behind one tap ---------- */
+details.help{font-size:var(--t-small);color:var(--mut)}
+details.help>summary{cursor:pointer;list-style:none;display:inline-flex;align-items:center;gap:6px;color:var(--acc);font-weight:600;min-height:32px}
+details.help>summary::-webkit-details-marker{display:none}
+details.help>summary::before{content:"?";display:inline-grid;place-items:center;width:18px;height:18px;border-radius:50%;border:1.5px solid currentColor;font:700 11px/1 var(--f-body)}
+details.help[open]>summary{margin-bottom:var(--s1)}
+details.help p{margin:0 0 var(--s2);max-width:65ch}
+details.opts{background:var(--surface);border:1px solid var(--line);border-radius:var(--r2)}
+details.opts>summary{cursor:pointer;list-style:none;display:flex;justify-content:space-between;align-items:center;gap:var(--s3);padding:var(--s3) var(--s4);font-weight:600;min-height:48px}
+details.opts>summary::-webkit-details-marker{display:none}
+details.opts>summary::after{content:"";width:8px;height:8px;border-right:2px solid var(--mut);border-bottom:2px solid var(--mut);transform:rotate(45deg) translateY(-2px);flex:none}
+details.opts[open]>summary::after{transform:rotate(225deg)}
+details.opts>summary .mut{font-weight:400;font-size:var(--t-small);margin-left:auto;text-align:right}
+details.opts .ctl{border:0;border-top:1px solid var(--line);border-radius:0 0 var(--r2) var(--r2);background:transparent}
+
+/* ---------- slate: the game card is a scoreboard ---------- */
+.cards{gap:var(--s4)}
+.game.clean{display:grid;gap:var(--s3);padding:var(--s4);border-radius:var(--r2);overflow:hidden;
   background:
-    radial-gradient(240px 150px at 6% 30%,color-mix(in srgb,var(--ca,var(--acc)) 24%,transparent),transparent 72%),
-    radial-gradient(240px 150px at 94% 30%,color-mix(in srgb,var(--ch,var(--acc)) 24%,transparent),transparent 72%),
-    linear-gradient(180deg,color-mix(in srgb,var(--surface) 88%,#fff 2%),var(--surface))}
-.game::before{height:5px;box-shadow:0 0 16px color-mix(in srgb,var(--ca,var(--acc)) 55%,transparent),0 0 16px color-mix(in srgb,var(--ch,var(--acc)) 35%,transparent)}
-.game .team[data-side="away"] .ab{text-shadow:0 0 26px color-mix(in srgb,var(--ca,var(--acc)) 65%,transparent)}
-.game .team.home .ab{text-shadow:0 0 26px color-mix(in srgb,var(--ch,var(--acc)) 65%,transparent)}
-.game:hover{border-color:color-mix(in srgb,var(--acc) 70%,var(--line))}
-.game .wp{height:8px;gap:3px}
-.game .wp i{border-radius:2px}
-.game .wp .a{background:var(--ca,var(--mut))}
-.game .wp .h{background:var(--ch,var(--fg))}
-.lines .cell{background:color-mix(in srgb,var(--bg) 70%,transparent);border-color:color-mix(in srgb,var(--line) 80%,transparent)}
-.lines .cell b{letter-spacing:.015em}
-.lpick{padding:6px 0 6px 12px;border-left-width:3px}
-.lpick.High{border-left-color:var(--good);background:linear-gradient(90deg,color-mix(in srgb,var(--good) 10%,transparent),transparent 60%)}
-.lpick.Medium{border-left-color:var(--gold);background:linear-gradient(90deg,color-mix(in srgb,var(--gold) 9%,transparent),transparent 60%)}
+    radial-gradient(300px 140px at 0% 30%,color-mix(in srgb,var(--ca,var(--acc)) 12%,transparent),transparent 70%),
+    radial-gradient(300px 140px at 0% 70%,color-mix(in srgb,var(--ch,var(--acc)) 12%,transparent),transparent 70%),
+    var(--surface)}
+.game.clean::before{height:4px}
+.g-top{display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap;font:500 13px var(--f-mono);color:var(--mut)}
+.g-note{margin-left:auto;color:var(--warn);font-family:var(--f-body);font-weight:600}
+.sb{display:grid;gap:var(--s2)}
+.sb-row{display:grid;grid-template-columns:34px auto 1fr auto;align-items:center;gap:var(--s3)}
+.sb-row .av.crest{--s:30px}
+.sb-row .crest .tx{display:none}.sb-row .crest .emb{display:block}
+.sb-ab{font:900 34px/1 var(--f-disp);letter-spacing:.01em}
+.sb-rec{font:500 13px var(--f-mono);color:var(--mut)}
+.sb-wp{font:600 15px var(--f-mono);color:var(--mut);font-variant-numeric:tabular-nums}
+.sb-wp.fav{color:var(--fg)}
+.g-lines{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--s2);padding:var(--s3) 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+.g-lines div{display:grid;gap:2px;min-width:0}
+.g-lines span{font-size:var(--t-tiny);color:var(--mut)}
+.g-lines b{font:800 19px/1.1 var(--f-disp);letter-spacing:.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.g-ph{display:flex;justify-content:space-between;font-size:var(--t-small);font-weight:600;color:var(--mut);margin-bottom:-4px}
+.g-picks{display:grid;gap:6px}
+.gp{appearance:none;cursor:pointer;width:100%;display:grid;grid-template-columns:1fr auto auto;align-items:center;gap:var(--s3);text-align:left;
+  padding:10px 12px;border-radius:var(--r1);border:0;border-left:3px solid var(--mut);background:color-mix(in srgb,var(--surface2) 70%,transparent);color:var(--fg);font:600 14.5px/1.3 var(--f-body)}
+.gp:hover{background:var(--surface2)}
+.gp.c-High{border-left-color:var(--good)}.gp.c-Medium{border-left-color:var(--gold)}
+.gp-o{font:500 13px var(--f-mono);color:var(--mut)}
+.gp-e{font:700 14px var(--f-mono);color:var(--acc);min-width:3.2em;text-align:right}
+.g-none{margin:0;font-size:var(--t-small);color:var(--mut)}
+.g-foot{display:flex;justify-content:space-between;align-items:center;font-size:var(--t-small)}
+.g-open{color:var(--acc);font-weight:700}
+.g-open::after{content:" ›"}
 
-/* ---------- hero scoreboard ---------- */
-.hero{background:
-    radial-gradient(500px 220px at 85% 0%,color-mix(in srgb,var(--hdr-acc) 14%,transparent),transparent 70%),
-    linear-gradient(160deg,var(--hdr2),var(--hdr))}
-.hero h1{text-shadow:0 2px 0 rgba(0,0,0,.25)}
-.hero .tiles .tile b{text-shadow:0 0 22px color-mix(in srgb,var(--hdr-acc) 40%,transparent);font-variant-numeric:tabular-nums}
+/* ---------- bet card: one key number (the edge), details one tap away ---------- */
+.bet{position:relative;display:grid;gap:var(--s3);padding:var(--s4);background:var(--surface);border:1px solid var(--line);border-radius:var(--r2);min-width:0}
+.bet.clk-card{cursor:pointer}
+.bet.clk-card:hover{border-color:color-mix(in srgb,var(--acc) 60%,var(--line))}
+.bet.dim{opacity:.6}
+.bet.c-High{border-color:color-mix(in srgb,var(--good) 55%,var(--line));box-shadow:0 10px 30px -16px color-mix(in srgb,var(--good) 60%,transparent)}
+.bet.sig-Strong{box-shadow:inset 3px 0 0 var(--strong)}
+.bet-top{display:grid;grid-template-columns:auto auto minmax(0,1fr) auto;align-items:start;gap:var(--s3)}
+.bet-top>.av,.bet-top>.avs{margin-top:2px}
+.bet-top .av{--s:40px}
+.bet-rank{font:900 24px/1.25 var(--f-disp);color:var(--acc);min-width:1ch}
+.bet-id{min-width:0}
+.bet-title{margin:0;font:700 18px/1.3 var(--f-body);overflow-wrap:anywhere}
+.bet-sub{margin:2px 0 0;font-size:var(--t-small);color:var(--mut)}
+.bet-odds{font:600 13.5px var(--f-mono);color:var(--fg)}
+.bet-edge{display:grid;justify-items:end;line-height:1}
+.bet-edge b{font:900 30px/1 var(--f-disp);color:var(--acc);text-shadow:0 0 16px color-mix(in srgb,var(--acc) 40%,transparent)}
+.bet-edge.neg b{color:var(--bad);text-shadow:none}
+.bet-edge span{font-size:var(--t-tiny);color:var(--mut);margin-top:3px}
+.bet-foot{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:var(--s2)}
+.bet-facts{font-size:var(--t-small);color:var(--mut)}
+.bet-facts .conf{font:700 13px var(--f-body);letter-spacing:0;text-transform:none;padding:0;border:0;background:none}
+.conf.High{color:var(--good)}.conf.Medium{color:var(--gold)}.conf.Low{color:var(--mut)}
+.bet-why{margin:0;padding-left:18px;display:grid;gap:4px;font-size:14px;color:var(--fg)}
+.bet-why li::marker{color:var(--acc)}
+.bet-why li.mut{list-style:none;margin-left:-18px;color:var(--mut);font-size:var(--t-small)}
+.bet-flag{margin:0;font-size:var(--t-small);color:var(--warn)}
+.bet-act{display:flex;justify-content:space-between;align-items:center}
+.bet-more{font-size:var(--t-small);font-weight:700;color:var(--acc)}
+.bet-more::after{content:" ›"}
+.bet .slipbtn{min-height:36px;padding:6px 12px;font-size:13.5px}
 
-/* ---------- signature 2: the edge meter as a broadcast gauge ---------- */
-.meter{height:12px;border-radius:3px;margin:12px 0 4px;overflow:visible;
-  background:
-    repeating-linear-gradient(90deg,transparent 0 calc(10% - 1px),color-mix(in srgb,var(--mut) 28%,transparent) calc(10% - 1px) 10%),
-    var(--surface2)}
-.meter .fill{border-radius:2px;opacity:1;
-  background:linear-gradient(90deg,color-mix(in srgb,var(--good) 55%,transparent),var(--good));
-  box-shadow:0 0 14px color-mix(in srgb,var(--good) 55%,transparent);
-  animation:edgeIn .7s cubic-bezier(.2,.8,.2,1) both}
-.meter .fill.neg{background:linear-gradient(90deg,var(--bad),color-mix(in srgb,var(--bad) 55%,transparent));box-shadow:0 0 12px color-mix(in srgb,var(--bad) 45%,transparent)}
+/* the edge meter: the one signature visual */
+.meter{height:10px;border-radius:3px;margin:2px 0 4px;overflow:visible;
+  background:repeating-linear-gradient(90deg,transparent 0 calc(10% - 1px),color-mix(in srgb,var(--mut) 25%,transparent) calc(10% - 1px) 10%),var(--surface2)}
+.meter .fill{border-radius:2px;opacity:1;background:linear-gradient(90deg,color-mix(in srgb,var(--good) 50%,transparent),var(--good));
+  box-shadow:0 0 12px color-mix(in srgb,var(--good) 50%,transparent);animation:edgeIn .7s cubic-bezier(.2,.8,.2,1) both}
+.meter .fill.neg{background:var(--bad);box-shadow:none}
 @keyframes edgeIn{from{clip-path:inset(0 100% 0 0)}to{clip-path:inset(0 0 0 0)}}
-.meter .mk{top:-5px;height:22px;width:3px;border-radius:1px}
-.meter .mk.px{background:var(--mut)}
-.meter .mk.ex{background:var(--fg);box-shadow:0 0 0 2px var(--surface),0 0 12px color-mix(in srgb,var(--good) 70%,transparent)}
-.mlab{font:500 11.5px var(--f-mono)}
-.mlab span:last-child{color:var(--fg)}
+.meter .mk{top:-4px;height:18px;width:3px;border-radius:1px}
+.meter .mk.ex{background:var(--fg);box-shadow:0 0 0 2px var(--surface)}
+.mlab{font:500 12px var(--f-mono);color:var(--mut)}
 
-/* ---------- pick cards ---------- */
-.pick{padding:16px 16px 14px;
-  background:linear-gradient(180deg,color-mix(in srgb,var(--surface) 92%,#fff 2%),var(--surface))}
-.pick.c-High{box-shadow:var(--lift),inset 4px 0 0 var(--good),0 0 0 1px color-mix(in srgb,var(--good) 40%,transparent),0 8px 30px -12px color-mix(in srgb,var(--good) 45%,transparent)}
-.rank{font:900 34px/1 var(--f-disp);color:var(--acc);letter-spacing:.01em;text-shadow:0 0 18px color-mix(in srgb,var(--acc) 45%,transparent)}
-.p-title{font:800 32px/1 var(--f-disp);letter-spacing:.008em}
-.p-title .mono{margin-left:6px;color:var(--mut)}
-.nums{gap:8px 20px;align-items:baseline}
-.nums span{font:500 12px var(--f-mono);color:var(--mut)}
-.nums b{font:800 19px/1 var(--f-disp);letter-spacing:.02em;margin-left:3px}
-.nums b.pos{color:var(--good);text-shadow:0 0 14px color-mix(in srgb,var(--good) 45%,transparent)}
-.go-hint{font-weight:600;color:var(--acc)}
-.why{border-left:2px solid color-mix(in srgb,var(--acc) 60%,transparent);padding-left:10px}
+/* tiers: quiet text tags; gold only for Strong */
+.tier{font:700 12px/1 var(--f-body);letter-spacing:0;text-transform:none;padding:4px 8px;border-radius:999px}
+.tier.t-Strong{background:var(--strong);color:var(--on-strong);box-shadow:0 0 14px color-mix(in srgb,var(--strong) 45%,transparent)}
+.tier.t-Solid{background:color-mix(in srgb,var(--acc) 16%,transparent);color:var(--acc)}
+.tier.t-Notable{background:transparent;color:var(--blue);border:1px solid color-mix(in srgb,var(--blue) 60%,transparent)}
 
-/* ---------- signal tiers ---------- */
-.tier.t-Strong{background:var(--strong);color:var(--on-strong);box-shadow:0 0 16px color-mix(in srgb,var(--strong) 50%,transparent)}
-.tier.t-Solid{box-shadow:0 0 12px color-mix(in srgb,var(--acc) 35%,transparent)}
-.sigban.t-Strong{background:linear-gradient(120deg,var(--strong),color-mix(in srgb,var(--strong) 80%,#fff 20%) 55%,var(--strong));
-  box-shadow:0 10px 34px -14px color-mix(in srgb,var(--strong) 75%,transparent)}
+/* ---------- controls ---------- */
+.ctl{gap:var(--s3)}
+.seg{border-radius:var(--r1)}
+.seg button{min-height:40px;font-size:14px}
+.btn{border-radius:var(--r1);min-height:42px}
+.pill{font:600 12px var(--f-body);letter-spacing:0;text-transform:none;padding:3px 8px;border-radius:999px}
 
-.sigban.t-Strong .chev{color:var(--on-strong);font-weight:700}
-
-/* ---------- tracker and tables ---------- */
-.tiles .tile b{font-variant-numeric:tabular-nums}
-.tscroll{border-radius:var(--r-card)}
+/* ---------- tracker, tables, notes ---------- */
+.tiles{gap:var(--s2)}
+.tile b{font-variant-numeric:tabular-nums}
+.tscroll{border-radius:var(--r2)}
+th,td{padding:10px 12px}
 thead th{position:sticky;top:0;background:var(--surface2);z-index:1}
 tbody tr:nth-child(even){background:color-mix(in srgb,var(--surface2) 35%,transparent)}
-tbody tr:hover{background:color-mix(in srgb,var(--acc) 9%,var(--surface))}
 td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
-.note{background:linear-gradient(180deg,color-mix(in srgb,var(--surface) 92%,#fff 2%),var(--surface))}
-.pill.good{box-shadow:0 0 10px color-mix(in srgb,var(--good) 30%,transparent)}
+.note{border-radius:var(--r2);padding:var(--s3) var(--s4)}
+.blk{border-radius:var(--r2);padding:var(--s4)}
+.blk h3{color:var(--acc)}
 
 /* ---------- game center sheet ---------- */
 .sheet .bk{-webkit-backdrop-filter:blur(4px);backdrop-filter:blur(4px)}
-.sc-head{background:
-    radial-gradient(320px 200px at 10% 40%,color-mix(in srgb,var(--ca,var(--hdr-acc)) 22%,transparent),transparent 70%),
-    radial-gradient(320px 200px at 90% 40%,color-mix(in srgb,var(--ch,var(--hdr-acc)) 22%,transparent),transparent 70%),
-    var(--hdr2)}
-.sc-team .big{text-shadow:0 0 30px color-mix(in srgb,var(--hdr-acc) 45%,transparent);font-variant-numeric:tabular-nums}
-.blk{border-radius:var(--r-card)}
-.blk h3{color:var(--acc)}
+.sc-team .big{font-variant-numeric:tabular-nums}
 
-/* ---------- phone: an app, not a web page ---------- */
+/* ---------- phone: an app, with the tabs at your thumb ---------- */
 @media (max-width:640px){
-  .hdr{-webkit-backdrop-filter:none;backdrop-filter:none;background:var(--hdr)}   /* a filter here would trap the fixed tab bar inside the header */
+  .hdr{background:var(--hdr)}
   .tabs{position:fixed;left:0;right:0;bottom:0;z-index:35;margin:0;padding:0 6px env(safe-area-inset-bottom,0px);
-    background:color-mix(in srgb,var(--hdr) 94%,transparent);-webkit-backdrop-filter:saturate(150%) blur(14px);backdrop-filter:saturate(150%) blur(14px);
+    background:color-mix(in srgb,var(--hdr) 95%,transparent);-webkit-backdrop-filter:saturate(150%) blur(14px);backdrop-filter:saturate(150%) blur(14px);
     border-top:1px solid rgba(255,255,255,.08);box-shadow:0 -10px 30px rgba(0,0,0,.35)}
   .tabs button{min-height:56px;padding:16px 12px 14px;font-size:16px}
-  .tabs .ind{top:0;bottom:auto;height:3px;border-radius:0 0 2px 2px}
+  .tabs .ind{top:0;bottom:auto;height:3px}
   .bar{padding-bottom:12px}
   main.in{padding-bottom:calc(120px + env(safe-area-inset-bottom,0px))}
   .dock{bottom:calc(72px + env(safe-area-inset-bottom,0px))}
-  .p-title{font-size:28px}
-  .rank{font-size:30px}
-  .game{padding:14px 12px 12px}
-  .lines{gap:6px}
-  .nums b{font-size:17px}
-  .tscroll td:first-child{white-space:normal;min-width:150px;max-width:220px}   /* long step names wrap so the numbers stay on screen */
+  .sb-ab{font-size:30px}
+  .bet-edge b{font-size:26px}
+  .tscroll td:first-child{white-space:normal;min-width:140px;max-width:220px}
 }
-
+@media (max-width:380px){
+  .bet-top{grid-template-columns:auto minmax(0,1fr) auto}
+  .bet-top>.av,.bet-top>.avs{display:none}
+}
 @media (prefers-reduced-motion:reduce){
-  .meter .fill{animation:none}
-  .sync[data-age="fresh"]::before{animation:none}
+  .meter .fill,.sync[data-age="fresh"]::before{animation:none}
 }
-/* ===== end v11 refresh ===== */
+/* ===== end v12 clean ===== */
+/* ===== v12 clean, part 2: parlays and layout fixes ===== */
+.bet-top{grid-template-columns:auto minmax(0,1fr) auto}
+.bet-top.r{grid-template-columns:auto auto minmax(0,1fr) auto}
+.ult.clean,.ticket.clean{display:grid;gap:var(--s3)}
+.ult.clean{padding:var(--s5) var(--s4) var(--s4)}
+.ult.clean .head{display:flex;justify-content:space-between;align-items:flex-end;gap:var(--s3)}
+.ult.clean .badge{display:inline-block;margin-bottom:var(--s2)}
+.ult.clean h3{margin:0}
+.ult.clean .big{font:900 56px/.9 var(--f-disp)}
+.ult.clean details.help>summary{color:var(--hdr-acc)}
+.ult.clean details.help p{color:var(--hdr-mut)}
+.ticket.clean{padding:var(--s4);border-radius:var(--r2)}
+.ticket.clean .t-head{display:flex;justify-content:space-between;align-items:center}
+.ticket.clean .t-head h3{margin:0}
+.legs{display:grid;gap:6px}
+.leg{display:grid;grid-template-columns:auto minmax(0,1fr);gap:var(--s3);align-items:center;padding:10px 12px;border-radius:var(--r1);border:0;border-left:3px solid var(--mut);background:color-mix(in srgb,var(--surface2) 60%,transparent)}
+.ult .leg{background:rgba(255,255,255,.05)}
+.leg.High{border-left-color:var(--good)}.leg.Medium{border-left-color:var(--gold)}
+.leg .av{--s:34px}
+.leg-body{display:grid;gap:2px;min-width:0}
+.leg-body b{font:700 15px/1.3 var(--f-body)}
+.t-nums{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--s2);padding:var(--s3) 0;border-top:1px solid rgba(127,150,190,.25);border-bottom:1px solid rgba(127,150,190,.25)}
+.t-nums div{display:grid;gap:2px}
+.t-nums span{font-size:var(--t-tiny);color:var(--mut)}
+.ult .t-nums span{color:var(--hdr-mut)}
+.t-nums b{font:800 22px/1.1 var(--f-disp);font-variant-numeric:tabular-nums}
+.t-nums b.pos{color:var(--acc)}.t-nums b.neg{color:var(--bad)}
+/* ===== end v12 part 2 ===== */
+/* ===== v12 part 3 ===== */
+.bet-reason{margin:0;font-size:14px;color:var(--fg)}
+.ana-lean{margin:0 0 var(--s2);font-weight:600}
+.blk .bet{background:var(--bg)}
+/* ===== end v12 part 3 ===== */
+/* ===== v12 part 4 ===== */
+.bet .bet-title{font:700 18px/1.3 var(--f-body);color:var(--fg);letter-spacing:0;text-transform:none}
+.topplay .bet .bet-title{color:var(--hdr-fg)}
+/* ===== end v12 part 4 ===== */
+/* ===== v12 part 5: tables fit a phone ===== */
+@media (max-width:640px){
+  .tscroll td .av{display:none}
+  .pgroup th,.pgroup td{padding:9px 8px}
+  .pgroup td:first-child{min-width:0;max-width:150px;white-space:normal}
+}
+.pgroup{border-radius:var(--r2)}
+/* ===== end v12 part 5 ===== */
+/* ===== v12 part 6: the hero is always night-coloured, so its card uses the dark tokens in both themes ===== */
+.hero.clean,.ult.clean{--fg:#ECF2FB;--mut:#9AAECB;--acc:#2FE6A0;--good:#2FE6A0;--surface:#0C1C36;--surface2:#13294B;--line:#1D355F;--gold:#E6B02E;--blue:#6AA8FF}
+/* ===== end v12 part 6 ===== */
 </style>
 </head>
 <body>
@@ -1074,6 +1164,57 @@ function meterEl(p){
       el('i', {class:'mk px', style:'left:' + px.toFixed(1) + '%'}), el('i', {class:'mk ex', style:'left:' + est.toFixed(1) + '%'})),
     el('div', {class:'mlab'}, el('span', {text:'Price ' + Math.round(px) + '%'}), el('span', {text:'Est ' + Math.round(est) + '%'})));
 }
+function help(text, title){
+  return el('details', {class:'help'}, el('summary', {text:title || 'How this works'}), [].concat(text).map(function(t){ return typeof t === 'string' ? el('p', {text:t}) : t; }));
+}
+function mergeHelps(root){
+  root.querySelectorAll('details.help').forEach(function(d){
+    var prev = d.previousElementSibling;
+    if (prev && prev.matches('details.help') && !d.querySelector('summary').textContent.indexOf('How this works') && !prev.querySelector('summary').textContent.indexOf('How this works')){
+      d.querySelectorAll(':scope > p').forEach(function(p){ prev.append(p); });
+      d.remove();
+    }
+  });
+}
+function confTxt(c){ return {High:'High confidence', Medium:'Medium confidence', Low:'Low confidence'}[c] || c; }
+function betFacts(p){
+  var bits = ['Model ' + pct(p.est), 'price ' + pct(p.implied)];
+  if (p.units) bits.push(p.units + 'u');
+  if (p.book) bits.push('at ' + p.book);
+  return bits.join(' · ');
+}
+function openLegOf(p){
+  var g = gameById(p.game_id); if (!g) return;
+  if (p.type === 'prop' && p.pid) openPlayer(g.id, p.pid, p.stat); else openGame(g.id);
+}
+function betCard(p, idx, opts){
+  opts = opts || {};
+  var g = gameById(p.game_id), live = started(p);
+  var art = el('article', {class:'bet c-' + p.conf + (g ? ' clk-card' : '') + (live ? ' dim' : '')},
+    el('div', {class:'bet-top' + (opts.rank ? ' r' : '')},
+      opts.rank ? el('span', {class:'bet-rank', text:String(idx + 1)}) : null,
+      pickAvatar(p, g),
+      el('div', {class:'bet-id'},
+        el('h3', {class:'bet-title', text:p.label}),
+        el('p', {class:'bet-sub'}, el('span', {class:'bet-odds', text:fo(p.odds)}), ' ', p.away + ' @ ' + p.home + (g && g.tip ? ', ' + g.tip : ''), ' ', liveEl(p.away, p.home))),
+      el('div', {class:'bet-edge' + (p.edge < 0 ? ' neg' : '')}, el('b', {text:fe(p.edge)}), el('span', {text:'edge'}))),
+    meterEl(p),
+    el('div', {class:'bet-foot'},
+      el('span', {class:'bet-facts'}, el('span', {class:'conf ' + p.conf, text:p.conf}), ' ', betFacts(p)),
+      p.sig && p.sig.tier ? tierEl(p.sig, true) : null),
+    opts.patterns && p.sig ? sigLines(p.sig, 2) : null,
+    opts.reason && p.reason ? el('p', {class:'bet-reason', text:p.reason}) : null,
+    p.flag ? el('p', {class:'bet-flag', text:p.flag.length > 140 ? p.flag.slice(0, 137) + '…' : p.flag}) : null,
+    el('div', {class:'bet-act'}, slipBtn(p), g ? el('span', {class:'bet-more', text:'Details'}) : null));
+  if (g) art.addEventListener('click', function(e){ if (e.target.closest('button,a,[data-tip]')) return; openLegOf(p); });
+  return art;
+}
+function sigLines(sig, max){
+  var items = (sig.items || []).slice().sort(function(a, b){ return b.w - a.w; });
+  var shown = items.slice(0, max || 2);
+  return el('ul', {class:'bet-why'}, shown.map(function(i){ return el('li', {text:i.t}); }),
+    items.length > shown.length ? el('li', {class:'mut', text:'+' + (items.length - shown.length) + ' more in details'}) : null);
+}
 function tileEl(k, v, tip){ return el('div', {class:'tile', 'data-tip':tip, tabindex:'0'}, el('span', {text:k}), el('b', {text:v})); }
 function table(head, rows, numFrom, onrow){
   var nf = numFrom == null ? 1 : numFrom;
@@ -1094,8 +1235,8 @@ function listBlock(title, arr){
   return el('div', {}, el('b', {class:'k', text:title}), el('ul', {}, arr.map(function(x){ return el('li', {text:x}); })));
 }
 function bestSide(r){
-  var m = r.model, o = [];
-  [['over', m.p_over, r.over], ['under', m.p_under, r.under]].forEach(function(x){
+  var m = r.model, o = [], c = r.cal || {};
+  [['over', c.over != null ? c.over : m.p_over, r.over], ['under', c.under != null ? c.under : m.p_under, r.under]].forEach(function(x){
     var pr = x[2] != null ? x[2] : -110; o.push({side:x[0], p:x[1], edge:x[1] - impl(pr), price:pr, assumed:x[2] == null});
   });
   return o[0].edge >= o[1].edge ? o[0] : o[1];
@@ -1207,46 +1348,38 @@ function shotPanel(g){
 
 /* ---- slate ---- */
 function gameCard(g, idx){
-  var L = S.latest, a = g.away, h = g.home, m = g.market, fin = g.final, mo = g.model;
-  var flags = el('div', {class:'flags'});
-  [a, h].forEach(function(t){ if (t.b2b) flags.append(el('span', {class:'pill warn', tabindex:'0', 'data-tip':t.abbr + ': ' + t.rest + '. Tired legs can cut scoring and bench minutes. The model takes 1.5 points off.', text:t.abbr + ' back-to-back'})); });
-  if (g.h2h && g.h2h.length) flags.append(el('span', {class:'pill', tabindex:'0', 'data-tip':g.h2h.join('. '), text:'Rematch'}));
-  if (g.state !== 'pre') flags.append(el('span', {class:'pill warn', text:g.state === 'in' ? 'In progress' : 'Final'}));
-  if (!m) flags.append(el('span', {class:'pill warn', text:'No line'}));
-  var wh = fin ? fin.home_win : null;
-  var wp = wh != null ? [
-    el('div', {class:'wp pre', role:'img', 'aria-label':'Model win probability ' + a.abbr + ' ' + Math.round((1 - wh) * 100) + ' percent, ' + h.abbr + ' ' + Math.round(wh * 100) + ' percent', style:'--wa:' + Math.round((1 - wh) * 1000) + 'fr;--wh:' + Math.round(wh * 1000) + 'fr'}, el('i', {class:'a'}), el('i', {class:'h'})),
-    el('div', {class:'wpl'}, el('span', {text:a.abbr + ' ' + Math.round((1 - wh) * 100) + '%'}), el('span', {text:'model win probability'}), el('span', {text:h.abbr + ' ' + Math.round(wh * 100) + '%'}))] : null;
-  var cells = el('div', {class:'lines'},
-    el('div', {class:'cell'}, el('span', {text:'Spread'}), el('b', {text:m && m.spread_home != null ? h.abbr + ' ' + sg(m.spread_home) : 'n/a'}),
-      el('small', {text:fin ? (mo ? 'Our number ' : 'Market only ') + h.abbr + ' ' + sg(-fin.margin) : ''})),
-    el('div', {class:'cell'}, el('span', {text:'Total'}), el('b', {text:m && m.total != null ? m.total : 'n/a'}), el('small', {text:fin && fin.total != null ? (mo ? 'Our number ' : 'Market only ') + fin.total : ''})),
-    el('div', {class:'cell'}, el('span', {text:'Moneyline'}), el('b', {text:m && m.ml_home != null ? fo(m.ml_home) + ' / ' + fo(m.ml_away) : 'n/a'}), el('small', {text:m ? 'home / away' : ''})));
-  var ana1 = g.analysis && g.analysis.lean ? el('p', {class:'small lean'}, el('b', {text:'Lean: '}), g.analysis.lean) : null;
-  var picks = (g.pick_objs || []).slice().sort(function(x, y){ var a1 = rankKey(x), b1 = rankKey(y); return b1[0] - a1[0] || b1[1] - a1[1]; });
-  var pk = picks.map(function(p){
-    return el('div', {class:'lpick ' + p.conf}, el('b', {}, lockSvg(p.conf), ' ', p.label, ' ', el('span', {class:'mono mut', text:fo(p.odds)}), p.sig && p.sig.tier ? [' ', tierEl(p.sig, true)] : null, ' ', slipBtn(p, true)),
-      el('span', {class:'small mut', text:p.conf + ' · est ' + pct(p.est) + ' vs price ' + pct(p.implied) + ' · edge ' + fe(p.edge) + (p.kind === 'assumed' ? ' (at -110)' : '') + ' · ' + p.units + 'u'}),
-      p.flag ? el('span', {class:'small', style:'color:var(--warn)', text:p.flag}) : null);
-  });
-  if (!pk.length && g.state === 'pre') pk.push(el('p', {class:'mut small', text:m ? 'No bet clears the 2-point edge bar on this game.' : 'No line loaded, so nothing can be priced.'}));
+  var a = g.away, h = g.home, m = g.market, fin = g.final;
   var colors = teamColors(a.abbr, h.abbr);
+  var wh = fin ? fin.home_win : null;
+  var notes = [];
+  [a, h].forEach(function(t){ if (t.b2b) notes.push(t.abbr + ' on a back-to-back'); });
+  if (g.state === 'in') notes.push('Live'); else if (g.state === 'post') notes.push('Final');
+  else if (!m) notes.push('No line yet');
+  function row(t, side, w, color){
+    return el('div', {class:'sb-row', style:'--tc:' + color},
+      logoEl(t.abbr), el('b', {class:'sb-ab', text:t.abbr}), el('span', {class:'sb-rec', text:t.record || ''}),
+      el('span', {class:'sb-wp' + (w != null && w >= .5 ? ' fav' : ''), title:'Model win chance', text:w == null ? '' : Math.round(w * 100) + '%'}));
+  }
+  var lines = el('div', {class:'g-lines'},
+    el('div', {}, el('span', {text:'Spread'}), el('b', {text:m && m.spread_home != null ? h.abbr + ' ' + sg(m.spread_home) : 'n/a'})),
+    el('div', {}, el('span', {text:'Total'}), el('b', {text:m && m.total != null ? String(m.total) : 'n/a'})),
+    el('div', {}, el('span', {text:'Moneyline'}), el('b', {text:m && m.ml_home != null ? h.abbr + ' ' + fo(m.ml_home) : 'n/a'})));
+  var picks = (g.pick_objs || []).slice().sort(function(x, y){ var a1 = rankKey(x), b1 = rankKey(y); return b1[0] - a1[0] || b1[1] - a1[1]; });
+  var plist = el('div', {class:'g-picks'}, picks.slice(0, 3).map(function(p){
+    var b = el('button', {type:'button', class:'gp c-' + p.conf},
+      el('span', {class:'gp-l', text:p.label}), el('span', {class:'gp-o', text:fo(p.odds)}), el('span', {class:'gp-e', text:fe(p.edge)}));
+    b.onclick = function(e){ e.stopPropagation(); openLegOf(p); };
+    return b;
+  }), !picks.length && g.state === 'pre' ? el('p', {class:'g-none', text:m ? 'No bet clears the bar on this game.' : 'Nothing to price until a line is posted.'}) : null);
   var np = (g.prop_rows || []).length;
-  var meta = el('div', {class:'flags'}, sigPill(g), np ? el('span', {class:'pill', text:np + ' props'}) : null,
-    el('span', {class:'pill' + (g.crew ? ' good' : ''), text:g.crew ? 'Crew posted' : 'Crew pending'}), g.analysis ? el('span', {class:'pill', text:'Analysis'}) : null);
-  var openBtn = el('button', {type:'button', class:'btn go', text:(g.state === 'in' ? 'Live game center' : 'Open game center') + ' ›', onclick:function(e){ e.stopPropagation(); openGame(g.id); }});
-  var root = el('article', {class:'game clk-card', style:'--ca:' + colors[0] + ';--ch:' + colors[1] + ';--i:' + Math.min(idx, 12)},
-    el('div', {class:'g-top'}, el('span', {class:'tip', text:g.tip || ''}), liveEl(a.abbr, h.abbr), flags),
-    el('div', {class:'matchup'},
-      el('div', {class:'team', 'data-side':'away'}, el('div', {class:'tm-row'}, logoEl(a.abbr), el('b', {class:'ab', text:a.abbr})), el('span', {class:'nm', text:a.name}), el('span', {class:'rec', text:a.record})),
-      el('span', {class:'at', text:'AT'}),
-      el('div', {class:'team home', 'data-side':'home'}, el('div', {class:'tm-row'}, logoEl(h.abbr), el('b', {class:'ab', text:h.abbr})), el('span', {class:'nm', text:h.name}), el('span', {class:'rec', text:h.record}))),
-    wp, cells, ana1, pk, el('div', {class:'go-row'}, meta, openBtn));
+  var root = el('article', {class:'game clean clk-card', style:'--ca:' + colors[0] + ';--ch:' + colors[1] + ';--i:' + Math.min(idx, 12)},
+    el('div', {class:'g-top'}, el('span', {class:'g-tip', text:g.tip || ''}), liveEl(a.abbr, h.abbr), notes.length ? el('span', {class:'g-note', text:notes.join(' · ')}) : null),
+    el('div', {class:'sb'}, row(a, 'away', wh == null ? null : 1 - wh, colors[0]), row(h, 'home', wh, colors[1])),
+    lines,
+    picks.length ? el('div', {class:'g-ph'}, el('span', {text:picks.length === 1 ? '1 pick' : picks.length + ' picks'}), picks.length > 3 ? el('span', {class:'mut', text:'top 3 shown'}) : null) : null,
+    plist,
+    el('div', {class:'g-foot'}, el('span', {class:'g-open', text:(g.state === 'in' ? 'Live game center' : 'Game center')}), np ? el('span', {class:'mut', text:np + ' props priced'}) : null));
   root.addEventListener('click', function(e){ if (e.target.closest('[data-tip],a,button')) return; openGame(g.id); });
-  root.querySelectorAll('.team').forEach(function(tm){
-    tm.addEventListener('pointerenter', function(){ root.dataset.hot = tm.dataset.side; });
-    tm.addEventListener('pointerleave', function(){ delete root.dataset.hot; });
-  });
   return root;
 }
 function renderSlate(){
@@ -1256,17 +1389,16 @@ function renderSlate(){
   var stale = Date.now() - Date.parse(L.generated_at) > 30 * 3600 * 1000;
   var pc = 0; L.games.forEach(function(g){ pc += (g.prop_rows || []).length; });
   var nh = L.picks.filter(function(p){ return p.conf === 'High'; }).length;
-  root.append(el('div', {class:'hero'},
-    el('div', {}, el('h1', {text:dayLabel(L.for_date)}),
-      el('p', {text:'Updated ' + ago(L.generated_at) + ' · built from ' + L.league.games + ' finished games · league average ' + L.league.ortg + ' points per 100 possessions, pace ' + L.league.pace + '. See the Status tab for what loaded.'})),
-    el('div', {class:'tiles'}, tileEl('Games', String(L.games.length), 'NBA games on this date.'), tileEl('Picks', String(L.picks.length), 'Bets that clear the edge bar today.'),
-      tileEl('High confidence', String(nh), 'Picks the fixed confidence rules rate High.'), tileEl('Props priced', String(pc), 'Player props from your board that were priced.'))));
+  var top = L.picks.filter(function(p){ return !started(p); }).sort(function(a, b){ var x = rankKey(a), y = rankKey(b); return y[0] - x[0] || y[1] - x[1]; })[0];
+  root.append(el('div', {class:'hero clean'},
+    el('h1', {text:dayLabel(L.for_date)}),
+    el('p', {class:'hero-sum', text:L.games.length + (L.games.length === 1 ? ' game, ' : ' games, ') + L.picks.length + (L.picks.length === 1 ? ' pick' : ' picks') + (nh ? ', ' + nh + ' high confidence' : '') + '. Updated ' + ago(L.generated_at) + '.'}),
+    top ? el('div', {class:'topplay'}, el('span', {class:'tp-k', text:'Top play today'}), betCard(top, 0, {})) : null));
   if (stale) root.append(el('div', {class:'note warn', text:'This data is more than a day old. The daily run may have failed; open the Status tab.'}));
   var eg = L.status && L.status.sources && L.status.sources.espn_games;
   if (eg && !eg.ok) root.append(el('div', {class:'note warn', text:'Game data could not be loaded in the last run (' + eg.msg + '). Open the Status tab.'}));
   else if (!L.games.length) root.append(el('div', {class:'note', text:'No NBA games are scheduled for this date.'}));
-  root.append(sigBanner());
-  root.append(el('p', {class:'small mut', text:'Tap any game for the live box score, props, officials and the full breakdown. Tap a player or a prop for his last 10 games and why the number is what it is.'}));
+  root.append(el('h2', {class:'sec', text:'Games'}));
   root.append(el('div', {class:'strip', id:'liveStrip', hidden:true, 'aria-live':'polite', 'aria-label':'Live scores'}));
   var grid = el('div', {class:'cards'}); L.games.forEach(function(g, i){ grid.append(gameCard(g, i)); }); root.append(grid);
   setTimeout(function(){ document.querySelectorAll('.wp.pre').forEach(function(x){ x.classList.remove('pre'); }); }, 80);
@@ -1342,28 +1474,7 @@ function liveTick(){
 function startLive(){ liveTick(); document.addEventListener('visibilitychange', function(){ if (!document.hidden) liveTick(); }); }
 
 /* ---- picks ---- */
-function pickCard(p, idx){
-  var g = S.latest.games.filter(function(x){ return x.id === p.game_id; })[0];
-  var av = pickAvatar(p, g);
-  var art = el('article', {class:'pick c-' + p.conf + (g ? ' clk-card' : '')},
-    el('div', {class:'p-main'}, av, el('div', {class:'p-body'},
-    el('div', {class:'p-head'}, el('span', {class:'rank', text:'#' + (idx + 1)}), lockSvg(p.conf), el('span', {class:'conf ' + p.conf, text:p.conf}), el('span', {class:'pill', text:p.type}),
-      p.kind === 'assumed' ? el('span', {class:'pill warn', text:'no price, -110 assumed'}) : null, p.sig && p.sig.tier ? tierEl(p.sig) : null),
-    el('h3', {class:'p-title'}, p.label, el('span', {class:'mono', text:fo(p.odds)})),
-    el('p', {class:'small mut'}, p.away + ' @ ' + p.home + (g && g.tip ? ' · ' + g.tip : ''), ' ', liveEl(p.away, p.home))
-    )),
-    meterEl(p),
-    el('div', {class:'nums'}, el('span', {}, 'Est ', el('b', {text:pct(p.est)})), el('span', {}, 'Price ', el('b', {text:pct(p.implied)})),
-      el('span', {}, 'Edge ', el('b', {class:p.edge >= 0 ? 'pos' : 'neg', text:fe(p.edge)})), el('span', {}, 'Stake ', el('b', {text:p.units + 'u'})),
-      p.type === 'prop' ? el('span', {}, 'Model mean ', el('b', {text:p.mean})) : null, p.type === 'prop' ? el('span', {}, 'L10 over ', el('b', {text:p.hit_l10})) : null),
-    bookLine(p, 'p'),
-    p.flag ? el('p', {class:'small', style:'color:var(--warn)', text:p.flag}) : null,
-    p.reason ? el('p', {class:'why', text:p.reason}) : null,
-    p.sig ? sigChips(p.sig, 4) : null,
-    el('div', {class:'go-row'}, slipBtn(p), g ? el('span', {class:'small go-hint', text:'Tap for the full breakdown ›'}) : null));
-  if (g) art.addEventListener('click', function(){ if (p.type === 'prop' && p.pid) openPlayer(g.id, p.pid, p.stat); else openGame(g.id); });
-  return art;
-}
+function pickCard(p, idx){ return betCard(p, idx, {rank:true}); }
 function renderPicks(){
   var root = $('#picks'); root.textContent = '';
   if (!S.latest){ return; }
@@ -1375,7 +1486,7 @@ function renderPicks(){
     el('div', {class:'seg', role:'group', 'aria-label':'Filter picks'}, [['all', 'All'], ['games', 'Games'], ['props', 'Props'], ['high', 'High']].map(function(f){
       return el('button', {type:'button', 'aria-pressed':String(S.filter === f[0]), text:f[1], onclick:function(){ S.filter = f[0]; renderPicks(); }}); })),
     el('button', {class:'btn', type:'button', text:S.hideLow ? 'Show Low confidence' : 'Hide Low confidence', onclick:function(){ S.hideLow = !S.hideLow; renderPicks(); renderCounts(); }})));
-  root.append(el('p', {class:'small mut', text:'Ranked by edge (model chance minus the price) weighted by confidence. Confidence comes from fixed rules: sample size, edge size, injury and line coverage. Early in the season most picks are Low or Medium by design. Every pick here is logged to the Tracker automatically.'}));
+  root.append(help(['Ranked by edge (the model\'s chance minus the chance the price implies), weighted by confidence.', 'Confidence comes from fixed rules: sample size, edge size, injuries and line coverage. Early in the season most picks are Low by design.', 'Every pick here is logged to the Tracker and graded automatically.']));
   if (!list.length){
     root.append(el('div', {class:'empty'}, el('b', {text:all.length ? 'Nothing matches' : 'No picks yet'}), all.length ? 'Change the filter above.' : 'No bet clears the edge bar today, or the lines have not loaded.'));
     return;
@@ -1430,19 +1541,17 @@ function mkTicket(legs){
 }
 function legRow(p, core, showCore){
   var d = el('div', {class:'leg ' + p.conf}, pickAvatar(p, null), el('div', {class:'leg-body'},
-    el('b', {}, lockSvg(p.conf), ' ', p.label, ' ', el('span', {class:'mono mut', text:fo(p.odds)}), showCore ? el('span', {class:'core', text:core ? '★ core' : '+ added'}) : null, p.sig && p.sig.tier ? [' ', tierEl(p.sig, true)] : null),
-    el('span', {class:'small mut', text:p.away + ' @ ' + p.home + ' · ' + p.type + ' · ' + p.conf + ' · est ' + pct(p.est) + ' vs price ' + pct(p.implied) + ' · edge ' + fe(p.edge) + (p.kind === 'assumed' ? ' (no price, -110 assumed)' : '')})));
+    el('b', {}, p.label, ' ', el('span', {class:'mono mut', text:fo(p.odds)})),
+    el('span', {class:'small mut', text:p.away + ' @ ' + p.home + ' · model ' + pct(p.est) + ' · edge ' + fe(p.edge) + (showCore && !core ? ' · added leg' : '')})));
   var gg = gameById(p.game_id);
-  if (gg){ d.classList.add('clk'); d.onclick = function(){ if (p.type === 'prop' && p.pid) openPlayer(gg.id, p.pid, p.stat); else openGame(gg.id); }; }
+  if (gg){ d.classList.add('clk'); d.onclick = function(){ openLegOf(p); }; }
   return d;
 }
 function ticketNums(t){
-  return el('div', {class:'nums'},
-    el('span', {}, 'Hits about ', el('b', {text:pct(t.P)})),
-    el('span', {}, '1u wins ', el('b', {text:'+' + (t.profit).toFixed(2) + 'u'})),
-    el('span', {}, 'Edge ', el('b', {class:t.ev >= 0 ? 'pos' : 'neg', text:(t.ev >= 0 ? '+' : '') + (t.ev * 100).toFixed(1) + '%'})),
-    el('span', {}, 'If half the edge is real ', el('b', {class:t.evc >= 0 ? 'pos' : 'neg', text:(t.evc >= 0 ? '+' : '') + (t.evc * 100).toFixed(1) + '%'})),
-    el('span', {}, 'Stake ', el('b', {text:t.stake ? t.stake + 'u' : 'pass'})));
+  return el('div', {class:'t-nums'},
+    el('div', {}, el('span', {text:'Hits about'}), el('b', {text:pct(t.P)})),
+    el('div', {}, el('span', {text:'Edge'}), el('b', {class:t.ev >= 0 ? 'pos' : 'neg', text:(t.ev >= 0 ? '+' : '') + (t.ev * 100).toFixed(0) + '%'})),
+    el('div', {}, el('span', {text:'Stake'}), el('b', {text:t.stake ? t.stake + 'u' : 'Pass'})));
 }
 function ticketText(t, title){
   return ['EpLocks AI ' + title + ' (' + t.n + '-leg, ' + fo(t.odds) + ')'].concat(t.legs.map(function(p){ return '- ' + p.label + ' ' + fo(p.odds) + ' (' + p.away + ' @ ' + p.home + ')'; })).concat(['Model chance ' + pct(t.P) + ', stake ' + (t.stake ? t.stake + 'u' : 'pass')]).join('\n');
@@ -1457,40 +1566,37 @@ function copyBtn(text){
 }
 function ultCard(u){
   var best = u.legs.slice().sort(function(a, b){ return a.est - b.est; })[0];
-  var why = 'This ticket has the best long-run growth of the ' + '2 to 5 leg tickets built from today\'s strongest legs, after assuming only half of each edge is real. Its shakiest leg is ' + best.label + ' (model chance ' + pct(best.est) + ').';
-  var root = el('article', {class:'ult'},
-    el('span', {class:'badge', text:'Ultimate pick'}),
-    el('div', {class:'head'}, el('div', {}, el('h3', {text:u.n + '-leg parlay'}), el('p', {class:'small', text:'Confidence ' + u.conf + ' · ' + new Set(u.legs.map(function(p){ return p.game_id; })).size + ' different games'})),
+  var root = el('article', {class:'ult clean'},
+    el('div', {class:'head'}, el('div', {}, el('span', {class:'badge', text:'Ultimate pick'}), el('h3', {text:u.n + '-leg parlay'})),
       el('div', {class:'big', text:fo(u.odds)})),
     el('div', {class:'legs'}, u.legs.map(function(p){ return legRow(p, true, false); })),
     ticketNums(u),
-    el('p', {class:'small', text:why}),
+    !u.stake ? el('p', {class:'small', style:'color:var(--warn);margin:0', text:'Thin edge: if only half of each edge is real, this loses money over time. Treat it as a pass.'}) : null,
+    help(['Of the 2 to 5 leg tickets built from today\'s best legs, this one has the best long-run growth after assuming only half of each edge is real.',
+      'Its shakiest leg is ' + best.label + ' (model chance ' + pct(best.est) + '). A 1 unit stake wins ' + u.profit.toFixed(2) + 'u. If only half of each edge is real, the edge is ' + (u.evc >= 0 ? '+' : '') + (u.evc * 100).toFixed(1) + '%.'], 'Why this ticket'),
     el('div', {class:'row'}, copyBtn(ticketText(u, 'Ultimate Pick'))));
-  if (!u.stake) root.append(el('p', {class:'small', style:'color:#ffd08a', text:'Thin edge: if only half of each edge is real, this ticket loses money over time. Treat it as a pass or a tiny stake.'}));
   return root;
 }
 function ticketCard(t, ult){
-  var isU = t.n === ult.n;
-  var root = el('article', {class:'ticket' + (isU ? ' is-ult' : '')},
-    el('div', {class:'t-head'}, el('div', {}, el('h3', {text:t.n + '-leg parlay'}), el('p', {class:'small mut', text:'Confidence ' + t.conf})),
-      el('div', {style:'display:flex;align-items:center;gap:8px'}, isU ? el('span', {class:'chip', text:'Ultimate'}) : null, el('div', {class:'t-odds', text:fo(t.odds)}))),
+  return el('article', {class:'ticket clean'},
+    el('div', {class:'t-head'}, el('h3', {text:t.n + '-leg parlay'}), el('div', {class:'t-odds', text:fo(t.odds)})),
     el('div', {class:'legs'}, t.legs.map(function(p, i){ return legRow(p, i < ult.n, true); })),
     ticketNums(t),
     el('div', {class:'row'}, copyBtn(ticketText(t, t.n + '-leg parlay'))));
-  return root;
 }
 function segCtl(label, key, opts){ return segCtlFor(label, key, opts, renderParlays); }
 function renderParlays(){
   var root = $('#parlays'); root.textContent = '';
   var L = S.latest; if (!L) return;
-  root.append(el('div', {class:'hero'}, el('div', {}, el('h1', {text:'Parlay builder'}),
-    el('p', {text:'Builds 2 to 5 leg tickets from today\'s positive-edge picks. Each bigger ticket keeps the legs of the one before it and adds the next best one, so every slip agrees with the others. The Ultimate Pick is the one the numbers like best.'}))));
-  root.append(el('div', {class:'ctl'},
+  root.append(el('div', {class:'hero clean'}, el('div', {}, el('h1', {text:'Parlay builder'}),
+    el('p', {class:'hero-sum', text:'2 to 5 leg tickets from today\'s best picks, one leg per game.'}))));
+  var optSum = {bal:'Balanced', safe:'Safest', val:'Best value'}[S.pStyle] + ', ' + {any:'any confidence', med:'Medium and up', high:'High only'}[S.pConf] + (S.pProps ? '' : ', games only');
+  root.append(el('details', {class:'opts', open:S.pOpen ? true : null, ontoggle:function(e){ S.pOpen = e.target.open; }}, el('summary', {}, el('span', {text:'Options'}), el('span', {class:'mut', text:optSum})), el('div', {class:'ctl'},
     segCtl('Style', 'pStyle', [['bal', 'Balanced'], ['safe', 'Safest'], ['val', 'Best value']]),
     segCtl('Minimum confidence', 'pConf', [['any', 'Any'], ['med', 'Medium +'], ['high', 'High only']]),
     segCtl('Legs from', 'pProps', [[true, 'Games and props'], [false, 'Games only']].map(function(o){ return [o[0], o[1]]; })),
     segCtl('Unpriced picks', 'pAssumed', [[false, 'Leave out'], [true, 'Include (-110)']]),
-    el('p', {class:'small mut', text:{bal:'Balanced ranks legs by edge, weighted by confidence.', safe:'Safest ranks legs by the model\'s chance of winning.', val:'Best value ranks legs by edge alone.'}[S.pStyle]})));
+    el('p', {class:'small mut', text:{bal:'Balanced ranks legs by edge, weighted by confidence.', safe:'Safest ranks legs by the model\'s chance of winning.', val:'Best value ranks legs by edge alone.'}[S.pStyle]}))));
   var pool = legPool(), ord = orderLegs(pool), legs = ord.legs;
   if (legs.length < 2){
     root.append(el('div', {class:'empty'}, el('b', {text:'Not enough legs yet'}),
@@ -1501,8 +1607,11 @@ function renderParlays(){
   for (var n = 2; n <= Math.min(5, legs.length); n++) tickets.push(mkTicket(legs.slice(0, n)));
   var ult = tickets.slice().sort(function(a, b){ return b.g - a.g || a.n - b.n; })[0];
   root.append(ultCard(ult));
-  root.append(el('h2', {text:'All tickets'}));
-  var grid = el('div', {class:'cards'}); tickets.forEach(function(t){ grid.append(ticketCard(t, ult)); }); root.append(grid);
+  var others = tickets.filter(function(t){ return t.n !== ult.n; });
+  if (others.length){
+    root.append(el('h2', {text:'Other sizes'}));
+    var grid = el('div', {class:'cards'}); others.forEach(function(t){ grid.append(ticketCard(t, ult)); }); root.append(grid);
+  }
   if (tickets.some(function(t){ return t.conf === 'Low'; })) root.append(el('div', {class:'note warn', text:'Some tickets include Low confidence legs. That is normal early in the season, when teams have few games, but it means the model is unsure. Keep stakes small.'}));
   var rows = pool.map(function(p, i){
     var k = p.label + '|' + p.game_id, idx = legs.indexOf(p);
@@ -1557,27 +1666,27 @@ function renderPlayers(){
   var L = S.latest;
   if (!L){ root.append(el('div', {class:'empty'}, el('b', {text:'Loading'}), 'Getting today\'s slate.')); return; }
   var m = MARKETS.filter(function(x){ return x.id === S.pMarket; })[0] || MARKETS[0];
-  root.append(el('div', {class:'hero'}, el('div', {}, el('h1', {text:'Best players to bet on'}),
-    el('p', {text:'Pick a market. The top table ranks players with a posted line by how far the model\'s chance beats the price. The tables below rank who is projected highest, even where no line is posted.'}))));
+  root.append(el('div', {class:'hero clean'}, el('div', {}, el('h1', {text:'Best players to bet on'}),
+    el('p', {class:'hero-sum', text:'Pick a market to see the best priced bets and tonight\'s projected leaders.'}))));
   root.append(el('div', {class:'mk-cards', style:'margin-top:12px'}, MARKETS.map(marketCard)));
   var bets = betsFor(m);
   var rows = bets.slice(0, 12).map(function(p, i){
-    return ['#' + (i + 1), whoEl(p.pid, p.player), betLine(p) + ' (' + fo(p.odds) + ')', p.away + ' @ ' + p.home, p.conf, p.mean, p.hit_l10, pct(p.est), fe(p.edge), p.units + 'u'];
+    return [whoEl(p.pid, p.player), betLine(p) + ' ' + fo(p.odds), pct(p.est), fe(p.edge)];
   });
   root.append(el('div', {class:'pgroup', style:'margin-top:14px'}, el('div', {class:'pg-h'}, el('div', {}, el('b', {text:m.name + ': best bets'}), el('span', {text:bets.length + ' qualifying'}))),
-    rows.length ? table(['#', 'Player', 'Bet', 'Game', 'Confidence', 'Model', 'L10 over', 'Chance', 'Edge', 'Stake'], rows, 5, function(i){ var p = bets[i]; return p && gameById(p.game_id) ? function(){ openPlayer(p.game_id, p.pid, p.stat); } : null; })
+    rows.length ? table(['Player', 'Bet', 'Model', 'Edge'], rows, 2, function(i){ var p = bets[i]; return p && gameById(p.game_id) ? function(){ openPlayer(p.game_id, p.pid, p.stat); } : null; })
       : el('div', {class:'empty'}, el('b', {text:'No priced bet in this market'}), 'Either no lines are loaded for ' + m.name.toLowerCase() + ' or none clear the edge bar. Add lines to props.txt, or set the markets the bot pulls automatically (see Status).')));
   m.stats.forEach(function(st){
     var br = boardRows(st).slice(0, 10);
     var prow = br.map(function(r, i){
       var t = r.season ? (r.l5 - r.season) / r.season : 0;
       var trend = Math.abs(t) < 0.08 ? el('span', {class:'mut', text:'steady'}) : el('span', {class:t > 0 ? 'up' : 'dn', text:(t > 0 ? '▲ ' : '▼ ') + Math.round(Math.abs(t) * 100) + '%'});
-      return ['#' + (i + 1), whoEl(r.p.pid, r.p.name + (r.p.inj ? ' [' + r.p.inj + ']' : '')), r.g.away.abbr + ' @ ' + r.g.home.abbr, r.mean, r.season, r.l5, trend, el('span', {class:'small mut', text:r.p.note && r.p.note !== 'none' ? r.p.note : ''})];
+      return [whoEl(r.p.pid, r.p.name + (r.p.inj ? ' (' + r.p.inj + ')' : '')), r.mean, r.season, trend];
     });
     root.append(el('div', {class:'pgroup', style:'margin-top:14px'}, el('div', {class:'pg-h'}, el('div', {}, el('b', {text:(STAT[st] || st) + ': projected leaders'}), el('span', {text:'tonight'}))),
-      prow.length ? table(['#', 'Player', 'Game', 'Projected', 'Season', 'Last 5', 'Form', 'Adjusted for'], prow, 3, function(i){ var r = br[i]; return function(){ openPlayer(r.g.id, r.p.pid, st); }; }) : el('div', {class:'empty'}, el('b', {text:'No projections yet'}), 'Players need at least 3 games this season.')));
+      prow.length ? table(['Player', 'Tonight', 'Season', 'Form'], prow, 1, function(i){ var r = br[i]; return function(){ openPlayer(r.g.id, r.p.pid, st); }; }) : el('div', {class:'empty'}, el('b', {text:'No projections yet'}), 'Players need at least 3 games this season.')));
   });
-  root.append(el('p', {class:'small mut', text:'Projected is the model mean for tonight: season, last-10 and last-5 averages blended, pulled toward last season while samples are small, then adjusted for teammates who are out, blowout risk and the game\'s expected pace. Form compares the last 5 games with the season average. Players ruled out are left off. Edge is in percentage points versus the posted price.'}));
+  root.append(help('Projected is the model mean for tonight: season, last-10 and last-5 averages blended, pulled toward last season while samples are small, then adjusted for teammates who are out, blowout risk and the game\'s expected pace. Form compares the last 5 games with the season average. Players ruled out are left off. Edge is in percentage points versus the posted price.'));
 }
 
 function roleTxt(r){
@@ -1591,20 +1700,22 @@ function roleTxt(r){
 function renderProps(){
   var root = $('#props'); root.textContent = '';
   var L = S.latest; if (!L) return;
-  root.append(el('div', {class:'note'},
-    el('b', {text:'How to add today\'s props'}),
+  root.append(el('div', {class:'hero clean'}, el('div', {}, el('h1', {text:'Props'}),
+    el('p', {class:'hero-sum', text:'Every priced player prop, best edge first. Tap a row for his last 10 games.'}))));
+  root.append(el('details', {class:'help'}, el('summary', {text:'Add props by hand'}),
     el('p', {class:'small', text:'Open the props.txt file in your GitHub repository, tap the pencil to edit, paste your lines, and commit. The site re-runs on its own in a few minutes. One prop per line works best in this form:'}),
     el('p', {}, el('code', {text:'Player Name | Stat | line | over price | under price'})),
-    el('p', {class:'small mut', text:'Example: Jalen Brunson | points | 27.5 | -115 | -105. Lines in any other format are read by Claude and cost a little API usage. Players are placed on teams from real box scores, not from memory. Stats: points, rebounds, assists, threes, pra, pts_reb, pts_ast, reb_ast, steals, blocks, turnovers.'})));
+    el('p', {class:'small mut', text:'Example: Jalen Brunson | points | 27.5 | -115 | -105. With the Odds API key set, props load automatically and this is only needed for books it does not cover.'})));
   var totals = 0;
   L.games.forEach(function(g){ if (g.prop_rows && g.prop_rows.length){
     totals += g.prop_rows.length;
-    var rows = g.prop_rows.map(function(r){
+    var pr = g.prop_rows.slice().sort(function(x, y){ return bestSide(y).edge - bestSide(x).edge; });
+    var rows = pr.map(function(r){
       var b = bestSide(r);
-      return [whoEl(r.pid, r.player + (r.injury ? ' [' + r.injury + ']' : '')), (STAT[r.stat] || r.stat) + ' ' + r.line, r.model.season, r.model.l10, r.model.l5, r.model.prior_mean, r.model.mean, pct(b.side === 'over' ? r.model.p_over : r.model.p_under), b.side + ' ' + fe(b.edge), el('span', {class:'small mut', text:roleTxt(r)})];
+      return [whoEl(r.pid, r.player + (r.injury ? ' (' + r.injury + ')' : '')), (SHORT[r.stat] || r.stat) + ' ' + r.line, r.model.mean, (b.side === 'over' ? 'O ' : 'U ') + pct(b.p), el('span', {class:b.edge > 0 ? 'best' : 'mut', text:fe(b.edge)})];
     });
     root.append(el('div', {class:'pgroup'}, el('div', {class:'pg-h'}, el('div', {}, el('b', {text:g.away.abbr + ' @ ' + g.home.abbr}), el('span', {text:g.prop_rows.length + ' props'}))),
-      table(['Player', 'Prop', 'Season', 'L10', 'L5', 'Last yr', 'Mean', 'Chance', 'Best side', 'Adjusted for'], rows, 2, function(i){ var r = g.prop_rows[i]; return function(){ openPlayer(g.id, r.pid, r.stat); }; })));
+      table(['Player', 'Prop', 'Proj', 'Lean', 'Edge'], rows, 2, function(i){ var r = pr[i]; return function(){ openPlayer(g.id, r.pid, r.stat); }; })));
   } });
   if (!totals) root.append(el('div', {class:'empty'}, el('b', {text:'No props priced'}), L.props_lines ? 'Lines were pasted but none matched a player playing today with at least 3 games. See below.' : 'Add lines to props.txt and they show up here, grouped by game.'));
   if (L.props_unmatched && L.props_unmatched.length) root.append(el('div', {class:'pgroup un'}, el('div', {class:'pg-h'}, el('b', {text:'Could not use (' + L.props_unmatched.length + ')'})),
@@ -1859,10 +1970,10 @@ function judgPanel(g){
   var j = g.judgment; if (!j) return null;
   var f = (g.market && g.market.fair) || {}, h = g.home.abbr;
   var rows = [[h + ' wins', pct(f.home_win), pct(j.home_win)], [h + ' covers the spread', pct(f.home_cover), pct(j.cover_home)], ['Game goes over', pct(f.over), pct(j.over)]];
-  return [table(['Outcome', 'Market (margin removed)', 'Claude\'s own read'], rows, 1),
+  return [table(['Outcome', 'Market', 'Claude'], rows, 1),
     j.why ? el('p', {class:'small', text:j.why}) : null,
     j.concern ? el('p', {class:'small', style:'color:var(--warn)', text:'Claude flagged a concern on this game, so its picks are one confidence step lower and stakes are trimmed.'}) : null,
-    el('p', {class:'small mut', text:'Claude\'s read counts for ' + Math.round((j.w != null ? j.w : 0.1) * 100) + '% of the final chance on a pick (it can move a chance by at most 4 points) and is scored against the model on every graded pick. It is an estimate written by an AI from the same data plus general basketball knowledge, not inside information.'})];
+    help(['Market is the chance with the bookmaker margin removed. Claude\'s read counts for ' + Math.round((j.w != null ? j.w : 0.1) * 100) + '% of the final chance on a pick (it can move a chance by at most 4 points) and is scored against the model on every graded pick.', 'It is an estimate written by an AI from the same data plus general basketball knowledge, not inside information.'])];
 }
 function clvStats(H){
   var rows = H.filter(function(p){ return p.close && p.clv != null; }), by = {}, tot = {n:0, pos:0, sum:0, pts:0, npts:0};
@@ -1892,9 +2003,9 @@ function trackExtras(root, H){
     var ks = Object.keys(cv.by);
     root.append(table(['Market', 'Picks', 'Beat the close', 'Edge vs close', 'Line gained'], ks.map(function(k){ var b = cv.by[k];
       return [k, b.n, pct(b.pos / b.n), (b.sum / b.n >= 0 ? '+' : '') + (100 * b.sum / b.n).toFixed(1) + '%', b.npts ? sg(b.pts / b.npts, 2) + ' pts' : 'n/a']; })));
-    root.append(el('p', {class:'small mut', text:'The closing line is the market\'s last and sharpest opinion, so picks that regularly beat it are getting better numbers than the market ends up agreeing on. It needs far fewer picks to read than win-loss does: past about 50 picks, beating the close more than half the time is the best early sign the model has real skill. Under that, it is noise.'}));
+    root.append(help('The closing line is the market\'s last and sharpest opinion, so picks that regularly beat it are getting better numbers than the market ends up agreeing on. It needs far fewer picks to read than win-loss does: past about 50 picks, beating the close more than half the time is the best early sign the model has real skill. Under that, it is noise.'));
   } else {
-    root.append(el('p', {class:'small mut', text:'Not enough yet. A few minutes before each tip-off the engine saves the market\'s closing line next to every pick that is still open; this section fills in after tonight\'s games start.'}));
+    root.append(help('Not enough yet. A few minutes before each tip-off the engine saves the market\'s closing line next to every pick that is still open; this section fills in after tonight\'s games start.'));
   }
   var js = judgStats(H), JP = (L.params && L.params.judgment) || null;
   if (JP || js.n){
@@ -1904,7 +2015,7 @@ function trackExtras(root, H){
       tile('Graded picks', String(js.n), 'Settled picks that had a Claude probability logged.'),
       tile('Claude score', js.bj != null ? js.bj.toFixed(3) : 'n/a', 'Brier score of Claude\'s probability on those picks. Lower is better; 0.250 is a coin flip.'),
       tile('Model score', js.bm != null ? js.bm.toFixed(3) : 'n/a', 'Brier score of the model\'s probability on the same picks.')));
-    root.append(el('p', {class:'small mut', text:js.n < 40 ? 'The weight stays at its starting value until 40 graded picks exist. After that it moves up (to at most double) if Claude\'s probabilities are the sharper of the two, and down to zero if they are not.' : 'The weight follows these scores: it rises (to at most double) while Claude\'s read is sharper than the model\'s and falls toward zero if it is not.'}));
+    root.append(help(js.n < 40 ? 'The weight stays at its starting value until 40 graded picks exist. After that it moves up (to at most double) if Claude\'s probabilities are the sharper of the two, and down to zero if they are not.' : 'The weight follows these scores: it rises (to at most double) while Claude\'s read is sharper than the model\'s and falls toward zero if it is not.'));
   }
   var bt = S.bt, bs = L.status && L.status.sources && L.status.sources.backtest;
   if (bt && bt.bets){
@@ -1922,25 +2033,11 @@ function trackExtras(root, H){
     var mm = bt.mae_margin || {};
     if (mm.n) root.append(el('p', {class:'small', text:'Average miss on the final margin: market line ' + mm.market + ' points, our ratings alone ' + mm.model + ', the blend ' + mm.blend + ' (' + mm.n + ' games with 25+ games of data). ' + (bt.best_w_margin != null ? 'The blend weight that fit last season best was ' + Math.round(100 * bt.best_w_margin) + '% on our ratings.' : '')}));
     if (bt.lambda != null) root.append(el('p', {class:'small', text:'In the replay the model\'s edges were about ' + Math.round(100 * bt.lambda) + '% real, so live game picks start from ' + Math.round(100 * Math.max(0.3, Math.min(1, bt.lambda))) + '% of the raw edge and keep adjusting from graded results.'}));
-    root.append(el('p', {class:'small mut', text:(bt.note || '') + ' Season ' + bt.season + '. A replay uses today\'s method on yesterday\'s games, so it tells you how the approach would have behaved, not what will happen. Props are not replayed because past prop lines are not available.'}));
-  } else if (bs && !bs.ok){
-    root.append(el('h2', {text:'Last season, replayed'}));
-    root.append(el('p', {class:'small mut', text:bs.msg}));
+    root.append(help((bt.note || '') + ' Season ' + bt.season + '. A replay uses today\'s method on yesterday\'s games, so it tells you how the approach would have behaved, not what will happen. Props are not replayed because past prop lines are not available.'));
   }
 }
 
-function pickLine(g, p){
-  var go_ = p.type === 'prop' && p.pid ? function(){ openPlayer(g.id, p.pid, p.stat); } : null;
-  var d = el('div', {class:'lpick ' + p.conf + (go_ ? ' clk' : ''), tabindex:go_ ? '0' : null, role:go_ ? 'link' : null},
-    el('b', {}, lockSvg(p.conf), ' ', p.label, ' ', el('span', {class:'mono mut', text:fo(p.odds)}), go_ ? el('span', {class:'chev', text:'›'}) : null),
-    el('span', {class:'small mut', text:p.conf + ' · est ' + pct(p.est) + ' vs price ' + pct(p.implied) + ' · edge ' + fe(p.edge) + (p.kind === 'assumed' ? ' (at -110)' : '') + ' · ' + p.units + 'u'}),
-    bookLine(p, 'span'),
-    p.flag ? el('span', {class:'small', style:'color:var(--warn)', text:p.flag}) : null,
-    p.reason ? el('span', {class:'small', text:p.reason}) : null,
-    p.sig ? sigChips(p.sig, 4) : null, el('span', {class:'row-btn'}, slipBtn(p)));
-  if (go_){ d.onclick = go_; d.onkeydown = function(e){ if (e.key === 'Enter' || e.key === ' '){ e.preventDefault(); go_(); } }; }
-  return d;
-}
+function pickLine(g, p){ return betCard(p, 0, {reason:true}); }
 function numbersTable(g){
   var h = g.home, m = g.market, mo = g.model, bl = g.blend, ad = g.adjust || {}, fin = g.final, cr = g.crew;
   var sp = function(x){ return x == null ? 'n/a' : h.abbr + ' ' + sg(-x); };
@@ -1979,8 +2076,10 @@ function overTab(g){
   kids.push(blk('Our picks on this game', picks.length ? picks.map(function(p){ return pickLine(g, p); })
     : el('p', {class:'small mut', text:g.state !== 'pre' ? 'The game has started, so picks are locked.' : g.market ? 'No bet clears the 2-point edge bar on this game.' : 'No line loaded, so nothing can be priced.'})));
   if (g.analysis){
-    kids.push(blk('Analysis', el('div', {class:'ana'}, el('p', {}, el('b', {text:'Lean: '}), g.analysis.lean),
-      listBlock('Why', g.analysis.why), listBlock('Risks', g.analysis.risks), listBlock('Matchups', g.analysis.matchups), listBlock('Verify before betting', g.analysis.verify))));
+    var more = (g.analysis.risks || []).length + (g.analysis.matchups || []).length + (g.analysis.verify || []).length;
+    kids.push(blk('Analysis', el('div', {class:'ana'}, el('p', {class:'ana-lean', text:g.analysis.lean}),
+      listBlock('Why', (g.analysis.why || []).slice(0, 3)),
+      more ? el('details', {class:'help'}, el('summary', {text:'Risks, matchups and what to check'}), listBlock('Risks', g.analysis.risks), listBlock('Matchups', g.analysis.matchups), listBlock('Verify before betting', g.analysis.verify)) : null)));
   } else kids.push(blk('Analysis', el('p', {class:'small mut', text:g.state === 'pre' ? 'No written analysis for this game (the Claude step did not run or returned nothing). The numbers are still model output.' : 'Game has started, so no new analysis.'})));
   var jp_ = judgPanel(g); if (jp_) kids.push(blk('Claude\'s own read', jp_));
   kids.push(blk('How the numbers were built', numbersTable(g)));
@@ -2128,6 +2227,7 @@ function breakdownList(g, r, pick){
   if (r.mult && r.mult !== 1) L.push('Claude\'s adjustment x' + Number(r.mult).toFixed(2) + (r.note ? ': ' + r.note : '') + ' (never more than 10%).');
   else if (r.note) L.push('Claude\'s note: ' + r.note);
   L.push('Result: expects ' + f1(m.mean) + ' ' + (STAT[r.stat] || r.stat).toLowerCase() + ' with a typical swing of about ' + f1(m.sd) + ', which makes the over ' + pct(m.p_over) + ' and the under ' + pct(m.p_under) + ' before the self-check.');
+  if (!pick && r.cal) L.push('Self-check: the model\'s own track record and the small sample shrink these toward the price, to ' + pct(r.cal.over) + ' over and ' + pct(r.cal.under) + ' under.');
   if (pick && pick.est_raw != null && Math.abs(pick.est_raw - pick.est) > 0.004) L.push('Self-check: the model\'s own track record shrinks the edge toward the price, so the final chance is ' + pct(pick.est) + ' instead of ' + pct(pick.est_raw) + '.');
   if (r.vs_opp) L.push('Against this opponent he has averaged ' + f1(r.vs_opp.avg) + ' in ' + r.vs_opp.n + ' game' + (r.vs_opp.n === 1 ? '' : 's') + ' (small sample, context only).');
   L.push('Minutes: ' + f1(m.min_avg) + ' per game, ' + f1(m.min_l5) + ' over the last 5. Hit the over in ' + m.hit_l10 + ' of the last ' + m.n_l10 + ' and ' + m.hit_all + ' of ' + m.n + ' this season.');
@@ -2160,7 +2260,7 @@ function playerBody(g, pid, stat){
     var verdict = pk ? 'EpLocks pick: ' + pk.label + ' (' + fo(pk.odds) + ') · ' + pk.conf + ' · ' + pk.units + 'u'
       : row.skipped ? 'No pick: the analysis or the injury report ruled this one out.' : 'No pick: the edge does not clear the bar.';
     var sides = ['over', 'under'].map(function(sd){
-      var p_ = sd === 'over' ? row.model.p_over : row.model.p_under, pr = sd === 'over' ? row.over : row.under, e = p_ - impl(pr != null ? pr : -110);
+      var p_ = row.cal && row.cal[sd] != null ? row.cal[sd] : (sd === 'over' ? row.model.p_over : row.model.p_under), pr = sd === 'over' ? row.over : row.under, e = p_ - impl(pr != null ? pr : -110);
       return [sd.charAt(0).toUpperCase() + sd.slice(1) + ' ' + row.line, pr != null ? fo(pr) : '-110*', pct(impl(pr != null ? pr : -110)), pct(p_), fe(e)];
     });
     var pc = [el('div', {class:'pc-top'}, el('b', {class:'pc-title', text:(STAT[row.stat] || row.stat) + ' ' + row.line}), el('span', {class:'pill' + (pk ? ' good' : ''), text:pk ? pk.conf + ' pick' : 'no pick'})),
@@ -2305,7 +2405,7 @@ function calProp(p, odds){
 /* a prop row the engine did not turn into a logged pick, read the same way (calibrated), so Ace can still talk about it */
 function leanPick(g, r, side){
   var m = r.model, over = side === 'over', priced = r[side] != null, o = priced ? r[side] : -110;
-  var est = calProp(over ? m.p_over : m.p_under, o), imp = impl(o), nm = r.player || r.name || 'Player';
+  var est = r.cal && r.cal[over ? 'over' : 'under'] != null ? r.cal[over ? 'over' : 'under'] : calProp(over ? m.p_over : m.p_under, o), imp = impl(o), nm = r.player || r.name || 'Player';
   return {type:'prop', side:side, label:nm + ' ' + side + ' ' + r.line + ' ' + (LBL[r.stat] || r.stat), line:r.line, odds:o, est:Math.round(est * 1000) / 1000, implied:Math.round(imp * 1000) / 1000,
     edge:Math.round((est - imp) * 1000) / 1000, kind:priced ? 'priced' : 'assumed', conf:'Low', units:0, player:nm, stat:r.stat, pid:r.pid, mean:m.mean,
     hit_l10:(over ? m.hit_l10 : m.n_l10 - m.hit_l10) + '/' + m.n_l10, flag:'Lean: a model reading that did not make the logged pick list (thin edge or low confidence). It is not tracked on the Tracker.',
@@ -2404,33 +2504,27 @@ function sigBanner(){
   return d;
 }
 function sigCard(it, i){
-  var p = it.p, sig = it.sig, g = it.g, live = started(p);
-  var art = el('article', {class:'sigc t-' + sig.tier + ' clk-card' + (live ? ' dim' : ''), style:'--i:' + Math.min(i, 12) + ';--v:' + sig.score},
-    el('div', {class:'sc-top'}, pickAvatar(p, g), el('div', {class:'sc-id'}, el('h3', {class:'p-title'}, p.label, el('span', {class:'mono', text:fo(p.odds)})),
-      el('p', {class:'small mut'}, p.away + ' @ ' + p.home + (g.tip ? ' · ' + g.tip : ''), ' ', liveEl(p.away, p.home))),
-      el('div', {class:'ring', style:'--v:' + sig.score, title:'Signal strength ' + sig.score + ' out of 100'}, el('b', {text:String(sig.score)}))),
-    el('div', {class:'sc-tags'}, tierEl(sig), el('span', {class:'pill', text:p.type}), p.lean ? el('span', {class:'pill', text:'lean, not logged'}) : el('span', {class:'conf ' + p.conf, text:p.conf}),
-      p.kind === 'assumed' ? el('span', {class:'pill warn', text:'no price, -110 assumed'}) : null, live ? el('span', {class:'pill warn', text:'started'}) : null),
-    sigList(sig),
-    el('div', {class:'nums'}, el('span', {}, 'Est ', el('b', {text:pct(p.est)})), el('span', {}, 'Price ', el('b', {text:pct(p.implied)})),
-      el('span', {}, 'Edge ', el('b', {class:p.edge >= 0 ? 'pos' : 'neg', text:fe(p.edge)})), p.units ? el('span', {}, 'Stake ', el('b', {text:p.units + 'u'})) : null),
-    el('div', {class:'go-row'}, slipBtn(p), el('span', {class:'small go-hint', text:'Tap for the full breakdown ›'})));
-  art.addEventListener('click', function(e){ if (e.target.closest('button,a')) return; openLeg(p); });
-  return art;
+  var p = it.p;
+  var card = betCard(p, i, {patterns:true});
+  card.classList.add('sig-' + it.sig.tier);
+  if (p.lean){ var fl = card.querySelector('.bet-flag'); if (fl) fl.remove(); }
+  if (p.lean) card.querySelector('.bet-facts').append(el('span', {class:'mut', text:' · lean, not logged'}));
+  return card;
 }
 function renderSignals(){
   var root = $('#signals'); root.textContent = '';
   var L = S.latest; if (!L) return;
   var all = sigBoard(), st = sigStats();
   var cnt = {Strong:0, Solid:0, Notable:0}; all.forEach(function(x){ if (!started(x.p)) cnt[x.sig.tier]++; });
-  root.append(el('div', {class:'hero'}, el('div', {}, el('h1', {text:'Smart Signals'}),
-    el('p', {text:'Where several independent patterns line up on the same bet: a hot hit rate, a real cushion over the line, a favorable matchup, a role change, pace. The more that agree, the higher the tier. Signals sort the board for you. They never change the model\'s chance or the stake.'})),
-    el('div', {class:'tiles'}, tileEl('Strong', String(cnt.Strong), 'Four or more points of agreeing patterns.'), tileEl('Solid', String(cnt.Solid), 'Two and a half or more points of agreeing patterns.'),
-      tileEl('Notable', String(cnt.Notable), 'One and a half or more points of agreeing patterns.'), tileEl('On the board', String(all.length), 'Every bet with at least a Notable signal, started games included.'))));
-  root.append(el('div', {class:'ctl'},
+  root.append(el('div', {class:'hero clean'}, el('div', {}, el('h1', {text:'Smart Signals'}),
+    el('p', {class:'hero-sum', text:'Bets where several independent patterns point the same way.'})),
+    el('p', {class:'hero-sum', text:cnt.Strong + ' Strong, ' + cnt.Solid + ' Solid, ' + cnt.Notable + ' Notable on the board today.'})));
+  root.append(help(['A signal is a pattern that has to be true before it counts: a hot hit rate, a real cushion over the line, a favorable matchup, a role change, pace. The more that agree, the higher the tier.', 'Signals sort the board. They never change the model\'s chance or the stake.']));
+  var sgSum = (S.sgTier === 'all' ? 'All tiers' : S.sgTier) + ', ' + {all:'everything', prop:'props', game:'games'}[S.sgType] + (S.sgLive ? ', started games shown' : '');
+  root.append(el('details', {class:'opts', open:S.sgOpen ? true : null, ontoggle:function(e){ S.sgOpen = e.target.open; }}, el('summary', {}, el('span', {text:'Filters'}), el('span', {class:'mut', text:sgSum})), el('div', {class:'ctl'},
     segCtlFor('Strength', 'sgTier', [['all', 'All'], ['Strong', 'Strong'], ['Solid', 'Solid'], ['Notable', 'Notable']], renderSignals),
     segCtlFor('Show', 'sgType', [['all', 'Everything'], ['prop', 'Props'], ['game', 'Games']], renderSignals),
-    segCtlFor('Started games', 'sgLive', [[false, 'Hide'], [true, 'Show']], renderSignals)));
+    segCtlFor('Started games', 'sgLive', [[false, 'Hide'], [true, 'Show']], renderSignals))));
   var list = all.filter(function(x){ return (S.sgTier === 'all' || x.sig.tier === S.sgTier) && (S.sgType === 'all' || x.kind === S.sgType) && (S.sgLive || !started(x.p)); });
   if (!list.length){
     root.append(el('div', {class:'empty'}, el('b', {text:all.length ? 'Nothing matches' : 'No standout patterns yet'}),
@@ -2444,7 +2538,7 @@ function renderSignals(){
   root.append(el('h2', {text:'Do signals actually work? The record'}));
   if (tr.length || kr.length){
     root.append(el('div', {class:'cards'}, tr.length ? table(['Tier', 'W-L', 'Win %', 'Units'], tr, 1) : null, kr.length ? table(['Pattern', 'W-L', 'Win %', 'Units'], kr, 1) : null));
-    root.append(el('p', {class:'small mut', text:'Only settled picks with a real price count. A win percentage is shown once a row has 20 settled picks; before that the sample is too small to mean anything. Compare these with the overall record on the Tracker tab: signals earn their place only if they beat it.'}));
+    root.append(help('Only settled picks with a real price count. A win percentage is shown once a row has 20 settled picks; before that the sample is too small to mean anything. Compare these with the overall record on the Tracker tab: signals earn their place only if they beat it.'));
   } else {
     root.append(el('div', {class:'note'}, 'No settled picks carry a signal yet. From today every pick is logged with its patterns, and this table fills in as games finish. Until a row has 20 settled picks, treat the tiers as a way to sort the board, not as proof.'));
   }
@@ -3123,6 +3217,13 @@ function stats(list){
 /* ---- auditor ---- */
 var AUD_LBL = {TRUST_MORE:['Trust more','good'], TRUST_LESS:['Trust less','warn'], NEUTRAL:['Neutral',''], NOT_ENOUGH_DATA:['Learning','']};
 var AUD_KIND = {market:'Markets', signal:'Signals', confidence:'Confidence', edge:'Edge size'};
+function audName(g){
+  if (g.kind === 'market') return audKey(g);
+  if (g.kind === 'signal') return g.key === 'no signal' ? 'No signal' : 'Signal: ' + (SIGL[g.key] || audKey(g));
+  if (g.kind === 'confidence') return g.key + ' confidence';
+  if (g.kind === 'edge') return 'Edge ' + g.key;
+  return audKey(g);
+}
 function audKey(g){
   if (g.kind === 'market') return g.key.indexOf('prop:') === 0 ? (STAT[g.key.slice(5)] || g.key.slice(5)) + ' props' : g.key.charAt(0).toUpperCase() + g.key.slice(1);
   return g.key.charAt(0).toUpperCase() + g.key.slice(1);
@@ -3133,7 +3234,7 @@ function renderReplay(root){
   var ks = Object.keys(r.stats);
   if (!ks.length) return;
   root.append(el('h2', {text:'Prop model check'}));
-  root.append(el('p', {class:'small mut', text:'Every game of last season (' + (r.games || 0) + ' games) was replayed. Before each game the prop model predicted every rotation player from his earlier games only, then the box score showed what happened. If the model is honest, about 50% of results land inside its middle-50% range and 80% inside its middle-80% range. The fix column is the range correction the daily run now applies.'}));
+  root.append(help('Every game of last season (' + (r.games || 0) + ' games) was replayed. Before each game the prop model predicted every rotation player from his earlier games only, then the box score showed what happened. If the model is honest, about 50% of results land inside its middle-50% range and 80% inside its middle-80% range. The fix column is the range correction the daily run now applies.'));
   root.append(table(['Stat', 'Predictions', 'In 50% range', 'In 80% range', 'Range fix'], ks.map(function(k){
     var v = r.stats[k];
     return [STAT[k] || k, Number(v.n).toLocaleString(), pct(v.in50), pct(v.in80), v.use ? 'x' + Number(v.s).toFixed(2) : 'not used'];
@@ -3156,17 +3257,16 @@ function renderAudit(root){
   if (a.summary) box.append(el('p', {class:'small', text:a.summary}));
   if (a.yesterday) box.append(el('p', {class:'small mut', text:a.yesterday}));
   if (a.lessons && a.lessons.length) box.append(el('ul', {class:'small', style:'margin:8px 0 0;padding-left:18px'}, a.lessons.map(function(t){ return el('li', {text:t}); })));
-  box.append(el('p', {class:'small mut', style:'margin-top:8px', text:'Each morning the auditor reviews every graded pick, rates what is really winning against the break-even of the prices taken, and the bot reads these lessons before it analyzes today\'s games. A market rated "Trust less" on 50+ graded picks gets lower confidence and half the stake until it recovers.'}));
+  box.append(help(['Each morning the auditor reviews every graded pick and rates what is really winning against the break-even of the prices taken.', 'The bot reads these lessons before it analyzes the day\'s games. A market rated "Trust less" on 50+ graded picks gets lower confidence and half the stake until it recovers.']));
   root.append(box);
   var rows = (a.groups || []).filter(function(g){ return g.kind !== 'overall'; });
   if (!rows.length) return;
   root.append(el('h2', {text:'What is working'}));
-  root.append(table(['Group', 'W-L-P', 'Win %', 'Break-even', 'Units', 'Rating'], rows.map(function(g){
+  root.append(table(['Group', 'W-L', 'Units', 'Rating'], rows.map(function(g){
     var lb = AUD_LBL[g.rating] || [g.rating, ''];
-    return [(AUD_KIND[g.kind] || g.kind) + ': ' + audKey(g), g.w + '-' + g.l + '-' + g.p, g.win == null ? 'n/a' : pct(g.win), g.breakeven == null ? 'n/a' : pct(g.breakeven),
-      (g.net >= 0 ? '+' : '') + g.net.toFixed(2), el('span', {class:'pill' + (lb[1] ? ' ' + lb[1] : ''), text:lb[0]})];
+    return [audName(g), g.w + '-' + g.l + (g.p ? '-' + g.p : ''), (g.net >= 0 ? '+' : '') + g.net.toFixed(2), el('span', {class:'pill' + (lb[1] ? ' ' + lb[1] : ''), text:lb[0]})];
   })));
-  root.append(el('p', {class:'small mut', text:'"Learning" means fewer than 20 graded picks in that group, too few to judge. Ratings need a clear gap from break-even, and a bigger one under 50 picks.'}));
+  root.append(help('"Learning" means fewer than 20 graded picks in that group, too few to judge. Ratings need a clear gap from break-even, and a bigger one under 50 picks.'));
 }
 
 function renderTracker(){
@@ -3178,13 +3278,15 @@ function renderTracker(){
     tile('Win %', dec ? (100 * st.w / dec).toFixed(1) + '%' : 'n/a', 'Wins divided by wins plus losses.'),
     tile('Units', (st.net >= 0 ? '+' : '') + st.net.toFixed(2), 'Profit in units at the posted price. Picks without a real price are left out.'),
     tile('ROI', st.stake ? (100 * st.net / st.stake).toFixed(1) + '%' : 'n/a', 'Net units divided by units risked.')));
-  root.append(el('p', {class:'small mut', text:'Every pick the site publishes is logged here and graded automatically from real final box scores. Player props with a player who did not play are voided. Nothing is hand-picked after the fact.'}));
+  root.append(help('Every pick the site publishes is logged here and graded automatically from real final box scores. Player props with a player who did not play are voided. Nothing is hand-picked after the fact.'));
   renderAudit(root);
   renderReplay(root);
   var open = H.filter(function(p){ return !p.result; }).length, unp = H.filter(function(p){ return p.result && p.result !== 'V' && p.kind === 'assumed'; }).length;
-  if (open || unp) root.append(el('p', {class:'small mut', text:[open ? open + ' pick' + (open === 1 ? ' is' : 's are') + ' still open.' : '', unp ? unp + ' graded pick' + (unp === 1 ? ' had' : 's had') + ' no real price and ' + (unp === 1 ? 'is' : 'are') + ' left out of the record and ROI.' : ''].join(' ').trim()}));
-  var types = Object.keys(st.by);
-  if (types.length) root.append(table(['Market', 'W-L-P', 'Units'], types.map(function(k){ var b = st.by[k]; return [k, b.w + '-' + b.l + '-' + b.p, (b.net >= 0 ? '+' : '') + b.net.toFixed(2)]; })));
+  if (open || unp) root.append(help([open ? open + ' pick' + (open === 1 ? ' is' : 's are') + ' still open.' : '', unp ? unp + ' graded pick' + (unp === 1 ? ' had' : 's had') + ' no real price and ' + (unp === 1 ? 'is' : 'are') + ' left out of the record and ROI.' : ''].join(' ').trim()));
+  if (!(S.latest && S.latest.audit && (S.latest.audit.groups || []).length)){
+    var types = Object.keys(st.by);
+    if (types.length) root.append(table(['Market', 'W-L-P', 'Units'], types.map(function(k){ var b = st.by[k]; return [k, b.w + '-' + b.l + '-' + b.p, (b.net >= 0 ? '+' : '') + b.net.toFixed(2)]; })));
+  }
   trackExtras(root, H);
   var cf = Object.keys(st.conf);
   if (cf.length){
@@ -3193,7 +3295,7 @@ function renderTracker(){
       var x = st.conf[c]; return [c, x.n, x.n ? pct(x.est / x.n) : 'n/a', x.n ? pct(x.w / x.n) : 'n/a', (x.net >= 0 ? '+' : '') + x.net.toFixed(2)]; })));
     var bks = Object.keys(st.buckets).map(Number).sort(function(a, b){ return a - b; });
     if (bks.length) root.append(table(['Estimated win chance', 'Picks', 'Model said', 'Actually won'], bks.map(function(k){ var b = st.buckets[k]; return [(k * 10) + '-' + (k * 10 + 10) + '%', b.n, pct(b.est / b.n), pct(b.w / b.n)]; })));
-    root.append(el('p', {class:'small mut', text:'If "Model said" runs well above "Actually won" over a large sample, treat the model\'s probabilities as too high. Samples under about 30 picks per row mean very little.'}));
+    root.append(help('If "Model said" runs well above "Actually won" over a large sample, treat the model\'s probabilities as too high. Samples under about 30 picks per row mean very little.'));
   }
   if (!H.length){ root.append(el('div', {class:'empty'}, el('b', {text:'Nothing logged yet'}), 'Today\'s picks are logged when the daily run publishes them and graded after the games finish.')); return; }
   root.append(el('h2', {text:'Pick history'}));
@@ -3276,7 +3378,7 @@ function renderStatus(){
   root.append(el('div', {class:'note'}, el('b', {text:'Last run: '}), new Date(L.generated_at).toLocaleString(), el('br'),
     'Written analysis: ' + (L.model ? 'on, model ' + L.model : 'OFF (no API key)'), el('br'),
     'Model settings: home edge ' + L.params.home_edge + ' pts, margin spread ' + L.params.sd_margin + ', total spread ' + L.params.sd_total + ', back-to-back ' + L.params.b2b_points + ' pts.', (L.odds && L.odds.left != null) ? el('br') : null, (L.odds && L.odds.left != null) ? 'Odds API credits left this month: ' + L.odds.left + '.' : null));
-  var sources = L.status.sources, names = {espn_games:'Game results and box scores', ratings:'Team ratings', espn_injuries:'Injury report', anthropic:'Claude analysis', props_parse:'Props read by Claude', prior_season:'Last season as a starting point', shot_data:'Shot locations (play-by-play)', calibration:'Self-check against graded results', position_defense:'Defense by position', team_profiles:'Coaching tendencies (measured)', notes:'Your notes (notes.txt)', referees:'Referees (measured from box scores)', odds_api:'Player prop prices (Odds API)', odds_games:'Game prices across books (Odds API)', judgment:'Claude\'s own read', backtest:'Last-season backtest', closing:'Closing lines (CLV)'};
+  var sources = L.status.sources, names = {espn_games:'Game results and box scores', ratings:'Team ratings', espn_injuries:'Injury report', anthropic:'Claude analysis', props_parse:'Props read by Claude', prior_season:'Last season as a starting point', shot_data:'Shot locations (play-by-play)', calibration:'Self-check against graded results', position_defense:'Defense by position', team_profiles:'Coaching tendencies (measured)', notes:'Your notes (notes.txt)', referees:'Referees (measured from box scores)', odds_api:'Player prop prices (Odds API)', odds_games:'Game prices across books (Odds API)', judgment:'Claude\'s own read', backtest:'Last-season backtest', closing:'Closing lines (CLV)', side_model:'Who is playing and schedule', prop_replay:'Prop model check (last season)', auditor:'Auditor (learns from results)', alerts:'Phone alerts'};
   var box = el('div', {class:'note'}, el('div', {class:'src'}, Object.keys(sources).map(function(k){
     return [el('span', {class:'dot' + (sources[k].ok ? '' : ' bad')}), el('div', {}, el('b', {text:(names[k] || k) + (sources[k].ok ? '' : ' (problem)')}), el('p', {class:'small mut', text:sources[k].msg || ''}))];
   }).reduce(function(a, b){ return a.concat(b); }, [])));
@@ -3311,6 +3413,8 @@ function showTab(t){
   moveInd();
   ({slate:renderSlate, signals:renderSignals, picks:renderPicks, parlays:renderParlays, players:renderPlayers, props:renderProps, track:renderTracker, method:renderMethod, status:renderStatus})[t]();
   var sec = $('#' + t); sec.classList.remove('enter'); void sec.offsetWidth; sec.classList.add('enter');
+  mergeHelps(sec);
+  try { var tb = $('.tabs [data-tab="' + t + '"]'); if (tb && tb.scrollIntoView) tb.scrollIntoView({block:'nearest', inline:'center'}); } catch(e){}
   if (t === 'track' || t === 'parlays' || t === 'slate') animateNums(sec);
   try { if (location.hash.slice(1) !== t) history.replaceState(null, '', '#' + t); } catch(e){}
   applyLive();
