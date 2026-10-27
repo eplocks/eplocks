@@ -5,12 +5,17 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>EpLocks AI</title>
 <meta name="description" content="EpLocks AI: NBA game and player-prop estimates built from real box scores, with every pick logged and graded.">
-<meta name="theme-color" content="#0b1f3a">
+<meta name="theme-color" content="#040C19">
 <script>try{var t_=localStorage.getItem("eplocks_theme");if(t_==="light"||t_==="dark")document.documentElement.setAttribute("data-theme",t_)}catch(e){}</script>
 <meta property="og:title" content="EpLocks AI">
 <meta property="og:description" content="NBA game and player-prop estimates built from real box scores, with every pick logged and graded.">
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230b1f3a'/%3E%3Cpath d='M10.5 14.2V10.5a5.5 5.5 0 0 1 11 0v3.7' fill='none' stroke='%2334d399' stroke-width='3' stroke-linecap='round'/%3E%3Crect x='6' y='13.5' width='20' height='14' rx='2.5' fill='%2334d399'/%3E%3Cpath d='M11 16.6h10v2.2h-7.8v1.5h6.2v2.2h-6.2v1.6H21v2.2H11z' fill='%230b1f3a'/%3E%3C/svg%3E">
-<link rel="apple-touch-icon" href="logo.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="EpLocks">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;800;900&family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap">
@@ -3593,6 +3598,10 @@ Promise.all([getJson('data/latest.json'), getJson('data/history.json', []), getJ
   $('#sync').textContent = 'No data yet'; renderSlate(); moveInd();
 });
 })();
+/* installable app with offline support: the service worker keeps the last data for when there is no signal */
+if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
+  window.addEventListener('load', function(){ navigator.serviceWorker.register('sw.js').catch(function(){}); });
+}
 </script>
 </body>
 </html>
