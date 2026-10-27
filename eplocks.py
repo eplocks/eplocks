@@ -1107,14 +1107,98 @@ STAT_ALIAS = {
     'rebounds+assists': 'reb_ast', 'stl': 'steals', 'steals': 'steals', 'blk': 'blocks', 'blocks': 'blocks', 'to': 'turnovers', 'tov': 'turnovers', 'turnovers': 'turnovers'}
 
 
+# ----------------------------------------------------------------------------- how each player handles adversity
+# Splits only on situations that are known before tip-off (never "in losses": nobody knows the result beforehand):
+#   afterL: his team lost its last game        dog: his team is clearly worse than tonight's opponent (record so far)
+#   b2b:    second night of a back-to-back     rev: tonight's opponent beat his team the last time they met this season
+# Each split is his average in those games against his normal average, pulled hard toward normal while he has few such games.
+# How much of a split to trust (k) is learned by the replay on two seasons, and only kept if it helps on games it never fit on.
+ADV_CTX = ('afterL', 'dog', 'b2b', 'rev')
+ADV_LABEL = {'afterL': 'after a team loss', 'dog': 'as a clear underdog', 'b2b': 'on the second night of a back-to-back', 'rev': 'against a team that beat them last time'}
+ADV_K = 12.0             # games in a situation before his own split gets half its weight
+ADV = {'k': {c: 0.0 for c in ADV_CTX}}
+ADV_CAP = 0.10           # the most these splits can move a projection, either way
+
+
+class TeamState:
+    """Running record of each team through the season, to say what situation a team is in before each game."""
+
+    def __init__(self):
+        self.last, self.w, self.l, self.meet = {}, {}, {}, {}
+
+    def ctx(self, team, opp, date):
+        d = dt.date.fromisoformat(date)
+        lt = self.last.get(team)
+        wt, lt_ = self.w.get(team, 0), self.l.get(team, 0)
+        wo, lo = self.w.get(opp, 0), self.l.get(opp, 0)
+        dog = 0
+        if wt + lt_ >= 5 and wo + lo >= 5 and wt / float(wt + lt_) - wo / float(wo + lo) <= -0.15:
+            dog = 1
+        return {'afterL': 1 if lt and not lt[1] else 0,
+                'dog': dog,
+                'b2b': 1 if lt and (d - dt.date.fromisoformat(lt[0])).days == 1 else 0,
+                'rev': 1 if self.meet.get((team, opp)) is False else 0}
+
+    def add(self, date, a, ap, b, bp):
+        if ap is None or bp is None:
+            return
+        for t, o, won in ((a, b, ap > bp), (b, a, bp > ap)):
+            self.last[t] = (date, won)
+            self.w[t] = self.w.get(t, 0) + (1 if won else 0)
+            self.l[t] = self.l.get(t, 0) + (0 if won else 1)
+            self.meet[(t, o)] = won
+
+
+def adv_terms(gl, stat, ctx):
+    """For each situation he is in tonight: weight x (his average in such games / his normal average - 1)."""
+    fn = STAT_FN[stat]
+    if not ctx or not gl:
+        return {}
+    allv = [fn(g) for g in gl]
+    base = mean(allv)
+    if base <= 0:
+        return {}
+    out = {}
+    for c in ADV_CTX:
+        if not ctx.get(c):
+            continue
+        vs = [fn(g) for g in gl if (g.get('cx') or {}).get(c)]
+        if len(vs) < 3:
+            continue
+        out[c] = (len(vs) / (len(vs) + ADV_K)) * (mean(vs) / base - 1.0)
+    return out
+
+
+def adv_mult(terms, k=None):
+    k = k if k is not None else ADV['k']
+    m = 1.0
+    for c, t in (terms or {}).items():
+        m *= 1.0 + k.get(c, 0.0) * t
+    return clamp(m, 1 - ADV_CAP, 1 + ADV_CAP)
+
+
+def adv_note(terms):
+    bits = []
+    for c, t in (terms or {}).items():
+        eff = ADV['k'].get(c, 0.0) * t
+        if abs(eff) >= 0.01:
+            bits.append('%s x%.2f' % (ADV_LABEL[c], 1 + eff))
+    return ', '.join(bits)
+
+
 def build_player_logs(games, prior_means=None):
     logs = {}
+    ts = TeamState()
     for g in sorted(games.values(), key=lambda g: (g.get('date') or '', g['id'])):
+        h_, a_ = g['home']['ab'], g['away']['ab']
+        cx_ = {h_: ts.ctx(h_, a_, g['date']), a_: ts.ctx(a_, h_, g['date'])}
         for p in g.get('players') or []:
             opp = g['away']['ab'] if p['t'] == g['home']['ab'] else g['home']['ab']
             L = logs.setdefault(p['id'], {'id': p['id'], 'name': p['name'], 'team': p['t'], 'games': []})
             L['team'], L['name'] = p['t'], p['name']
-            L['games'].append(dict(p, date=g['date'], opp=opp, gid=g['id']))
+            L['games'].append(dict(p, date=g['date'], opp=opp, gid=g['id'], cx=cx_.get(p['t'])))
+        ts.add(g['date'], h_, g['home'].get('pts'), a_, g['away'].get('pts'))
+    TEAMSTATE['ts'] = ts
     index = {}
     for pid, L in logs.items():
         index.setdefault(norm_name(L['name']), []).append(pid)
@@ -1125,7 +1209,10 @@ def build_player_logs(games, prior_means=None):
     return logs, index
 
 
-def prop_model(log, stat, line, env=1.0, mult=1.0, rm=1.0):
+TEAMSTATE = {'ts': None}
+
+
+def prop_model(log, stat, line, env=1.0, mult=1.0, rm=1.0, ctx=None):
     fn = STAT_FN.get(stat)
     if not fn or not log:
         return None
@@ -1163,7 +1250,9 @@ def prop_model(log, stat, line, env=1.0, mult=1.0, rm=1.0):
         n_eff = n + (1 if kp <= 2 else 2 if kp < 6 else 4)
     prior = max(1.0, SD_K[stat] * base, math.sqrt(PROP_DISP.get(stat, 1.5) * max(base, 0.5)))
     sd = max(math.sqrt((n * pstdev(vals) ** 2 + 5 * prior ** 2) / (n + 5)), 0.9 * prior)   # a few quiet games never shrink the swing below the noise floor
-    mu = base * env * mult * rm
+    terms = adv_terms(gl, stat, ctx) if ctx else {}
+    am = 1.0 if REPLAY_OFF['off'] else adv_mult(terms)
+    mu = base * env * mult * rm * am
     fx = None if REPLAY_OFF['off'] else REPLAY_FIX.get(stat)
     if fx:                       # corrections learned by replaying last season (see run_replay)
         mu, sd = mu * fx['b'], sd * fx['s']
@@ -1178,7 +1267,8 @@ def prop_model(log, stat, line, env=1.0, mult=1.0, rm=1.0):
     return {'n': n, 'n_eff': n_eff, 'prior_mean': r1(prior_mean) if prior_mean is not None else None, 'changed': changed, 'prior_team': prior_team,
             'season': r1(season), 'l10': r1(l10), 'l5': r1(l5), 'mean': r1(mu), 'sd': r1(sd), 'p_over': r3(p_over), 'p_under': r3(p_under),
             'hit_l10': sum(1 for v in last10 if v > line), 'n_l10': len(last10), 'hit_all': sum(1 for v in vals if v > line),
-            'min_avg': r1(mean(g['min'] for g in gl)), 'min_l5': r1(mean(g['min'] for g in gl[-5:]))}
+            'min_avg': r1(mean(g['min'] for g in gl)), 'min_l5': r1(mean(g['min'] for g in gl[-5:])),
+            'adv': {c: round(t, 4) for c, t in terms.items()}, 'adv_mult': r3(am), 'adv_note': adv_note(terms) if am != 1.0 else ''}
 
 
 # ----------------------------------------------------------------------------- role changes, injuries, calibration
@@ -1264,6 +1354,8 @@ def adj_text(r):
     if r.get('rm_note'):
         parts.append('%s (x%.2f)' % (r['rm_note'], r.get('rm', 1.0)))
     m = r.get('model') or {}
+    if m.get('adv_note'):
+        parts.append('situation: ' + m['adv_note'])
     ch = m.get('changed')
     if ch:
         parts.append({'traded': 'traded this season, only games with the new team used', 'new team': 'new team this season (was %s), last season counted less' % m.get('prior_team'),
@@ -2016,6 +2108,7 @@ RULES
 - Officials, when given, are measured from this season's box scores and shrunk hard. A crew number is a small nudge to totals and free throws, never a reason for a pick on its own.
 - Smart signals (hit-rate, form, cushion, matchup, role, pace, minutes) are pattern flags computed from history. They are context, never a reason to move a number.
 - The projection already includes who is playing (value of players out or doubtful, measured from box scores) and schedule spots when they are listed under "Already inside our projection". Never adjust margin or total again for those same absences or spots.
+- Off-court news, when present, is only what was reported. Use it to skip a prop or flag a risk, never to move a number up, and never speculate beyond what was reported.
 - TRACK RECORD, when present, is how past EpLocks picks actually graded out. Follow its lessons when you set mult and skip, respect the sample sizes it states, and say so in a prop note when a lesson changed your call. It is never a reason to invent or move a game number.
 - Early season samples are small. Say so when it matters and do not overstate.
 - You do not decide probabilities, confidence or stake sizes. The code computes them from your adjustments.
@@ -2126,6 +2219,10 @@ def packet(g):
     if mo:
         L.append('Our projection from ratings: home margin %+.1f, total %.1f, pace %.1f. Blended with the market at weight %.2f -> margin %+.1f, total %.1f.' % (
             mo['margin'], mo['total'], mo['pace'], g['blend']['weight'], g['blend']['margin'], g['blend']['total']))
+    nws = g.get('news') or []
+    if nws:
+        L.append('Off-court news from the last few days (ESPN headlines, sorted by an AI; facts only as reported):')
+        L.extend('  %s%s: %s [%s, %s]' % (n_.get('player') or n_.get('team'), (' (%s)' % n_['team']) if n_.get('player') and n_.get('team') else '', n_['summary'], NEWS_LABEL.get(n_['category'], n_['category']), n_['severity']) for n_ in nws)
     mv = g.get('move') or {}
     if mv.get('sp') or mv.get('tot'):
         L.append('Market movement since this line was first seen today: spread %s, total %s (context; the market line already includes it).' % (
@@ -2784,13 +2881,17 @@ TEAM_TZ = {'ATL': 0, 'BOS': 0, 'BKN': 0, 'CHA': 0, 'CLE': 0, 'DET': 0, 'IND': 0,
            'CHI': -1, 'DAL': -1, 'HOU': -1, 'MEM': -1, 'MIL': -1, 'MIN': -1, 'NOP': -1, 'OKC': -1, 'SAS': -1,
            'DEN': -2, 'PHX': -2, 'UTA': -2, 'GSW': -3, 'LAC': -3, 'LAL': -3, 'POR': -3, 'SAC': -3}
 ALTITUDE = ('DEN', 'UTA')
-SIDE_FEATS = ('impact', 'rest', 'b34', 'tz', 'trip', 'alt')
+SIDE_FEATS = ('impact', 'rest', 'b34', 'tz', 'trip', 'alt', 'streak', 'afterL', 'tank', 'race')
 SIDE_TFEATS = ('impact', 'b34', 'alt')
-SIDE_PRIOR = {'impact': 0.30, 'rest': 0.0, 'b34': 0.0, 'tz': 0.0, 'trip': 0.0, 'alt': 0.0}
+SIDE_PRIOR = {'impact': 0.30, 'rest': 0.0, 'b34': 0.0, 'tz': 0.0, 'trip': 0.0, 'alt': 0.0, 'streak': 0.0, 'afterL': 0.0, 'tank': 0.0, 'race': 0.0}
 SIDE_TPRIOR = {'impact': 0.0, 'b34': 0.0, 'alt': 0.0}
 SIDE = {'coef': dict(SIDE_PRIOR), 'tcoef': dict(SIDE_TPRIOR), 'fitted': False, 'msg': ''}
 SIDE_CAP = {'margin': 8.0, 'total': 6.0}       # the most these adjustments can ever move a projection, in points
-SIDE_LABEL = {'impact': 'Who is playing', 'rest': 'Rest', 'b34': 'Third game in four nights', 'tz': 'Time zones crossed', 'trip': 'Long road trip', 'alt': 'Altitude'}
+SIDE_LABEL = {'impact': 'Who is playing', 'rest': 'Rest', 'b34': 'Third game in four nights', 'tz': 'Time zones crossed', 'trip': 'Long road trip', 'alt': 'Altitude',
+              'streak': 'Streak', 'afterL': 'Coming off a loss', 'tank': 'Season over (tanking risk)', 'race': 'Playoff or play-in race'}
+CONF = {t: 'E' for t in ('ATL', 'BOS', 'BKN', 'CHA', 'CHI', 'CLE', 'DET', 'IND', 'MIA', 'MIL', 'NYK', 'ORL', 'PHI', 'TOR', 'WAS')}
+CONF.update({t: 'W' for t in ('DAL', 'DEN', 'GSW', 'HOU', 'LAC', 'LAL', 'MEM', 'MIN', 'NOP', 'OKC', 'PHX', 'POR', 'SAC', 'SAS', 'UTA')})
+LATE_GAMES = 55          # standings only start to mean "tanking" or "in a race" after this many games
 RATE_K = 200.0          # minutes of prior each player's per-minute value starts with
 
 
@@ -2816,7 +2917,9 @@ class SideTracker:
         for s in ('home', 'away'):
             t = g[s]['ab']
             played = {p['id']: p['min'] for p in g.get('players') or [] if p.get('t') == t and (p.get('min') or 0) > 0}
-            self.team.setdefault(t, []).append((g['date'], g['id'], host, played))
+            o = g['away' if s == 'home' else 'home']
+            won = None if g[s].get('pts') is None or o.get('pts') is None else g[s]['pts'] > o['pts']
+            self.team.setdefault(t, []).append((g['date'], g['id'], host, played, won, o['ab']))
         for p in g.get('players') or []:
             if (p.get('min') or 0) > 0:
                 s_ = self.pl.setdefault(p['id'], [0.0, 0.0])
@@ -2833,7 +2936,8 @@ class SideTracker:
         if len(hist) < 3:
             return 0.0, []
         mins, last3 = {}, set()
-        for i, (_, _, _, played) in enumerate(hist):
+        for i, hh in enumerate(hist):
+            played = hh[3]
             for pid, mn in played.items():
                 mins.setdefault(pid, []).append(mn)
                 if i >= len(hist) - 3:
@@ -2867,7 +2971,41 @@ class SideTracker:
                 if h[2] == t:
                     break
                 trip += 1
-        return {'rest': rest, 'b34': b34, 'tz': tz, 'trip': trip}
+        res = [h[4] for h in prev if h[4] is not None]
+        streak = 0
+        for w in reversed(res):
+            if streak == 0:
+                streak = 1 if w else -1
+            elif (streak > 0) == w:
+                streak += 1 if w else -1
+            else:
+                break
+        return {'rest': rest, 'b34': b34, 'tz': tz, 'trip': trip, 'streak': streak, 'afterL': 1 if res and not res[-1] else 0,
+                'w': sum(1 for w in res if w), 'l': sum(1 for w in res if not w)}
+
+    def race(self, date):
+        """Late-season standing for every team on a date: 'tank' (well out of it) or 'race' (within 3 games of 6th or 10th in its conference)."""
+        rec = {}
+        for t, hs in self.team.items():
+            res = [h[4] for h in hs if h[0] < date and h[4] is not None]
+            rec[t] = (sum(1 for w in res if w), len(res))
+        out = {}
+        for c in ('E', 'W'):
+            ts = sorted([t for t in rec if CONF.get(t) == c], key=lambda t: -(rec[t][0] - (rec[t][1] - rec[t][0])))
+            def gb(t, k):
+                if len(ts) <= k:
+                    return 99
+                a = ts[k]
+                return abs(((rec[a][0] - rec[t][0]) + ((rec[t][1] - rec[t][0]) - (rec[a][1] - rec[a][0]))) / 2.0)
+            for i, t in enumerate(ts):
+                w, n = rec[t]
+                if n < LATE_GAMES:
+                    out[t] = {'tank': 0, 'race': 0}
+                    continue
+                pct = w / float(n)
+                out[t] = {'tank': 1 if pct < 0.36 and gb(t, 9) > 6 else 0,
+                          'race': 1 if (gb(t, 5) <= 3 or gb(t, 9) <= 3) and i not in (0, 1, 2) else 0}
+        return out
 
 
 def side_features(tr, home, away, date, avail_h=None, avail_a=None, listed_h=None, listed_a=None):
@@ -2875,8 +3013,13 @@ def side_features(tr, home, away, date, avail_h=None, avail_a=None, listed_h=Non
     mh, ih = tr.missing(home, avail_h or (lambda pid: 1.0), listed_h or (lambda pid: False))
     ma, ia = tr.missing(away, avail_a or (lambda pid: 1.0), listed_a or (lambda pid: False))
     sh, sa = tr.spot(home, date, home), tr.spot(away, date, home)
+    rc = tr.race(date)
+    sh.update(rc.get(home, {'tank': 0, 'race': 0}))
+    sa.update(rc.get(away, {'tank': 0, 'race': 0}))
     x = {'impact': ma - mh, 'rest': sh['rest'] - sa['rest'], 'b34': sa['b34'] - sh['b34'], 'tz': sa['tz'] - sh['tz'],
-         'trip': clamp(sa['trip'] - 2, 0, 4), 'alt': 1.0 if home in ALTITUDE else 0.0}
+         'trip': clamp(sa['trip'] - 2, 0, 4), 'alt': 1.0 if home in ALTITUDE else 0.0,
+         'streak': clamp(sh['streak'], -6, 6) - clamp(sa['streak'], -6, 6), 'afterL': sh['afterL'] - sa['afterL'],
+         'tank': sa['tank'] - sh['tank'], 'race': sh['race'] - sa['race']}
     xt = {'impact': mh + ma, 'b34': sh['b34'] + sa['b34'], 'alt': x['alt']}
     return x, xt, {'home': {'missing': mh, 'items': ih, 'spot': sh}, 'away': {'missing': ma, 'items': ia, 'spot': sa}}
 
@@ -2885,6 +3028,10 @@ def side_adjust(x, xt):
     am = sum(SIDE['coef'].get(k, 0.0) * x[k] for k in SIDE_FEATS)
     at = sum(SIDE['tcoef'].get(k, 0.0) * xt[k] for k in SIDE_TFEATS)
     return clamp(am, -SIDE_CAP['margin'], SIDE_CAP['margin']), clamp(at, -SIDE_CAP['total'], SIDE_CAP['total'])
+
+
+def streak_txt(n):
+    return 'no streak' if abs(n) < 2 else ('won %d straight' % n if n > 0 else 'lost %d straight' % -n)
 
 
 def side_explain(x, det, home, away, names):
@@ -2905,7 +3052,11 @@ def side_explain(x, det, home, away, names):
                     'b34': '%s on the third game in four nights' % (away if x[k] > 0 else home),
                     'tz': '%s crossed %d time zone%s since its last game' % (away if x[k] > 0 else home, abs(det['away' if x[k] > 0 else 'home']['spot']['tz']), '' if abs(x[k]) == 1 else 's'),
                     'trip': '%s is %d games into a road trip' % (away, det['away']['spot']['trip']),
-                    'alt': 'game at altitude in %s' % home}[k]
+                    'alt': 'game at altitude in %s' % home,
+                    'streak': '%s %s, %s %s' % (home, streak_txt(det['home']['spot']['streak']), away, streak_txt(det['away']['spot']['streak'])),
+                    'afterL': '%s lost its last game' % (home if x[k] > 0 else away),
+                    'tank': '%s is well out of the playoff picture late in the season' % (away if x[k] > 0 else home),
+                    'race': '%s is in a tight playoff or play-in race' % (home if x[k] > 0 else away)}[k]
             L.append('%s: %s (%s)' % (SIDE_LABEL[k], desc, ('%+.1f to %s' % (abs(eff), home if eff > 0 else away)) if SIDE['fitted'] and abs(eff) >= 0.05 else 'not proven yet, counts for nothing'))
     return L
 
@@ -3028,39 +3179,64 @@ def side_rows(games, repl):
 
 
 def run_side_fit(boxes):
-    """Replays every stored season with ratings built only from earlier games and learns what who-is-playing and each schedule spot
-    is worth, in points of margin and total. The first 60% of each season fits, the rest checks, then all of it gives the final sizes."""
-    rows, test = [], []
+    """Replays every stored season with ratings built only from earlier games and learns what who-is-playing, schedule spots and team
+    situations are worth, in points of margin and total. Checked season against season: fit on one season, measure on the other, and the
+    other way round, so late-season effects (tanking, playoff races) are tested on a season the fit never saw. Then every size that survives
+    is checked on its own: if leaving it out does as well on unseen seasons, it is set to zero."""
+    seasons = []
     for box in boxes:
         games = box_games(box)
-        if len(games) < 500:
-            continue
-        rs = side_rows(games, prior_rates_from(box)[1])
-        k = int(len(rs) * 0.6)
-        rows += [(True,) + r for r in rs[:k]] + [(False,) + r for r in rs[k:]]
-    if len(rows) < 300:
-        print('Side model: not enough replayed games (%d)' % len(rows), flush=True)
+        if len(games) >= 500:
+            seasons.append(side_rows(games, prior_rates_from(box)[1]))
+    rows = [r for rs in seasons for r in rs]
+    if len(seasons) < 2 or len(rows) < 600:
+        print('Side model: needs two replayed seasons (have %d, %d games)' % (len(seasons), len(rows)), flush=True)
         return None
-    fit_m = ridge([(x, r) for f, d, x, xt, r, rt in rows if f], SIDE_FEATS, SIDE_PRIOR)
-    fit_t = ridge([(xt, rt) for f, d, x, xt, r, rt in rows if f], SIDE_TFEATS, SIDE_TPRIOR)
-    test = [(x, xt, r, rt) for f, d, x, xt, r, rt in rows if not f]
-    rows = [r[1:] for r in rows]
 
-    def mae(fn):
-        return round(mean(abs(fn(x, xt, r, rt)) for x, xt, r, rt in test), 3)
-    check = {'games': len(test),
-             'margin_error_before': mae(lambda x, xt, r, rt: r),
-             'margin_error_after': mae(lambda x, xt, r, rt: r - clamp(sum(fit_m[k] * x[k] for k in SIDE_FEATS), -SIDE_CAP['margin'], SIDE_CAP['margin'])),
-             'total_error_before': mae(lambda x, xt, r, rt: rt),
-             'total_error_after': mae(lambda x, xt, r, rt: rt - clamp(sum(fit_t[k] * xt[k] for k in SIDE_TFEATS), -SIDE_CAP['total'], SIDE_CAP['total']))}
+    def err(cm, ct, part):
+        em = mean(abs(r - clamp(sum(cm.get(k, 0.0) * x[k] for k in SIDE_FEATS), -SIDE_CAP['margin'], SIDE_CAP['margin'])) for d, x, xt, r, rt in part)
+        et = mean(abs(rt - clamp(sum(ct.get(k, 0.0) * xt[k] for k in SIDE_TFEATS), -SIDE_CAP['total'], SIDE_CAP['total'])) for d, x, xt, r, rt in part)
+        return em, et
+
+    def cross(mask_m, mask_t):
+        """Fit on one season, error on the other, both ways. Masks switch features off."""
+        tm = tt = 0.0
+        for i in range(len(seasons)):
+            train = [r for j, rs in enumerate(seasons) if j != i for r in rs]
+            cm = ridge([(x, r) for d, x, xt, r, rt in train], SIDE_FEATS, SIDE_PRIOR)
+            ct = ridge([(xt, rt) for d, x, xt, r, rt in train], SIDE_TFEATS, SIDE_TPRIOR)
+            cm = {k: (v if k in mask_m else 0.0) for k, v in cm.items()}
+            ct = {k: (v if k in mask_t else 0.0) for k, v in ct.items()}
+            em, et = err(cm, ct, seasons[i])
+            tm += em * len(seasons[i])
+            tt += et * len(seasons[i])
+        n = float(len(rows))
+        return tm / n, tt / n
+    zero_m, zero_t = err({}, {}, rows)
+    all_m, all_t = set(SIDE_FEATS), set(SIDE_TFEATS)
+    cm_full, ct_full = cross(all_m, all_t)
+    # each feature has to earn its place on unseen seasons
+    keep_m, keep_t = set(all_m), set(all_t)
+    for k in SIDE_FEATS:
+        em, _ = cross(keep_m - {k}, keep_t)
+        if em <= cross(keep_m, keep_t)[0]:
+            keep_m.discard(k)
+    for k in SIDE_TFEATS:
+        _, et = cross(keep_m, keep_t - {k})
+        if et <= cross(keep_m, keep_t)[1]:
+            keep_t.discard(k)
+    fm, ft = cross(keep_m, keep_t)
     coef = ridge([(x, r) for d, x, xt, r, rt in rows], SIDE_FEATS, SIDE_PRIOR)
     tcoef = ridge([(xt, rt) for d, x, xt, r, rt in rows], SIDE_TFEATS, SIDE_TPRIOR)
-    keep_m = check['margin_error_after'] < check['margin_error_before']      # it has to actually help on unseen games, not tie
-    keep_t = check['total_error_after'] < check['total_error_before']
-    out = {'made': dt.datetime.now(dt.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'), 'games': len(rows), 'seasons': len(boxes),
-           'coef': {k: round(v, 3) for k, v in coef.items()} if keep_m else {k: 0.0 for k in SIDE_FEATS},
-           'tcoef': {k: round(v, 3) for k, v in tcoef.items()} if keep_t else {k: 0.0 for k in SIDE_TFEATS},
-           'check': check, 'used': {'margin': keep_m, 'total': keep_t}}
+    use_m, use_t = fm < zero_m, ft < zero_t
+    check = {'games': len(rows), 'method': 'season against season',
+             'margin_error_before': round(zero_m, 3), 'margin_error_after': round(fm if use_m else zero_m, 3),
+             'total_error_before': round(zero_t, 3), 'total_error_after': round(ft if use_t else zero_t, 3),
+             'kept': sorted(k for k in keep_m if abs(coef.get(k, 0)) > 0), 'kept_total': sorted(k for k in keep_t if abs(tcoef.get(k, 0)) > 0)}
+    out = {'made': dt.datetime.now(dt.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'), 'games': len(rows), 'seasons': len(seasons),
+           'coef': {k: (round(v, 3) if (use_m and k in keep_m) else 0.0) for k, v in coef.items()},
+           'tcoef': {k: (round(v, 3) if (use_t and k in keep_t) else 0.0) for k, v in tcoef.items()},
+           'check': check, 'used': {'margin': use_m, 'total': use_t}}
     jsave(os.path.join(DATA, 'side_model.json'), out)
     print('Side model: %s' % json.dumps({k: out[k] for k in ('coef', 'tcoef', 'check')}), flush=True)
     return out
@@ -3077,6 +3253,104 @@ def load_side_model():
             js.get('games', 0), ck.get('margin_error_before', 0), ck.get('margin_error_after', 0), ck.get('total_error_before', 0), ck.get('total_error_after', 0)))
     else:
         src('side_model', True, 'who-is-playing adjustment at a cautious starting size (%.2f points per point of player value); schedule spots shown but not counted until the replay measures them' % SIDE_PRIOR['impact'])
+
+
+# ----------------------------------------------------------------------------- off the court: news that can affect a player
+# Each run reads ESPN's free NBA headlines (league-wide plus every team on today's slate) from the last few days. Claude sorts only what
+# the headlines actually say into categories. These flags can only hold a pick back: a 'high' flag (reported away from the team or
+# suspended) skips that player's props; a 'medium' flag (personal matter, discipline, trade talk, contract dispute) drops the pick to
+# Low confidence and the smallest stake. They never move a number up. Nothing is inferred about anyone's private life.
+NEWS_DAYS = 3
+NEWS_CATS = ('personal_leave', 'suspension', 'illness', 'discipline', 'trade', 'contract', 'coaching_change', 'other')
+NEWS_LABEL = {'personal_leave': 'Personal matter', 'suspension': 'Suspension', 'illness': 'Illness', 'discipline': 'Discipline', 'trade': 'Trade talk',
+              'contract': 'Contract', 'coaching_change': 'Coaching change', 'other': 'News'}
+NEWS = {'players': {}, 'teams': {}, 'items': []}
+
+NEWS_SYS = """You read NBA news headlines and short descriptions and flag only things that could change how a player performs or whether he plays in the next few days.
+
+RULES
+- Use only what the headline or description states. Never guess, infer or add anything about anyone's private life. If a story says only "personal reasons", say exactly that and nothing more.
+- Ignore game recaps, highlights, previews, injuries already reported as injuries, stats, awards and fantasy advice.
+- Categories: personal_leave (away from the team for personal or family reasons), suspension, illness (non-injury illness), discipline (fines, team discipline, benched for conduct), trade (trade request or credible trade talks involving the player), contract (contract dispute, holdout), coaching_change (a head coach fired, hired or on leave), other (anything else that clearly affects availability or role).
+- severity: high = the story says he will miss games or is away from the team now; medium = could affect his focus, role or minutes; low = worth knowing, small effect.
+- Use the player's full name as written in the story. For coaching_change put the team abbreviation in team and leave player empty.
+
+Reply with JSON only: {"items": [{"player": "", "team": "", "category": "", "severity": "high|medium|low", "summary": "one short factual sentence", "headline": "the headline it came from"}]}
+Return {"items": []} when nothing qualifies."""
+
+
+def fetch_news(slate_events, name_to_abbr, today):
+    """Headlines from the last few days for the slate's teams, read and sorted by Claude once per change in the headlines."""
+    path = os.path.join(DATA, 'news.json')
+    cache = jload(path, {})
+    cut = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=NEWS_DAYS)).strftime('%Y-%m-%dT%H:%M:%SZ')
+    urls = ['%s/news?limit=50' % ESPN] + ['%s/news?team=%s&limit=12' % (ESPN, ev[s]['id']) for ev in slate_events for s in ('home', 'away') if ev[s].get('id')]
+    seen, arts = set(), []
+    fails = 0
+    for u in urls:
+        try:
+            js = http_json(u, tries=2, timeout=15)
+        except Exception:  # noqa
+            fails += 1
+            continue
+        for a in js.get('articles') or []:
+            hl = str(a.get('headline') or '').strip()
+            if not hl or hl in seen or str(a.get('published') or '') < cut:
+                continue
+            seen.add(hl)
+            arts.append({'headline': hl[:200], 'description': str(a.get('description') or '')[:300], 'published': a.get('published'),
+                         'link': ((a.get('links') or {}).get('web') or {}).get('href')})
+    if fails == len(urls):
+        src('news', False, 'ESPN news could not be read this run')
+        return cache.get('items', [])
+    arts.sort(key=lambda a: a.get('published') or '', reverse=True)
+    arts = arts[:80]
+    h = hashlib.sha1('\n'.join(a['headline'] for a in arts).encode('utf8')).hexdigest()
+    if cache.get('h') == h and cache.get('date') == today.isoformat():
+        items = cache.get('items', [])
+    else:
+        items = []
+        if API_KEY and arts:
+            txt = call_claude('HEADLINES (newest first):\n' + '\n'.join('- %s | %s' % (a['headline'], a['description']) for a in arts) + '\n\nReturn the JSON now.', NEWS_SYS, max_tokens=1800)
+            js = extract_json(txt) if txt else None
+            links = {a['headline']: a.get('link') for a in arts}
+            for it in (js or {}).get('items') or [] if isinstance(js, dict) else []:
+                if not isinstance(it, dict) or it.get('category') not in NEWS_CATS:
+                    continue
+                sev = it.get('severity') if it.get('severity') in ('high', 'medium', 'low') else 'low'
+                items.append({'player': str(it.get('player') or '')[:60], 'team': ab(str(it.get('team') or '').upper()[:4]) if it.get('team') else '',
+                              'category': it['category'], 'severity': sev, 'summary': str(it.get('summary') or '')[:200],
+                              'headline': str(it.get('headline') or '')[:200], 'link': links.get(str(it.get('headline') or ''))})
+        jsave(path, {'date': today.isoformat(), 'h': h, 'items': items, 'n_headlines': len(arts)})
+    src('news', True, '%d headlines from the last %d days read; %d off-court flag%s' % (len(arts), NEWS_DAYS, len(items), '' if len(items) == 1 else 's'))
+    return items
+
+
+def index_news(items, logs, name_index):
+    """Ties each flag to a player id (or a team) using the same name matching as the props."""
+    NEWS['players'], NEWS['teams'], NEWS['items'] = {}, {}, items
+    for it in items:
+        if it.get('player'):
+            ids = name_index.get(norm_name(it['player'])) or []
+            if not ids:
+                best = difflib.get_close_matches(norm_name(it['player']), list(name_index.keys()), n=1, cutoff=0.88)
+                ids = name_index.get(best[0]) if best else []
+            for pid in ids:
+                cur = NEWS['players'].get(pid)
+                rank = {'high': 3, 'medium': 2, 'low': 1}
+                if not cur or rank[it['severity']] > rank[cur['severity']]:
+                    NEWS['players'][pid] = it
+                if not it.get('team') and pid in logs:
+                    it['team'] = logs[pid]['team']
+        if it.get('team'):
+            NEWS['teams'].setdefault(it['team'], []).append(it)
+
+
+def news_for_game(home, away):
+    out = []
+    for t in (away, home):
+        out.extend(NEWS['teams'].get(t, []))
+    return out[:8]
 
 
 # ----------------------------------------------------------------------------- parlay tracker
@@ -3431,20 +3705,25 @@ def replay_predictions(box, cfg=None):
     REPLAY_OFF['off'] = True
     if cfg:
         PROP_CFG.update({'w': tuple(cfg['w']), 'permin': cfg['permin']})
+    ts = TeamState()
     try:
         for gid, g in sorted(box['games'].items(), key=lambda kv: (kv[1]['d'], kv[0])):
+            hab, aab = (g.get('h') or [None])[0], (g.get('a') or [None])[0]
+            cxs = {hab: ts.ctx(hab, aab, g['d']), aab: ts.ctx(aab, hab, g['d'])} if hab and aab else {}
             for r in g['p']:
                 pid, team, mins = r[0], r[1], r[2]
-                p = dict(zip(keys, r[3:10]), t=team, min=mins)
+                p = dict(zip(keys, r[3:10]), t=team, min=mins, cx=cxs.get(team))
                 L = logs.setdefault(pid, {'id': pid, 'team': team, 'games': []})
                 L['team'] = team
                 played = [x for x in L['games'] if x['min'] > 0]
                 if mins > 0 and len(played) >= REPLAY_MIN_GAMES and mean(x['min'] for x in played[-5:]) >= REPLAY_MIN_MIN:
                     for s in REPLAY_STATS:
-                        m = prop_model(L, s, 0.5)
+                        m = prop_model(L, s, 0.5, ctx=cxs.get(team))
                         if m and m['sd']:
-                            rows[s].append((m['mean'], m['sd'], STAT_FN[s](p), g['d']))
+                            rows[s].append((m['mean'], m['sd'], STAT_FN[s](p), g['d'], tuple(m['adv'].get(c, 0.0) for c in ADV_CTX)))
                 L['games'].append(p)
+            if hab and aab:
+                ts.add(g['d'], hab, g['h'][1], aab, g['a'][1])
     finally:
         REPLAY_OFF['off'] = False
         PROP_CFG.clear()
@@ -3499,6 +3778,61 @@ def replay_table(rs, b=1.0, s=1.0):
         c[1] += p
         c[2] += y
     return [{'bucket': '%d-%d%%' % (k * 10, k * 10 + 10), 'n': c[0], 'model': r3(c[1] / c[0]), 'actual': r3(c[2] / c[0])} for k, c in sorted(bk.items()) if c[0] >= 50]
+
+
+def adv_events(rs, b, s, k, step=1):
+    """Over/under questions with the adversity multiplier for trust levels k applied (rows carry their situation terms)."""
+    out = []
+    for i in range(0, len(rs), step):
+        r = rs[i]
+        terms = dict(zip(ADV_CTX, r[4])) if len(r) > 4 else {}
+        mu2, sd2 = r[0] * b * adv_mult(terms, k), r[1] * s
+        base = math.floor(r[0]) + 0.5
+        for j in (-2, -1, 0, 1, 2):
+            line = base + j
+            if line <= 0:
+                continue
+            out.append((1 - phi((line - mu2) / sd2), 1.0 if r[2] > line else 0.0))
+    return out
+
+
+def fit_adv(rows, stats):
+    """Coordinate search for how much to trust each situation split, on the first 60% of each season; kept only if the last 40% improves."""
+    tr, te = {}, {}
+    for stat in REPLAY_STATS:
+        a, b_ = split_rows([r[stat] for r in rows])
+        # only rows where some situation applies can change; the rest are the same for every k, so leave them out to save time
+        tr[stat] = [r for r in a if any(r[4])]
+        te[stat] = [r for r in b_ if any(r[4])]
+
+    def total(part, k):
+        num, den = 0.0, 0
+        for stat, rs in part.items():
+            st = stats.get(stat) or {}
+            b, s_ = (st.get('b', 1.0), st.get('s', 1.0)) if st.get('use') else (1.0, 1.0)
+            ev = adv_events(rs, b, s_, k, step=max(1, len(rs) // 3000))
+            num += logloss(ev) * len(ev)
+            den += len(ev)
+        return num / max(den, 1)
+    zero = {c: 0.0 for c in ADV_CTX}
+    k = dict(zero)
+    grid = (0.0, 0.25, 0.5, 0.75, 1.0, 1.5)
+    for _ in range(2):
+        for c in ADV_CTX:
+            best = None
+            for v in grid:
+                kk = dict(k, **{c: v})
+                sc = total(tr, kk)
+                if best is None or sc < best[0] - 1e-7:
+                    best = (sc, v)
+            k[c] = best[1]
+    before, after = total(te, zero), total(te, k)
+    alone = {c: round(total(te, dict(zero, **{c: k[c]})) - before, 6) for c in ADV_CTX if k[c]}
+    keep = {c: (k[c] if alone.get(c, 1) < 0 else 0.0) for c in ADV_CTX}          # each split has to help on its own on unseen games
+    final = total(te, keep)
+    used = final < before - 1e-5
+    return {'k': keep if used else zero, 'used': used, 'holdout_before': round(before, 5), 'holdout_after': round(final if used else before, 5),
+            'alone': alone, 'n_test': sum(len(v) for v in te.values())}
 
 
 def split_rows(rows_by_season, frac=0.6):
@@ -3585,7 +3919,7 @@ def run_replay():
         hold_after = logloss(replay_events(te, bt, stt, max(1, len(te) // 6000)))
         helps = hold_after < hold_before
         b, s = replay_fit(allr) if helps else (1.0, 1.0)
-        z = [(a - m) / sd for m, sd, a, _ in allr]
+        z = [(r[2] - r[0]) / r[1] for r in allr]
         out['stats'][stat] = {'n': len(allr), 'b': r3(b), 's': r3(s), 'use': helps and len(allr) >= REPLAY_MIN_N,
                               'avg_pred': r1(mean(r[0] for r in allr)), 'avg_actual': r1(mean(r[2] for r in allr)),
                               'in50': r3(sum(1 for x in z if abs(x) <= 0.674) / len(z)), 'in80': r3(sum(1 for x in z if abs(x) <= 1.282) / len(z)),
@@ -3593,6 +3927,12 @@ def run_replay():
                               'table_before': replay_table(allr), 'table_after': replay_table(allr, b, s)}
         print('%s: %d predictions, average x%.3f, range x%.2f, held-out log loss %.4f -> %.4f%s' % (
             stat, len(allr), b, s, hold_before, hold_after, '' if helps else ' (no gain, not used)'), flush=True)
+    # 3. how much to trust each player's adversity splits, learned with the corrections above in place
+    try:
+        out['adv'] = fit_adv(rows, out['stats'])
+        print('Adversity splits: %s' % json.dumps(out['adv']), flush=True)
+    except Exception as e:  # noqa
+        print('Adversity fit failed: %s' % str(e)[:200], flush=True)
     for c in cand:
         c.pop('rows', None)
     jsave(os.path.join(DATA, 'prop_replay.json'), out)
@@ -3609,9 +3949,11 @@ def load_replay():
     REPLAY_FIX.clear()
     if js.get('complete') and js.get('cfg') and js.get('v') == REPLAY_V:
         PROP_CFG.update({'w': tuple(js['cfg']['w']), 'permin': bool(js['cfg']['permin'])})
+    if js.get('complete') and (js.get('adv') or {}).get('used'):
+        ADV['k'] = {c: float(js['adv']['k'].get(c, 0.0)) for c in ADV_CTX}
     REPLAY_SUM.clear()
     if js.get('complete'):
-        REPLAY_SUM.update({'games': js.get('games'), 'made': js.get('made'), 'cfg': js.get('cfg'), 'candidates': js.get('candidates'), 'stats': {k: {x: v.get(x) for x in ('n', 'b', 's', 'use', 'in50', 'in80', 'holdout_before', 'holdout_after', 'table_before', 'table_after')}
+        REPLAY_SUM.update({'games': js.get('games'), 'made': js.get('made'), 'cfg': js.get('cfg'), 'candidates': js.get('candidates'), 'adv': js.get('adv'), 'stats': {k: {x: v.get(x) for x in ('n', 'b', 's', 'use', 'in50', 'in80', 'holdout_before', 'holdout_after', 'table_before', 'table_after')}
                                                                                      for k, v in (js.get('stats') or {}).items()}})
     if not js.get('complete'):
         if js.get('days'):
@@ -4107,6 +4449,10 @@ def main(argv):
         for s in ('home', 'away'):
             name_to_abbr.setdefault(g[s]['name'].lower(), g[s]['ab'])
     injuries = fetch_injuries(name_to_abbr)
+    try:
+        index_news(fetch_news(slate_events, name_to_abbr, today), logs, name_index)
+    except Exception as e:  # noqa
+        src('news', False, 'off-court news skipped: %s' % str(e)[:120])
     if NEWS.get('reason'):
         note('Rerun after injury news: %s' % NEWS['reason'])
     try:
@@ -4300,7 +4646,8 @@ def main(argv):
                 w_, l_ = (gm['home'], gm['away']) if gm['home']['pts'] > gm['away']['pts'] else (gm['away'], gm['home'])
                 h2h.append('%s beat %s %d-%d at %s on %s' % (w_['ab'], l_['ab'], w_['pts'], l_['pts'], gm['home']['ab'], gm['date']))
         g = {'id': ev['id'], 'tip': ev['tip'], 'utc': ev['utc'], 'state': ev['state'], 'away': away, 'home': home, 'market': mk,
-             'model': {k: r1(v) for k, v in mo.items()} if mo else None, 'blend': blend, 'h2h': h2h, 'crew': crew, 'side': side_info, 'move': move}
+             'model': {k: r1(v) for k, v in mo.items()} if mo else None, 'blend': blend, 'h2h': h2h, 'crew': crew, 'side': side_info, 'move': move,
+             'news': news_for_game(home['abbr'], away['abbr'])}
         # props for this game
         rows = []
         if mo:
@@ -4318,13 +4665,15 @@ def main(argv):
                 except Exception as e:  # noqa
                     rm, rm_note = 1.0, ''
                     note('Role adjustment skipped for %s: %s' % (p['name'], str(e)[:80]))
-                pm = prop_model(logs[p['pid']], p['stat'], p['line'], env=env, rm=rm)
+                opp_ = away['abbr'] if p['team'] == home['abbr'] else home['abbr']
+                cx_ = TEAMSTATE['ts'].ctx(p['team'], opp_, today.isoformat()) if TEAMSTATE['ts'] else None
+                pm = prop_model(logs[p['pid']], p['stat'], p['line'], env=env, rm=rm, ctx=cx_)
                 if not pm:
                     unmatched.append(dict(p, why='Fewer than 3 games of data for this player'))
                     continue
                 opp = away['abbr'] if p['team'] == home['abbr'] else home['abbr']
                 st = inj_names_by_team.get(p['team'], {}).get(norm_name(p['name']), '')
-                rows.append(dict(p, model=pm, vs_opp=vs_opp(logs[p['pid']], p['stat'], opp), injury=st, env=r3(env), rm=r3(rm), rm_note=rm_note, pf=r3(pf), pf_note=pf_note))
+                rows.append(dict(p, model=pm, vs_opp=vs_opp(logs[p['pid']], p['stat'], opp), injury=st, env=r3(env), rm=r3(rm), rm_note=rm_note, pf=r3(pf), pf_note=pf_note, cx=cx_))
             def best_edge(r):
                 m_ = r['model']
                 e = []
@@ -4425,7 +4774,7 @@ def main(argv):
             pn = pnotes.get(r['id'], {})
             mult = pn.get('mult', 1.0)
             if mult != 1.0:
-                r['model'] = prop_model(logs[r['pid']], r['stat'], r['line'], env=r['env'], mult=mult, rm=r.get('rm', 1.0))
+                r['model'] = prop_model(logs[r['pid']], r['stat'], r['line'], env=r['env'], mult=mult, rm=r.get('rm', 1.0), ctx=r.get('cx'))
             r['mult'], r['note'] = mult, pn.get('note', '')
             r['skipped'] = bool(pn.get('skip'))
             try:
@@ -4439,10 +4788,19 @@ def main(argv):
                             'under': r3(cal_p(m_['p_under'], r['under'] if r['under'] is not None else -110, 'prop', None if fo_ is None else 1 - fo_, ne_))}
             except Exception:  # noqa
                 r['cal'] = None
+            nw_ = NEWS['players'].get(r['pid'])
+            if nw_:
+                r['news'] = {k: nw_.get(k) for k in ('category', 'severity', 'summary', 'headline', 'link')}
+                if nw_['severity'] == 'high' and nw_['category'] in ('personal_leave', 'suspension', 'illness', 'other'):
+                    r['skipped'] = True
+                    r['note'] = (r.get('note') or '') + (' ' if r.get('note') else '') + 'Off the court: %s' % nw_['summary']
             if ev['state'] != 'pre' or r['skipped'] or is_blocked(r['injury']):
                 r['skipped'] = r['skipped'] or is_blocked(r['injury'])
                 continue
             pk = prop_pick(r, mult, bool(r['injury']), pn.get('p_over'), bool(judg and judg.get('concern')), (judg or {}).get('why', ''))
+            if pk and nw_ and nw_['severity'] in ('high', 'medium'):
+                pk['conf'], pk['units'] = 'Low', 0.5
+                pk['flag'] = ((pk.get('flag') + ' ') if pk.get('flag') else '') + 'Off the court (%s): %s Confidence and stake cut.' % (NEWS_LABEL.get(nw_['category'], 'News').lower(), nw_['summary'])
             if pk:
                 pk['reason'] = r['note']
                 try:

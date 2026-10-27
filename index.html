@@ -946,6 +946,11 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
 .ch-dot.neg{fill:var(--bad)}
 .ch-pt{fill:color-mix(in srgb,var(--acc) 55%,transparent);stroke:var(--acc);stroke-width:1.5}
 /* ===== end v12 part 9 ===== */
+/* ===== v12 part 10: off the court ===== */
+.offc{list-style:none;margin:0;padding:0;display:grid;gap:var(--s2);font-size:14px}
+.offc li{line-height:1.45}
+.offc .pill{margin-right:2px}
+/* ===== end v12 part 10 ===== */
 </style>
 </head>
 <body>
@@ -2030,6 +2035,10 @@ function overTab(g){
   var jp_ = judgPanel(g); if (jp_) kids.push(blk('Claude\'s own read', jp_));
   kids.push(blk('How the numbers were built', numbersTable(g)));
   var sp_ = shopPanel(g); if (sp_) kids.push(blk('Line shop', sp_));
+  if (g.news && g.news.length) kids.push(blk('Off the court', [el('ul', {class:'offc'}, g.news.map(function(n){
+    return el('li', {}, el('span', {class:'pill' + (n.severity === 'high' ? ' warn' : ''), text:NEWS_L[n.category] || 'News'}), ' ', el('b', {text:(n.player || n.team) + ': '}), n.summary,
+      n.link ? [' ', el('a', {href:n.link, target:'_blank', rel:'noopener', text:'Source'})] : null);
+  })), help('Headlines from ESPN in the last three days, sorted by an AI into what was actually reported. A high flag (away from the team, suspended) skips that player\'s props; a medium flag drops his pick to Low confidence and the smallest stake. These flags never move a number up.')]));
   kids.push(crewPanel(g));
   var inj = [g.away, g.home].map(function(t){
     if (!t.injuries || !t.injuries.length) return el('p', {class:'small mut', text:t.abbr + ': none listed'});
@@ -2169,6 +2178,8 @@ function breakdownList(g, r, pick){
   L.push('Starting point: ' + f1(m.season) + ' season average, ' + f1(m.l10) + ' over the last 10, ' + f1(m.l5) + ' over the last 5, weighted 50 / 30 / 20 (' + m.n + ' games this season).');
   if (m.prior_mean != null) L.push('Last season he averaged ' + f1(m.prior_mean) + '. The blend leans on last year less as this season\'s games pile up (effective sample ' + m.n_eff + ').');
   var ch = roleTxt(r); if (ch && ch !== '-') L.push('Adjusted for: ' + ch + '.');
+  if (m.adv_note) L.push('Situation tonight (his own record in spots like this, learned from two seasons): ' + m.adv_note + '.');
+  if (r.news) L.push('Off the court: ' + r.news.summary + ' (' + r.news.severity + '; ' + (r.news.severity === 'low' ? 'shown for context only' : 'holds the pick back') + ').');
   if (r.env && Math.abs(r.env - 1) > 0.004) L.push('Game environment x' + Number(r.env).toFixed(3) + ' (the expected total in this game versus the league average pace and scoring).');
   if (r.mult && r.mult !== 1) L.push('Claude\'s adjustment x' + Number(r.mult).toFixed(2) + (r.note ? ': ' + r.note : '') + ' (never more than 10%).');
   else if (r.note) L.push('Claude\'s note: ' + r.note);
@@ -2200,6 +2211,8 @@ function playerBody(g, pid, stat){
   kids.push(el('div', {class:'pl-head'}, faceEl(pid, name), el('div', {class:'pl-id'},
     el('b', {class:'pl-name', text:name}), el('span', {class:'small mut'}, team ? logoEl(team) : null, ' ', [team, pos].filter(Boolean).join(' · ')),
     inj ? el('span', {class:'pill warn', text:inj}) : null), gbtn));
+  var nwp = rows.filter(function(r){ return r.news; })[0];
+  if (nwp) kids.push(el('div', {class:'note warn small'}, el('b', {text:'Off the court: '}), nwp.news.summary, nwp.news.link ? [' ', el('a', {href:nwp.news.link, target:'_blank', rel:'noopener', text:'Source'})] : null));
   /* prop card */
   if (row){
     var b = bestSide(row), pk = (g.pick_objs || []).filter(function(p){ return p.pid === pid && p.stat === row.stat; })[0] || null;
@@ -2374,6 +2387,7 @@ function acePool(){
 }
 
 /* ---- smart signals ---- */
+var NEWS_L = {personal_leave:'Personal matter', suspension:'Suspension', illness:'Illness', discipline:'Discipline', trade:'Trade talk', contract:'Contract', coaching_change:'Coaching change', other:'News'};
 var SIGL = {hit:'Hit rate', form:'Form', cushion:'Cushion', matchup:'Matchup', role:'Role', pace:'Pace', opp:'Vs opponent', mins:'Minutes', gap:'Model gap', tform:'Team form', rest:'Rest', shots:'Shot quality', crew:'Crew', avail:'Who is playing', sched:'Schedule spot', price:'Better number', move:'Line move'};
 var TIERS = ['Strong', 'Solid', 'Notable'];
 function tierEl(sig, mini){
@@ -3436,6 +3450,8 @@ function renderMethod(){
       li('Auditor.', 'Every morning it reviews every graded pick by market, confidence, signal and edge size, against the break-even of the prices taken and the closing line. Claude writes up to five short lessons that the bot reads before analyzing each game. A market that clearly loses over 50+ picks gets lower confidence and half the stake until it recovers.'),
       li('Prop model check.', 'Two full seasons are replayed game by game: before each game the prop model predicts every rotation player from his earlier games only, and the box score shows whether its chances held up. Several ways of reading a game log are compared on games the comparison never fit on, and the best one is used. Each stat\'s centre and range are then corrected, because stats like points and threes are skewed: a few big nights pull the average up, so he clears his average less than half the time. A correction is only kept if it helps on unseen games.'),
       li('Parlay tracker.', 'Every day the builder\'s tickets are logged before tip-off and graded leg by leg from the box scores, so the parlay record is as honest as the singles. Results feed the auditor too.'),
+      li('Situations.', 'Win and loss streaks, coming off a loss, tanking late in the season and tight playoff races are measured for teams; for each player, how he plays after a team loss, as a clear underdog, on a back-to-back and against a team that beat his team last time. Each one is only used if it proves itself on two replayed seasons, and a player\'s own split is pulled hard toward his normal numbers while he has few such games.'),
+      li('Off the court.', 'ESPN headlines from the last three days are read each run and sorted into personal matters, suspensions, illness, discipline, trade talk, contract news and coaching changes, using only what was reported. These can only hold a pick back, never push one.'),
       li('Line movement.', 'The first line seen each day is saved. When the market moves toward a pick, that becomes a tracked signal, and the auditor rates whether it helps.'),
       li('Injury news.', 'Every 20 minutes in the evening the injury report is checked. When a rotation player is newly ruled out, or is back, for a game that has not started, the card is rebuilt at once and any new pick is sent to your phone.'),
       li('Line shopping across numbers.', 'Every book\'s own spread and total is priced, not just the most common one. A book hanging a better number than the rest shows up as edge on its own.'))),

@@ -2,4 +2,4 @@
 # The replay re-checks the prop model, picks the best way to read game logs, and measures
 # who-is-playing and schedule effects on two full seasons. It takes 15 to 45 minutes and
 # continues by itself on the next replay if it runs out of time.
-# Last requested: 2026-10-27, after the skew fix (centre and range fitted together)
+# Last requested: 2026-10-27, team situations and player adversity splits added
