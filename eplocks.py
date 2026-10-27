@@ -1904,7 +1904,7 @@ def fetch_odds_props(slate_events):
     if cache.get('date') != day:
         cache = {'date': day, 'games': {}}
     now = time.time()
-    reused, short = 0, False
+    reused, short, waited = 0, False, False
     for e in events if isinstance(events, list) else []:
         if (nick(e.get('home_team')), nick(e.get('away_team'))) not in mine:
             continue
@@ -1914,6 +1914,7 @@ def fetch_odds_props(slate_events):
         fresh = ce and now - ce.get('t', 0) < PROPS_REUSE_MIN * 60
         early = dt.datetime.now(CT).hour < PROPS_FROM_HOUR and not ce
         if early:
+            waited = True
             continue                        # too early to buy props: they are pulled once in the afternoon and reused after that
         if ce and not fresh and dt.datetime.now(CT).hour >= PROPS_FROM_HOUR and ODDS['left'] is not None and ODDS['left'] < 400:
             fresh = True                    # on a small plan: keep the afternoon pull instead of buying the same props again
@@ -1947,6 +1948,9 @@ def fetch_odds_props(slate_events):
         note('Props for %d games pulled earlier today are reused to save Odds API credits' % reused)
     ok = bool(out)
     nbk = max([p['n_books'] for p in out] or [0])
+    if waited and not ok:
+        src('odds_api', True, 'props are pulled once a day from %d:00 Central to save credits; %s credits left' % (PROPS_FROM_HOUR, ODDS['left'] if ODDS['left'] is not None else '?'))
+        return None
     src('odds_api', ok, ('%d props for %d games from up to %d books; %s credits left%s' % (len(out), len(mine), nbk, ODDS['left'] if ODDS['left'] is not None else '?', ('; %d games failed' % fails) if fails else '')) if ok else
         'The key worked but returned no player props. Your plan may not include them, or lines are not posted yet.')
     return out if ok else None
