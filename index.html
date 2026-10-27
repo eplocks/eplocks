@@ -2454,7 +2454,7 @@ function acePool(){
 }
 
 /* ---- smart signals ---- */
-var SIGL = {hit:'Hit rate', form:'Form', cushion:'Cushion', matchup:'Matchup', role:'Role', pace:'Pace', opp:'Vs opponent', mins:'Minutes', gap:'Model gap', tform:'Team form', rest:'Rest', shots:'Shot quality', crew:'Crew', avail:'Who is playing', sched:'Schedule spot', price:'Better number'};
+var SIGL = {hit:'Hit rate', form:'Form', cushion:'Cushion', matchup:'Matchup', role:'Role', pace:'Pace', opp:'Vs opponent', mins:'Minutes', gap:'Model gap', tform:'Team form', rest:'Rest', shots:'Shot quality', crew:'Crew', avail:'Who is playing', sched:'Schedule spot', price:'Better number', move:'Line move'};
 var TIERS = ['Strong', 'Solid', 'Notable'];
 function tierEl(sig, mini){
   if (!sig || !sig.tier) return null;
@@ -3262,7 +3262,8 @@ function renderReplay(root){
   var ks = Object.keys(r.stats);
   if (!ks.length) return;
   root.append(el('h2', {text:'Prop model check'}));
-  root.append(help('Every game of last season (' + (r.games || 0) + ' games) was replayed. Before each game the prop model predicted every rotation player from his earlier games only, then the box score showed what happened. If the model is honest, about 50% of results land inside its middle-50% range and 80% inside its middle-80% range. The fix column is the range correction the daily run now applies.'));
+  root.append(help('Every game of the replayed seasons (' + (r.games || 0) + ' games) was replayed. Before each game the prop model predicted every rotation player from his earlier games only, then the box score showed what happened. If the model is honest, about 50% of results land inside its middle-50% range and 80% inside its middle-80% range. The fix column is the range correction the daily run now applies.'));
+  if (r.cfg && r.candidates && r.candidates.length > 1) root.append(el('p', {class:'small', text:'Method in use: ' + r.cfg.name + ', the best of ' + r.candidates.length + ' ways tested on games the test never fit on.'}));
   root.append(table(['Stat', 'Predictions', 'In 50% range', 'In 80% range', 'Range fix'], ks.map(function(k){
     var v = r.stats[k];
     return [STAT[k] || k, Number(v.n).toLocaleString(), pct(v.in50), pct(v.in80), v.use ? 'x' + Number(v.s).toFixed(2) : 'not used'];

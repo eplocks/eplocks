@@ -1135,7 +1135,14 @@ def prop_model(log, stat, line, env=1.0, mult=1.0, rm=1.0):
     if n < 3:
         return None
     season, l10, l5 = mean(vals), mean(vals[-10:]), mean(vals[-5:])
-    base = 0.5 * season + 0.3 * l10 + 0.2 * l5
+    w0, w1, w2 = PROP_CFG['w']                     # chosen by the replay on games it never fit on (see run_replay)
+    base = w0 * season + w1 * l10 + w2 * l5
+    if PROP_CFG.get('permin'):                     # production per minute times the minutes he is projected to play
+        mins = [g['min'] for g in gl]
+
+        def rate(v, m):
+            return sum(v) / max(sum(m), 1.0)
+        base = (w0 * rate(vals, mins) + w1 * rate(vals[-10:], mins[-10:]) + w2 * rate(vals[-5:], mins[-5:])) * (0.5 * mean(mins) + 0.5 * mean(mins[-5:]))
     n_eff, prior_mean = n, None
     pp = log.get('prior')
     if pp and pp.get('n', 0) >= PRIOR_MIN_GP:
@@ -2076,6 +2083,10 @@ def packet(g):
     if mo:
         L.append('Our projection from ratings: home margin %+.1f, total %.1f, pace %.1f. Blended with the market at weight %.2f -> margin %+.1f, total %.1f.' % (
             mo['margin'], mo['total'], mo['pace'], g['blend']['weight'], g['blend']['margin'], g['blend']['total']))
+    mv = g.get('move') or {}
+    if mv.get('sp') or mv.get('tot'):
+        L.append('Market movement since this line was first seen today: spread %s, total %s (context; the market line already includes it).' % (
+            ('%+g' % mv['sp']) if mv.get('sp') else 'unchanged', ('%+g' % mv['tot']) if mv.get('tot') else 'unchanged'))
     sd_ = g.get('side')
     if sd_ and sd_.get('lines'):
         L.append('Already inside our projection above (do not count again): who is playing and schedule, %+.1f margin, %+.1f total. Details:' % (sd_['margin'], sd_['total']))
@@ -2210,6 +2221,14 @@ def game_signals(g, p, lg_pace):
             cons_side = cons if (typ == 'total' or side == 'home') else -cons
             items.append({'k': 'price', 'w': 1.0, 't': '%s has %s while most books have %s' % (
                 p.get('book') or 'One book', p['label'], ('%g' % cons_side) if typ == 'total' else '%+g' % cons_side)})
+    mv = g.get('move') or {}
+    if typ in ('spread', 'moneyline') and mv.get('sp'):
+        toward = -mv['sp'] if side == 'home' else mv['sp']          # the home spread falling means money came in on the home side
+        if toward >= 1.0:
+            items.append({'k': 'move', 'w': 1.0, 't': 'The line moved %.1f points toward %s since it was first seen today (%s %+g to %+g)' % (
+                toward, g[side]['abbr'], h['abbr'], mv['sp0'], mk.get('spread_home'))})
+    if typ == 'total' and mv.get('tot') and mv['tot'] * (1 if side == 'over' else -1) >= 1.5:
+        items.append({'k': 'move', 'w': 1.0, 't': 'The total moved %+.1f since it was first seen today (%g to %g)' % (mv['tot'], mv['tot0'], mk.get('total'))})
     sd_ = g.get('side') or {}
     if sd_.get('x'):
         x_ = sd_['x']
@@ -2936,20 +2955,8 @@ def ridge(rows, feats, prior, strength=0.15):
     return out
 
 
-def run_side_fit(box, prior_state):
-    """Replays last season with ratings built only from earlier games and learns what who-is-playing and each schedule spot is worth,
-    in points of margin and total. The first part of the season fits, the rest checks, then the whole season gives the final sizes."""
-    pg = (prior_state or {}).get('games') or {}
-    games = []
-    for gid, b in box['games'].items():
-        g = pg.get(gid)
-        if not g or (g.get('home') or {}).get('pts') is None or (g.get('away') or {}).get('pts') is None:
-            continue
-        games.append(dict(g, date=g.get('date') or b['d'], players=[row_to_player(r) for r in b['p']]))
-    if len(games) < 500:
-        return None
-    games.sort(key=lambda g: (g['date'], g['id']))
-    repl = prior_rates_from(box)[1]
+def side_rows(games, repl):
+    """One season walked in date order: ratings built only from earlier games, features before each game, and how far off the plain projection was."""
     tr = SideTracker({}, repl)          # no head start: the season being replayed is the only evidence
     by_day = {}
     for g in games:
@@ -2974,12 +2981,27 @@ def run_side_fit(box, prior_state):
         for g in by_day[d]:
             seen[g['id']] = g
             tr.add(g)
+    return rows
+
+
+def run_side_fit(boxes):
+    """Replays every stored season with ratings built only from earlier games and learns what who-is-playing and each schedule spot
+    is worth, in points of margin and total. The first 60% of each season fits, the rest checks, then all of it gives the final sizes."""
+    rows, test = [], []
+    for box in boxes:
+        games = box_games(box)
+        if len(games) < 500:
+            continue
+        rs = side_rows(games, prior_rates_from(box)[1])
+        k = int(len(rs) * 0.6)
+        rows += [(True,) + r for r in rs[:k]] + [(False,) + r for r in rs[k:]]
     if len(rows) < 300:
+        print('Side model: not enough replayed games (%d)' % len(rows), flush=True)
         return None
-    cut = rows[int(len(rows) * 0.6)][0]
-    fit_m = ridge([(x, r) for d, x, xt, r, rt in rows if d < cut], SIDE_FEATS, SIDE_PRIOR)
-    fit_t = ridge([(xt, rt) for d, x, xt, r, rt in rows if d < cut], SIDE_TFEATS, SIDE_TPRIOR)
-    test = [(x, xt, r, rt) for d, x, xt, r, rt in rows if d >= cut]
+    fit_m = ridge([(x, r) for f, d, x, xt, r, rt in rows if f], SIDE_FEATS, SIDE_PRIOR)
+    fit_t = ridge([(xt, rt) for f, d, x, xt, r, rt in rows if f], SIDE_TFEATS, SIDE_TPRIOR)
+    test = [(x, xt, r, rt) for f, d, x, xt, r, rt in rows if not f]
+    rows = [r[1:] for r in rows]
 
     def mae(fn):
         return round(mean(abs(fn(x, xt, r, rt)) for x, xt, r, rt in test), 3)
@@ -2990,9 +3012,9 @@ def run_side_fit(box, prior_state):
              'total_error_after': mae(lambda x, xt, r, rt: rt - clamp(sum(fit_t[k] * xt[k] for k in SIDE_TFEATS), -SIDE_CAP['total'], SIDE_CAP['total']))}
     coef = ridge([(x, r) for d, x, xt, r, rt in rows], SIDE_FEATS, SIDE_PRIOR)
     tcoef = ridge([(xt, rt) for d, x, xt, r, rt in rows], SIDE_TFEATS, SIDE_TPRIOR)
-    keep_m = check['margin_error_after'] <= check['margin_error_before']
-    keep_t = check['total_error_after'] <= check['total_error_before']
-    out = {'made': dt.datetime.now(dt.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'), 'games': len(rows), 'repl': r3(repl),
+    keep_m = check['margin_error_after'] < check['margin_error_before']      # it has to actually help on unseen games, not tie
+    keep_t = check['total_error_after'] < check['total_error_before']
+    out = {'made': dt.datetime.now(dt.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'), 'games': len(rows), 'seasons': len(boxes),
            'coef': {k: round(v, 3) for k, v in coef.items()} if keep_m else {k: 0.0 for k in SIDE_FEATS},
            'tcoef': {k: round(v, 3) for k, v in tcoef.items()} if keep_t else {k: 0.0 for k in SIDE_TFEATS},
            'check': check, 'used': {'margin': keep_m, 'total': keep_t}}
@@ -3008,7 +3030,7 @@ def load_side_model():
         SIDE['tcoef'] = {k: float((js.get('tcoef') or {}).get(k, 0.0)) for k in SIDE_TFEATS}
         SIDE['fitted'] = True
         ck = js.get('check') or {}
-        src('side_model', True, 'who-is-playing and schedule sizes learned from %d games last season; on games it had not seen, margin error %.2f -> %.2f points, total error %.2f -> %.2f' % (
+        src('side_model', True, 'who-is-playing and schedule sizes learned from %d replayed games; on games the fit had not seen, margin error %.2f -> %.2f points, total error %.2f -> %.2f' % (
             js.get('games', 0), ck.get('margin_error_before', 0), ck.get('margin_error_after', 0), ck.get('total_error_before', 0), ck.get('total_error_after', 0)))
     else:
         src('side_model', True, 'who-is-playing adjustment at a cautious starting size (%.2f points per point of player value); schedule spots shown but not counted until the replay measures them' % SIDE_PRIOR['impact'])
@@ -3278,23 +3300,37 @@ REPLAY_SECONDS = float(os.environ.get('EPLOCKS_REPLAY_SECONDS') or 3000)
 REPLAY_MIN_GAMES = 5          # games a player needs before he is predicted
 REPLAY_MIN_MIN = 15.0         # and minutes per game over his last five
 REPLAY_MIN_N = 1000           # predictions a stat needs before its correction is used
-REPLAY_V = 2
+REPLAY_V = 3
 REPLAY_FIX = {}               # stat -> {'b': average multiplier, 's': range multiplier}; filled from data/prop_replay.json
 REPLAY_OFF = {'off': False}   # the replay itself must judge the uncorrected model
 REPLAY_SUM = {}               # short summary for the website
 
 
-def replay_box_update():
-    """Stores last season's player lines compactly in data/replay_box.json, resuming where the previous run stopped."""
-    path = os.path.join(DATA, 'replay_box.json')
-    rng = [PRIOR_START, PRIOR_END]
+REPLAY_SEASONS = [tuple(x.split(':')) for x in (os.environ.get('EPLOCKS_REPLAY_SEASONS') or '2024-10-22:2025-04-13,%s:%s' % (PRIOR_START, PRIOR_END)).split(',')]
+TEAM_KEYS = ('pts', 'fga', 'fgm', 'tpm', 'tpa', 'fta', 'ftm', 'orb', 'drb', 'reb', 'tov', 'ast', 'pf')
+PROP_CANDIDATES = [   # ways to turn a player's game log into tonight's expectation, compared on games the fit never saw
+    {'name': 'current: 50/30/20 season, last 10, last 5', 'w': (0.5, 0.3, 0.2), 'permin': False},
+    {'name': 'more recent: 35/35/30', 'w': (0.35, 0.35, 0.3), 'permin': False},
+    {'name': 'more season: 65/25/10', 'w': (0.65, 0.25, 0.1), 'permin': False},
+    {'name': 'even: 40/40/20', 'w': (0.4, 0.4, 0.2), 'permin': False},
+    {'name': 'per minute x projected minutes, 50/30/20', 'w': (0.5, 0.3, 0.2), 'permin': True},
+    {'name': 'per minute x projected minutes, 35/35/30', 'w': (0.35, 0.35, 0.3), 'permin': True}]
+PROP_CFG = {'w': (0.5, 0.3, 0.2), 'permin': False}
+
+
+def box_path(rng):
+    return os.path.join(DATA, 'replay_box_%s.json' % rng[1][:4])
+
+
+def replay_box_update(rng, t0):
+    """Stores one season's box scores compactly (players and team totals), resuming where the previous run stopped."""
+    path = box_path(rng)
     st = jload(path, None)
-    if not st or st.get('range') != rng or st.get('v') != REPLAY_V:
-        st = {'v': REPLAY_V, 'range': rng, 'days_done': [], 'games': {}, 'complete': False}
+    if not st or st.get('range') != list(rng) or st.get('v') != REPLAY_V:
+        st = {'v': REPLAY_V, 'range': list(rng), 'days_done': [], 'games': {}, 'complete': False}
     if st.get('complete'):
         return st
-    t0 = time.time()
-    d0, d1 = dt.date.fromisoformat(PRIOR_START), dt.date.fromisoformat(PRIOR_END)
+    d0, d1 = dt.date.fromisoformat(rng[0]), dt.date.fromisoformat(rng[1])
     done, d = set(st['days_done']), d0
     while d <= d1 and time.time() - t0 < REPLAY_SECONDS * 0.8:
         ds = d.isoformat()
@@ -3310,8 +3346,10 @@ def replay_box_update():
                     if not isinstance(r, dict):
                         ok_day = False
                         continue
-                    st['games'][e['id']] = {'d': r.get('date') or ds, 'p': [[p['id'], p['t'], p.get('min') or 0] + [p.get(k) or 0 for k in ROW_KEYS]
-                                                                          for p in r.get('players') or []]}
+                    st['games'][e['id']] = {'d': r.get('date') or ds,
+                                            'h': [r['home'].get('ab')] + [r['home'].get(k) for k in TEAM_KEYS],
+                                            'a': [r['away'].get('ab')] + [r['away'].get(k) for k in TEAM_KEYS],
+                                            'p': [[p['id'], p['t'], p.get('min') or 0] + [p.get(k) or 0 for k in ROW_KEYS] for p in r.get('players') or []]}
                 if ok_day:
                     done.add(ds)
             except Exception as ex:  # noqa
@@ -3323,11 +3361,30 @@ def replay_box_update():
     return st
 
 
-def replay_predictions(box):
-    """Walks the season in order; returns {stat: [(mean, sd, actual), ...]} from predictions made before each game."""
+def box_games(box):
+    """The stored season as game dicts the ratings and trackers understand, in date order."""
+    out = []
+    for gid, b in box['games'].items():
+        if not b.get('h') or not b.get('a'):
+            continue
+        g = {'id': gid, 'date': b['d'], 'players': [row_to_player(r) for r in b['p']]}
+        for side, k in (('home', 'h'), ('away', 'a')):
+            g[side] = dict(zip(TEAM_KEYS, b[k][1:]), ab=b[k][0])
+        if g['home'].get('pts') is None or g['away'].get('pts') is None:
+            continue
+        out.append(g)
+    out.sort(key=lambda g: (g['date'], g['id']))
+    return out
+
+
+def replay_predictions(box, cfg=None):
+    """Walks one season in order; returns {stat: [(mean, sd, actual, date), ...]} from predictions made before each game with cfg."""
     keys = ('pts', 'reb', 'ast', 'tpm', 'stl', 'blk', 'tov')
     logs, rows = {}, {s: [] for s in REPLAY_STATS}
+    saved = dict(PROP_CFG)
     REPLAY_OFF['off'] = True
+    if cfg:
+        PROP_CFG.update({'w': tuple(cfg['w']), 'permin': cfg['permin']})
     try:
         for gid, g in sorted(box['games'].items(), key=lambda kv: (kv[1]['d'], kv[0])):
             for r in g['p']:
@@ -3340,19 +3397,24 @@ def replay_predictions(box):
                     for s in REPLAY_STATS:
                         m = prop_model(L, s, 0.5)
                         if m and m['sd']:
-                            rows[s].append((m['mean'], m['sd'], STAT_FN[s](p)))
+                            rows[s].append((m['mean'], m['sd'], STAT_FN[s](p), g['d']))
                 L['games'].append(p)
     finally:
         REPLAY_OFF['off'] = False
+        PROP_CFG.clear()
+        PROP_CFG.update(saved)
     return rows
 
 
-def replay_events(rs, b=1.0, s=1.0, step=1):
-    """Over/under questions at the half-point lines around each prediction: (model chance of over, 1 if over happened)."""
+def replay_events(rs, b=1.0, s=1.0, step=1, lines_from=None):
+    """Over/under questions at the half-point lines around each prediction: (model chance of over, 1 if over happened).
+    lines_from: another set of predictions (same games, same order) whose means set the lines, so candidates face identical questions."""
     out = []
-    for mu, sd, act in rs[::step]:
+    ref = lines_from or rs
+    for i in range(0, len(rs), step):
+        mu, sd, act = rs[i][0], rs[i][1], rs[i][2]
         mu2, sd2 = mu * b, sd * s
-        base = math.floor(mu) + 0.5
+        base = math.floor(ref[i][0]) + 0.5
         for j in (-2, -1, 0, 1, 2):
             line = base + j
             if line <= 0:
@@ -3377,8 +3439,7 @@ def replay_fit(rs):
         ll = logloss(replay_events(rs, b, s, step))
         if best is None or ll < best[0]:
             best = (ll, s)
-    s = clamp(best[1], 0.85, 1.5)
-    return b, s
+    return b, clamp(best[1], 0.85, 1.5)
 
 
 def replay_table(rs, b=1.0, s=1.0):
@@ -3393,36 +3454,104 @@ def replay_table(rs, b=1.0, s=1.0):
     return [{'bucket': '%d-%d%%' % (k * 10, k * 10 + 10), 'n': c[0], 'model': r3(c[1] / c[0]), 'actual': r3(c[2] / c[0])} for k, c in sorted(bk.items()) if c[0] >= 50]
 
 
-def run_replay():
-    """--replay: loads last season (resumable) and, once complete, writes data/prop_replay.json with the per-stat corrections."""
-    box = replay_box_update()
-    if not box.get('complete'):
-        msg = 'Replay: %d of the season\'s days loaded. Run it again to finish.' % len(box['days_done'])
-        print(msg, flush=True)
-        jsave(os.path.join(DATA, 'prop_replay.json'), {'complete': False, 'days': len(box['days_done']), 'msg': msg})
-        return 0
-    rows = replay_predictions(box)
-    out = {'complete': True, 'v': REPLAY_V, 'season': box['range'], 'games': len(box['games']), 'made': dt.datetime.now(dt.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'), 'stats': {}}
-    for stat, rs in rows.items():
-        if len(rs) < 200:
-            continue
-        b, s = replay_fit(rs)
-        before = replay_events(rs, 1.0, 1.0, max(1, len(rs) // 6000))
-        after = replay_events(rs, b, s, max(1, len(rs) // 6000))
-        z = [(a - m) / sd for m, sd, a in rs]
-        out['stats'][stat] = {'n': len(rs), 'b': r3(b), 's': r3(s), 'use': len(rs) >= REPLAY_MIN_N,
-                              'avg_pred': r1(mean(r[0] for r in rs)), 'avg_actual': r1(mean(r[2] for r in rs)),
-                              'in50': r3(sum(1 for x in z if abs(x) <= 0.674) / len(z)), 'in80': r3(sum(1 for x in z if abs(x) <= 1.282) / len(z)),
-                              'logloss_before': round(logloss(before), 4), 'logloss_after': round(logloss(after), 4),
-                              'table_before': replay_table(rs), 'table_after': replay_table(rs, b, s)}
-        print('%s: %d predictions, average x%.3f, range x%.2f, log loss %.4f -> %.4f' % (stat, len(rs), b, s, out['stats'][stat]['logloss_before'], out['stats'][stat]['logloss_after']), flush=True)
-    jsave(os.path.join(DATA, 'prop_replay.json'), out)
+def split_rows(rows_by_season, frac=0.6):
+    """Chronological split inside each season: the first part fits, the rest checks."""
+    tr, te = [], []
+    for rs in rows_by_season:
+        k = int(len(rs) * frac)
+        tr += rs[:k]
+        te += rs[k:]
+    return tr, te
+
+
+def probe_sources():
+    """Checks whether NBA.com's advanced stats answer from this machine (they block many cloud servers). Recorded, not used, until proven."""
+    url = 'https://stats.nba.com/stats/leaguedashteamstats?Season=2025-26&SeasonType=Regular%20Season&MeasureType=Advanced&PerMode=PerGame&LeagueID=00'
+    hdr = {'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15',
+           'Referer': 'https://www.nba.com/', 'Origin': 'https://www.nba.com', 'Accept': 'application/json, text/plain, */*',
+           'x-nba-stats-origin': 'stats', 'x-nba-stats-token': 'true'}
+    out = {'checked': dt.datetime.now(dt.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')}
     try:
-        st = jload(os.path.join(DATA, 'prior.json'), None)
-        if not st or not st.get('complete'):
-            print('Side model: last season summary (data/prior.json) not complete yet; a normal run finishes it, then run replay again.', flush=True)
-        else:
-            run_side_fit(box, st)
+        req = urllib.request.Request(url, headers=hdr)
+        with urllib.request.urlopen(req, timeout=25) as r:
+            js = json.loads(r.read().decode('utf-8'))
+        rows = ((js.get('resultSets') or [{}])[0].get('rowSet')) or []
+        out['nba_stats'] = {'ok': bool(rows), 'msg': '%d team rows returned' % len(rows)}
+    except Exception as e:  # noqa
+        out['nba_stats'] = {'ok': False, 'msg': str(e)[:160]}
+    jsave(os.path.join(DATA, 'source_probe.json'), out)
+    print('NBA.com stats probe: %s' % out['nba_stats'], flush=True)
+    return out
+
+
+def run_replay():
+    """--replay: loads the seasons in REPLAY_SEASONS (resumable), then:
+    1. compares ways of building the prop expectation on games the comparison never fit on, and keeps the best;
+    2. learns per-stat corrections for the average and the range, kept only where they help on unseen games;
+    3. learns what who-is-playing and each schedule spot is worth (run_side_fit);
+    4. checks whether NBA.com's advanced stats can be reached from here."""
+    t0 = time.time()
+    boxes = [replay_box_update(rng, t0) for rng in REPLAY_SEASONS]
+    try:
+        probe_sources()
+    except Exception as e:  # noqa
+        print('Probe failed: %s' % str(e)[:120], flush=True)
+    if not all(b.get('complete') for b in boxes):
+        msg = 'Replay: %s. Run it again to finish loading.' % ', '.join('%s %d of %d days' % (b['range'][1][:4], len(b['days_done']),
+                                                                                         (dt.date.fromisoformat(b['range'][1]) - dt.date.fromisoformat(b['range'][0])).days + 1) for b in boxes)
+        print(msg, flush=True)
+        jsave(os.path.join(DATA, 'prop_replay.json'), {'complete': False, 'days': sum(len(b['days_done']) for b in boxes), 'msg': msg})
+        return 0
+    # 1. which way of reading a game log predicts best
+    cand = []
+    base_rows = [replay_predictions(b, PROP_CANDIDATES[0]) for b in boxes]
+    for c in PROP_CANDIDATES:
+        rows = base_rows if c is PROP_CANDIDATES[0] else [replay_predictions(b, c) for b in boxes]
+        score, n = 0.0, 0
+        for stat in REPLAY_STATS:
+            _, te = split_rows([r[stat] for r in rows])
+            _, te0 = split_rows([r[stat] for r in base_rows])
+            ev = replay_events(te, step=max(1, len(te) // 4000), lines_from=te0)
+            score += logloss(ev) * len(ev)
+            n += len(ev)
+        cand.append({'name': c['name'], 'w': list(c['w']), 'permin': c['permin'], 'score': round(score / max(n, 1), 5), 'rows': rows})
+        print('Prop method "%s": held-out log loss %.5f' % (c['name'], score / max(n, 1)), flush=True)
+    base_score = cand[0]['score']
+    best = min(cand, key=lambda c: c['score'])
+    if best['score'] > base_score - 0.0005:       # a change has to clearly beat the current method, not tie it
+        best = cand[0]
+    rows = best['rows']
+    out = {'complete': True, 'v': REPLAY_V, 'seasons': [b['range'] for b in boxes], 'games': sum(len(b['games']) for b in boxes),
+           'made': dt.datetime.now(dt.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
+           'cfg': {'w': best['w'], 'permin': best['permin'], 'name': best['name']},
+           'candidates': [{k: c[k] for k in ('name', 'score')} for c in cand], 'stats': {}}
+    # 2. per-stat corrections, judged on the held-out part first
+    for stat in REPLAY_STATS:
+        allr = []
+        for r in rows:
+            allr += r[stat]
+        if len(allr) < 200:
+            continue
+        tr, te = split_rows([r[stat] for r in rows])
+        bt, stt = replay_fit(tr)
+        hold_before = logloss(replay_events(te, 1.0, 1.0, max(1, len(te) // 6000)))
+        hold_after = logloss(replay_events(te, bt, stt, max(1, len(te) // 6000)))
+        helps = hold_after < hold_before
+        b, s = replay_fit(allr) if helps else (1.0, 1.0)
+        z = [(a - m) / sd for m, sd, a, _ in allr]
+        out['stats'][stat] = {'n': len(allr), 'b': r3(b), 's': r3(s), 'use': helps and len(allr) >= REPLAY_MIN_N,
+                              'avg_pred': r1(mean(r[0] for r in allr)), 'avg_actual': r1(mean(r[2] for r in allr)),
+                              'in50': r3(sum(1 for x in z if abs(x) <= 0.674) / len(z)), 'in80': r3(sum(1 for x in z if abs(x) <= 1.282) / len(z)),
+                              'holdout_before': round(hold_before, 4), 'holdout_after': round(hold_after, 4),
+                              'table_before': replay_table(allr), 'table_after': replay_table(allr, b, s)}
+        print('%s: %d predictions, average x%.3f, range x%.2f, held-out log loss %.4f -> %.4f%s' % (
+            stat, len(allr), b, s, hold_before, hold_after, '' if helps else ' (no gain, not used)'), flush=True)
+    for c in cand:
+        c.pop('rows', None)
+    jsave(os.path.join(DATA, 'prop_replay.json'), out)
+    # 3. who is playing and schedule spots, on every replayed season
+    try:
+        run_side_fit(boxes)
     except Exception as e:  # noqa
         print('Side model fit failed: %s' % str(e)[:200], flush=True)
     return 0
@@ -3431,9 +3560,11 @@ def run_replay():
 def load_replay():
     js = jload(os.path.join(DATA, 'prop_replay.json'), {})
     REPLAY_FIX.clear()
+    if js.get('complete') and js.get('cfg') and js.get('v') == REPLAY_V:
+        PROP_CFG.update({'w': tuple(js['cfg']['w']), 'permin': bool(js['cfg']['permin'])})
     REPLAY_SUM.clear()
     if js.get('complete'):
-        REPLAY_SUM.update({'games': js.get('games'), 'made': js.get('made'), 'stats': {k: {x: v.get(x) for x in ('n', 'b', 's', 'use', 'in50', 'in80', 'table_before', 'table_after')}
+        REPLAY_SUM.update({'games': js.get('games'), 'made': js.get('made'), 'cfg': js.get('cfg'), 'candidates': js.get('candidates'), 'stats': {k: {x: v.get(x) for x in ('n', 'b', 's', 'use', 'in50', 'in80', 'holdout_before', 'holdout_after', 'table_before', 'table_after')}
                                                                                      for k, v in (js.get('stats') or {}).items()}})
     if not js.get('complete'):
         if js.get('days'):
@@ -3443,7 +3574,7 @@ def load_replay():
         if v.get('use'):
             REPLAY_FIX[stat] = {'b': v['b'], 's': v['s']}
     if REPLAY_FIX:
-        src('prop_replay', True, 'prop ranges tuned from %s last-season predictions: %s' % (
+        src('prop_replay', True, 'prop ranges tuned from %s replayed predictions: %s' % (
             '{:,}'.format(sum(v['n'] for v in js['stats'].values())), ', '.join('%s x%.2f' % (STAT_NAMES.get(k, k).lower(), v['s']) for k, v in REPLAY_FIX.items())))
 
 
@@ -3887,7 +4018,7 @@ def main(argv):
     logs, name_index = build_player_logs(games, prior_player_means(prior_state) if pr_pack else None)
     side_tr = None
     try:
-        box_ = jload(os.path.join(DATA, 'replay_box.json'), None)
+        box_ = jload(box_path(REPLAY_SEASONS[-1]), None)
         box_ = box_ if box_ and box_.get('complete') and box_.get('v') == REPLAY_V else None
         rates_, repl_ = prior_rates_from(box_, prior_state if pr_pack else None)
         side_tr = SideTracker(rates_, repl_)
@@ -4046,6 +4177,9 @@ def main(argv):
     prev_games = {g['id']: g for g in prev.get('games', [])} if prev.get('for_date') == today.isoformat() else {}
 
     out_games, all_picks = [], []
+    lines_path = os.path.join(DATA, 'lines_seen.json')
+    lines_seen = {k: v for k, v in jload(lines_path, {}).items() if k >= (today - dt.timedelta(days=2)).isoformat()}
+    seen_today = lines_seen.setdefault(today.isoformat(), {})
     inj_names_by_team = {t: {norm_name(i['name']): i['status'].lower() for i in lst} for t, lst in (injuries or {}).items()}
     lg_total = 2 * lg_ortg * lg_pace / 100.0
     acache_path = os.path.join(DATA, 'analysis_cache.json')
@@ -4094,6 +4228,12 @@ def main(argv):
         min_real = min((home['ratings'] or {}).get('n', 0), (away['ratings'] or {}).get('n', 0))
         min_n = min(n_eff_(home), n_eff_(away)) if sane else 0
         mk = ev['market']
+        move = None
+        if mk and ev['state'] == 'pre' and (mk.get('spread_home') is not None or mk.get('total') is not None):
+            first = seen_today.setdefault(ev['id'], {'sp': mk.get('spread_home'), 'tot': mk.get('total'), 't': started.strftime('%Y-%m-%dT%H:%M:%SZ')})
+            move = {'sp': r1(mk['spread_home'] - first['sp']) if mk.get('spread_home') is not None and first.get('sp') is not None else None,
+                    'tot': r1(mk['total'] - first['tot']) if mk.get('total') is not None and first.get('tot') is not None else None,
+                    'since': first['t'], 'sp0': first.get('sp'), 'tot0': first.get('tot')}
         blend = None
         if mo:
             w = BLEND_MAX * min_n / (min_n + 12.0) if mk else 1.0
@@ -4110,7 +4250,7 @@ def main(argv):
                 w_, l_ = (gm['home'], gm['away']) if gm['home']['pts'] > gm['away']['pts'] else (gm['away'], gm['home'])
                 h2h.append('%s beat %s %d-%d at %s on %s' % (w_['ab'], l_['ab'], w_['pts'], l_['pts'], gm['home']['ab'], gm['date']))
         g = {'id': ev['id'], 'tip': ev['tip'], 'utc': ev['utc'], 'state': ev['state'], 'away': away, 'home': home, 'market': mk,
-             'model': {k: r1(v) for k, v in mo.items()} if mo else None, 'blend': blend, 'h2h': h2h, 'crew': crew, 'side': side_info}
+             'model': {k: r1(v) for k, v in mo.items()} if mo else None, 'blend': blend, 'h2h': h2h, 'crew': crew, 'side': side_info, 'move': move}
         # props for this game
         rows = []
         if mo:
@@ -4296,6 +4436,7 @@ def main(argv):
             oh_ = old_by_id.get(p['id']) or {}
             row_.update({k: oh_[k] for k in ('close', 'clv', 'clv_pts') if k in oh_})
             history.append(row_)
+    jsave(lines_path, lines_seen)
     jsave(hist_path, history)
     try:
         update_parlays(all_picks, out_games, games, today, started.strftime('%Y-%m-%dT%H:%M:%SZ'))
