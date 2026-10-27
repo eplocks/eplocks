@@ -7,3 +7,4 @@
 #   LAL @ DEN: Scott Foster, Tony Brothers, Marc Davis
 #
 # Delete the # from a line to use it. Lines starting with # are ignored.
+# Key check: 17:40
