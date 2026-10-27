@@ -48,6 +48,8 @@ JUDG_CAP = 0.04        # and never by more than this much probability, whatever 
 JUDG = {'w': W_JUDG, 'n': 0, 'brier_j': None, 'brier_m': None}
 BLEND_MAX = 0.5        # most weight the model's own number gets against the market's (last season's replay can lower it)
 CLOSE_WINDOW_MIN = int(os.environ.get('EPLOCKS_CLOSE_MINUTES') or 25)    # closing mode records a pick's closing line this many minutes before tip-off
+PROPS_FROM_HOUR = int(os.environ.get('EPLOCKS_PROPS_FROM_HOUR') or 15)   # props are bought only from this hour (Central) on: one fresh pull before tip-off, when lines and injuries have settled
+PROPS_CLOSE_MIN_CREDITS = int(os.environ.get('EPLOCKS_PROPS_CLOSE_MIN_CREDITS') or 150)   # prop closing lines are only bought while this many credits remain
 PROPS_STALE_H = 8      # reused props older than this are dropped rather than priced
 PROPS_REUSE_MIN = int(os.environ.get('EPLOCKS_PROPS_REUSE_MINUTES') or 60)   # props pulled this recently are reused instead of paid for again
 ODDS_MIN_CREDITS = int(os.environ.get('EPLOCKS_ODDS_MIN_CREDITS') or 40)  # never spend the Odds API key below this many credits
@@ -1910,6 +1912,11 @@ def fetch_odds_props(slate_events):
         if ce and now - ce.get('t', 0) > PROPS_STALE_H * 3600:
             ce = None                       # too old: prices this stale would show edges that are no longer on offer
         fresh = ce and now - ce.get('t', 0) < PROPS_REUSE_MIN * 60
+        early = dt.datetime.now(CT).hour < PROPS_FROM_HOUR and not ce
+        if early:
+            continue                        # too early to buy props: they are pulled once in the afternoon and reused after that
+        if ce and not fresh and dt.datetime.now(CT).hour >= PROPS_FROM_HOUR and ODDS['left'] is not None and ODDS['left'] < 400:
+            fresh = True                    # on a small plan: keep the afternoon pull instead of buying the same props again
         if fresh or not odds_ok(per):
             if not fresh:
                 short = True
@@ -1937,7 +1944,7 @@ def fetch_odds_props(slate_events):
     if short:
         note('Odds API credits are nearly used up (%s left), so props were not refreshed this run%s' % (ODDS['left'], '; the last lines pulled today are used instead' if reused else ''))
     elif reused:
-        note('Props for %d games were pulled less than %d minutes ago and are reused to save Odds API credits' % (reused, PROPS_REUSE_MIN))
+        note('Props for %d games pulled earlier today are reused to save Odds API credits' % reused)
     ok = bool(out)
     nbk = max([p['n_books'] for p in out] or [0])
     src('odds_api', ok, ('%d props for %d games from up to %d books; %s credits left%s' % (len(out), len(mine), nbk, ODDS['left'] if ODDS['left'] is not None else '?', ('; %d games failed' % fails) if fails else '')) if ok else
@@ -3741,7 +3748,10 @@ def run_closing():
     prop_due = [h for h in due if h['type'] == 'prop']
     if ODDS_KEY and prop_due:
         try:
-            evs = odds_get('events', {})
+            evs = odds_get('events', {})            # free call; it also tells us how many credits are left
+            if ODDS['left'] is not None and ODDS['left'] < PROPS_CLOSE_MIN_CREDITS:
+                note('Closing: prop closing lines skipped to save Odds API credits (%s left)' % ODDS['left'])
+                evs = []
             oid = {(nick(e.get('home_team')), nick(e.get('away_team'))): e['id'] for e in evs if isinstance(e, dict)} if isinstance(evs, list) else {}
             for gid in sorted({h['game_id'] for h in prop_due}):
                 g = gmap.get(gid)
