@@ -1,0 +1,9 @@
+# Optional: type in the officials for a game if the bot has not found them yet. One game per line, then commit.
+# The bot normally finds them by itself once the NBA posts them (usually the morning of the game).
+# Typed crews win over automatic ones. Either team order works.
+#
+# Format:  AWAY @ HOME: Crew Chief, Referee, Umpire
+# Example:
+#   LAL @ DEN: Scott Foster, Tony Brothers, Marc Davis
+#
+# Delete the # from a line to use it. Lines starting with # are ignored.
