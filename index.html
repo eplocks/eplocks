@@ -1796,8 +1796,12 @@ function numbersTable(g){
   rows.push(['Blended (our weight ' + (bl ? Math.round(bl.weight * 100) + '%' : 'n/a') + ')', bl ? sp(bl.margin) : 'n/a', bl && bl.total != null ? f1(bl.total) : 'n/a']);
   rows.push(['Claude adjustment (capped)', ad.margin != null ? sg(ad.margin) + ' pts' : 'n/a', ad.total != null ? sg(ad.total) + ' pts' : 'n/a']);
   if (cr) rows.push(['Officials (already inside our projection)', '', cr.adj_total ? sg(cr.adj_total) + ' pts' : 'no change']);
+  var sd = g.side;
+  if (sd) rows.push(['Who is playing + schedule (already inside our projection)', sd.margin ? h.abbr + ' ' + sg(sd.margin) + ' pts' : 'no change', sd.total ? sg(sd.total) + ' pts' : 'no change']);
   rows.push(['Final number', fin ? sp(fin.margin) : 'n/a', fin && fin.total != null ? f1(fin.total) : 'n/a']);
   var kids = [table(['Step', 'Spread (' + h.abbr + ')', 'Total'], rows, 1)];
+  if (sd && sd.lines && sd.lines.length) kids.push(el('ul', {class:'small', style:'margin:8px 0 0;padding-left:18px'}, sd.lines.map(function(t){ return el('li', {text:t}); })));
+  if (sd) kids.push(el('p', {class:'small mut', text:sd.fitted ? 'Sizes for who is playing and each schedule spot were learned from last season\'s games.' : 'Who is playing counts at a cautious starting size; schedule spots count for nothing until the last-season replay measures them.'}));
   if (fin) kids.push(el('p', {class:'small mut', text:'Win chance: ' + g.away.abbr + ' ' + Math.round((1 - fin.home_win) * 100) + '%, ' + h.abbr + ' ' + Math.round(fin.home_win * 100) + '%. ' + (fin.note || '')}));
   return kids;
 }
@@ -2170,7 +2174,7 @@ function acePool(){
 }
 
 /* ---- smart signals ---- */
-var SIGL = {hit:'Hit rate', form:'Form', cushion:'Cushion', matchup:'Matchup', role:'Role', pace:'Pace', opp:'Vs opponent', mins:'Minutes', gap:'Model gap', tform:'Team form', rest:'Rest', shots:'Shot quality', crew:'Crew'};
+var SIGL = {hit:'Hit rate', form:'Form', cushion:'Cushion', matchup:'Matchup', role:'Role', pace:'Pace', opp:'Vs opponent', mins:'Minutes', gap:'Model gap', tform:'Team form', rest:'Rest', shots:'Shot quality', crew:'Crew', avail:'Who is playing', sched:'Schedule spot', price:'Better number'};
 var TIERS = ['Strong', 'Solid', 'Notable'];
 function tierEl(sig, mini){
   if (!sig || !sig.tier) return null;
@@ -3061,6 +3065,7 @@ function renderMethod(){
       li('Collect.', 'Every finished NBA game this season and its box score from ESPN, last season as a starting point, shot locations, the injury report and the betting lines.'),
       li('Rate the teams.', 'Offense, defense and pace per 100 possessions, adjusted for each opponent, with recent games counting more. Early in the season ratings are pulled toward last season (half kept, because rosters change) or the league average.'),
       li('Project the game.', 'Ratings give an expected score. Home court adds ' + (P.home_edge != null ? P.home_edge : 2.2) + ' points and a back-to-back takes ' + (P.b2b_points != null ? P.b2b_points : 1.5) + ' points off.'),
+      li('Who is playing.', 'Every player has a value: his production per minute (game score) above a bench-level replacement, times his usual minutes. Players ruled out, doubtful or questionable take their value off the team, except players who have already been missing most games (the rating already knows). Schedule spots (rest, three games in four nights, time zones crossed, long road trips, altitude) are measured too. How many points each is worth is learned from last season\'s games, and a spot only counts once it clearly stands out from the noise.'),
       li('Blend with the market.', 'The betting line already holds a lot of information, so the model is only given a share of the weight (never more than ' + Math.round((P.blend_max != null ? P.blend_max : 0.5) * 100) + '%, and less while teams have few games).'),
       li('Price the bet.', 'The blended number becomes a chance using a normal curve (typical miss ' + (P.sd_margin || 12) + ' points on the spread and ' + (P.sd_total || 17.5) + ' on the total). A bet needs an edge of at least 2 points to be listed.'),
       li('Price the props.', 'A player\'s season, last-10 and last-5 averages are blended with last season. The estimate is adjusted for a new team or role, teammates who are out, blowout risk, the opponent\'s defense against his position (never more than 6%) and the game\'s expected pace. The spread comes from his own game-to-game swings.'),
@@ -3068,7 +3073,12 @@ function renderMethod(){
       li('Claude writes the analysis.', 'Claude reads the same numbers and writes the reasoning and risks. It may nudge a game number by at most 2 points (total 5) and a prop by at most 10%, and only for a reason stated in the data. It never sets probabilities, confidence or stakes.'),
       li('Claude\'s own read.', 'Besides writing the analysis, Claude is asked what it believes the realistic chance of each outcome is, counting what numbers cannot see (motivation, schedule spot, rotation habits, how a matchup tends to play). That probability is held within 12 points of the market\'s fair price, counts for a small share of the final chance (' + Math.round(((P.judgment && P.judgment.w != null) ? P.judgment.w : 0.1) * 100) + '%, never more than 4 points of movement), and can lower confidence or trim a stake when Claude flags a concern. It is a tracked estimate, scored against the model on every graded pick, and its weight rises or falls with its record. It is not inside information, and it cannot override the numbers.'),
       li('Safety brakes.', 'Players on the injury report get no prop pick. Unusually large edges are flagged and capped at Low. If a data source fails, the affected picks are capped at Low or skipped. The model also checks itself against graded results and shrinks its edges if they are not paying off (right now game picks count ' + (cal.game != null ? Math.round(cal.game * 100) : 100) + '% and props ' + (cal.prop != null ? Math.round(cal.prop * 100) : 70) + '% of the raw edge).'),
-      li('Confidence and stake.', 'Both come from fixed rules: sample size, edge size, injury and line coverage. Stakes are a quarter of the Kelly amount, kept between 0.5 and 2 units.'))),
+      li('Confidence and stake.', 'Both come from fixed rules: sample size, edge size, injury and line coverage. Stakes are a quarter of the Kelly amount, capped at 0.5 units for Low, 1 for Medium and 2 for High. The day\'s card holds at most 25 picks, 4 props per game and 1 per player; edges too big to be real are held back.'))),
+    sec('How EpLocks learns from its own results', el('ul', {},
+      li('Auditor.', 'Every morning it reviews every graded pick by market, confidence, signal and edge size, against the break-even of the prices taken and the closing line. Claude writes up to five short lessons that the bot reads before analyzing each game. A market that clearly loses over 50+ picks gets lower confidence and half the stake until it recovers.'),
+      li('Prop model check.', 'Last season is replayed game by game: before each game the prop model predicts every rotation player from his earlier games only, and the box score shows whether its chances held up. Small per-stat corrections come out of it and are applied every day.'),
+      li('Injury news.', 'Every 20 minutes in the evening the injury report is checked. When a rotation player is newly ruled out, or is back, for a game that has not started, the card is rebuilt at once and any new pick is sent to your phone.'),
+      li('Line shopping across numbers.', 'Every book\'s own spread and total is priced, not just the most common one. A book hanging a better number than the rest shows up as edge on its own.'))),
     sec('Coaching and matchup tendencies', [
       el('p', {text:'Open any game and choose "Coaching and matchup tendencies". These are measured from box scores: how deep the rotation goes, how hard starters are played, how soon they leave blowouts, how stable the core is, how often a team shoots threes, how it fares on back-to-backs, and what each defense gives up to guards, forwards and centers.'}),
       el('p', {text:'Only the position-defense piece feeds the prop estimates, and only by a small capped amount. The rest is context for Claude and for you. Your own notes (the notes.txt file) are shown as notes and never change a number.'})]),

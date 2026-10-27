@@ -36,8 +36,8 @@ HCA = float(os.environ.get('EPLOCKS_HOME_EDGE') or 2.2)      # home-court points
 SD_MARGIN, SD_TOTAL = 12.0, 17.5                              # typical NBA error vs closing lines
 B2B_PTS = 1.5                                                 # heuristic back-to-back penalty (points of margin)
 MAX_PROP_ROWS = 60
-ENGINE_VERSION = '7.0'
-SZ_V = 3               # box-score format version: 2 adds player positions, 3 adds officials and team fouls (older stored games are re-read once)
+ENGINE_VERSION = '7.1'
+SZ_V = 4               # box-score format version: 2 adds player positions, 3 adds officials and team fouls, 4 adds player shooting splits and +/- (older stored games are re-read once)
 PRIOR_V = 2            # last-season summary format version (2 adds defense by position)
 CLAUDE_BUDGET = float(os.environ.get('EPLOCKS_CLAUDE_SECONDS') or 1500)   # stop asking Claude after this many seconds so a run always finishes
 PROP_ROWS_TO_CLAUDE = 30
@@ -439,7 +439,9 @@ def parse_summary(js, ev):
                 ath = a.get('athlete') or {}
                 players.append({'id': str(ath.get('id')), 'name': ath.get('displayName') or '', 'tid': tid, 'min': mn, 'pos': posgrp((ath.get('position') or {}).get('abbreviation')),
                                 'pts': toi(g('PTS')) or 0, 'reb': toi(g('REB')) or 0, 'ast': toi(g('AST')) or 0,
-                                'tpm': (pair(g('3PT'))[0] or 0), 'stl': toi(g('STL')) or 0, 'blk': toi(g('BLK')) or 0, 'tov': toi(g('TO')) or 0})
+                                'tpm': (pair(g('3PT'))[0] or 0), 'stl': toi(g('STL')) or 0, 'blk': toi(g('BLK')) or 0, 'tov': toi(g('TO')) or 0,
+                                'fgm': pair(g('FG'))[0], 'fga': pair(g('FG'))[1], 'ftm': pair(g('FT'))[0], 'fta': pair(g('FT'))[1],
+                                'orb': toi(g('OREB')), 'pf': toi(g('PF')), 'pm': toi(g('+/-'))})
     out = {'id': ev['id'], 'date': ev['date'], 'utc': ev['utc'], 'players': []}
     for side in ('home', 'away'):
         e = ev[side]
@@ -1963,6 +1965,7 @@ RULES
 - The market line already reflects public injury news. When a market line is given, keep margin_adj and total_adj at 0 unless the packet shows a specific, quantifiable reason the line misses (a rating or rest mismatch with numbers). Never exceed +/-2.0 margin or +/-5.0 total when a line exists.
 - Officials, when given, are measured from this season's box scores and shrunk hard. A crew number is a small nudge to totals and free throws, never a reason for a pick on its own.
 - Smart signals (hit-rate, form, cushion, matchup, role, pace, minutes) are pattern flags computed from history. They are context, never a reason to move a number.
+- The projection already includes who is playing (value of players out or doubtful, measured from box scores) and schedule spots when they are listed under "Already inside our projection". Never adjust margin or total again for those same absences or spots.
 - TRACK RECORD, when present, is how past EpLocks picks actually graded out. Follow its lessons when you set mult and skip, respect the sample sizes it states, and say so in a prop note when a lesson changed your call. It is never a reason to invent or move a game number.
 - Early season samples are small. Say so when it matters and do not overstate.
 - You do not decide probabilities, confidence or stake sizes. The code computes them from your adjustments.
@@ -2073,6 +2076,10 @@ def packet(g):
     if mo:
         L.append('Our projection from ratings: home margin %+.1f, total %.1f, pace %.1f. Blended with the market at weight %.2f -> margin %+.1f, total %.1f.' % (
             mo['margin'], mo['total'], mo['pace'], g['blend']['weight'], g['blend']['margin'], g['blend']['total']))
+    sd_ = g.get('side')
+    if sd_ and sd_.get('lines'):
+        L.append('Already inside our projection above (do not count again): who is playing and schedule, %+.1f margin, %+.1f total. Details:' % (sd_['margin'], sd_['total']))
+        L.extend('  ' + x for x in sd_['lines'])
     if g['h2h']:
         L.append('Earlier meetings this season: ' + '; '.join(g['h2h']))
     sh = fmt_shots(g)
@@ -2197,6 +2204,25 @@ def game_signals(g, p, lg_pace):
         cr = g.get('crew')
         if cr and cr.get('adj_total') and cr['adj_total'] * (1 if over else -1) > 0:
             items.append({'k': 'crew', 'w': 0.5, 't': 'This crew\'s games run %s totals (effect %+.1f points)' % ('higher' if over else 'lower', cr['effect']['tot'])})
+    if p.get('alt') and mk:
+        cons = mk.get('spread_home') if typ == 'spread' else mk.get('total') if typ == 'total' else None
+        if cons is not None:
+            cons_side = cons if (typ == 'total' or side == 'home') else -cons
+            items.append({'k': 'price', 'w': 1.0, 't': '%s has %s while most books have %s' % (
+                p.get('book') or 'One book', p['label'], ('%g' % cons_side) if typ == 'total' else '%+g' % cons_side)})
+    sd_ = g.get('side') or {}
+    if sd_.get('x'):
+        x_ = sd_['x']
+        imp = SIDE['coef'].get('impact', 0.0) * x_.get('impact', 0.0)
+        spot = sum(SIDE['coef'].get(k, 0.0) * x_.get(k, 0.0) for k in SIDE_FEATS[1:])
+        if typ in ('spread', 'moneyline'):
+            sg = 1 if side == 'home' else -1
+            if imp * sg >= 1.0:
+                items.append({'k': 'avail', 'w': 1.0, 't': 'Who is playing favors %s by %.1f points of margin' % (g[side]['abbr'], abs(imp))})
+            if spot * sg >= 0.75:
+                items.append({'k': 'sched', 'w': 1.0, 't': 'Schedule spot favors %s by %.1f points (measured on last season)' % (g[side]['abbr'], abs(spot))})
+        elif typ == 'total' and sd_.get('total') and sd_['total'] * (1 if side == 'over' else -1) >= 1.0:
+            items.append({'k': 'avail', 'w': 1.0, 't': 'Players out move the projected total %+.1f points' % sd_['total']})
     if p.get('edge', 0) >= 0.05:
         items.append({'k': 'cushion', 'w': 1.0, 't': 'The model sees a %.1f-point edge over the price' % (p['edge'] * 100)})
     return sig_pack(items)
@@ -2303,6 +2329,26 @@ def game_picks(g, final_margin, final_total, min_n, inj_ok, uncertain_key, adj_a
         pw = phi(final_margin / SD_MARGIN)
         cands.append(('moneyline', 'home', '%s ML' % home, None, m['ml_home'], pw, fr.get('home_win'), jd.get('home_win'), 'ml_home'))
         cands.append(('moneyline', 'away', '%s ML' % away, None, m['ml_away'], 1 - pw, inv(fr.get('home_win')), inv(jd.get('home_win')), 'ml_away'))
+    # Line shopping across numbers: a book hanging a different spread or total than the consensus is priced at its own line,
+    # with the consensus fair chance moved by the usual value of a point, so a stale or generous number shows up as edge.
+    for b in m.get('books') or []:
+        bk = 'book:' + str(b.get('b') or '?')
+        L = m.get('spread_home')
+        if L is not None and b.get('sp') is not None and b['sp'] != L and abs(b['sp'] - L) <= 2.5 and b.get('sph') is not None and b.get('spa') is not None:
+            sp, dl = b['sp'], CLV_SLOPE['spread'] * (b['sp'] - L)
+            ph = phi((final_margin + sp) / SD_MARGIN)
+            fh = None if fr.get('home_cover') is None else clamp(fr['home_cover'] + dl, 0.02, 0.98)
+            jh = None if jd.get('cover_home') is None else clamp(jd['cover_home'] + dl, 0.02, 0.98)
+            cands.append(('spread', 'home', '%s %+g' % (home, sp), sp, b['sph'], ph, fh, jh, bk))
+            cands.append(('spread', 'away', '%s %+g' % (away, -sp), -sp, b['spa'], 1 - ph, inv(fh), inv(jh), bk))
+        T = m.get('total')
+        if T is not None and final_total is not None and b.get('t') is not None and b['t'] != T and abs(b['t'] - T) <= 3.5 and b.get('o') is not None and b.get('u') is not None:
+            t_, dl = b['t'], CLV_SLOPE['total'] * (b['t'] - T)
+            po = 1 - phi((t_ - final_total) / SD_TOTAL)
+            fo = None if fr.get('over') is None else clamp(fr['over'] - dl, 0.02, 0.98)
+            jo = None if jd.get('over') is None else clamp(jd['over'] - dl, 0.02, 0.98)
+            cands.append(('total', 'over', 'Over %g' % t_, t_, b['o'], po, fo, jo, bk))
+            cands.append(('total', 'under', 'Under %g' % t_, t_, b['u'], 1 - po, inv(fo), inv(jo), bk))
     cs = []
     for c in cands:
         if c[4] is None:
@@ -2331,7 +2377,8 @@ def game_picks(g, final_margin, final_total, min_n, inj_ok, uncertain_key, adj_a
             flag = flag or 'Claude\'s own read of this side is below the market\'s fair price, so the confidence is held back.'
         picks.append({'type': c[0], 'side': c[1], 'label': c[2], 'line': c[3], 'odds': c[4], 'est': r3(c[5]), 'est_raw': r3(c[6]), 'implied': r3(impl(c[4])), 'edge': r3(edge),
                       'kind': 'priced', 'conf': conf, 'units': units, 'flag': flag, 'fair': r3(c[7]), 'jp': r3(c[8]), 'est_nj': r3(c[9]),
-                      'book': shop.get(c[10]), 'n_books': m.get('n_books')})
+                      'book': c[10][5:] if str(c[10]).startswith('book:') else shop.get(c[10]), 'n_books': m.get('n_books'),
+                      'alt': True if str(c[10]).startswith('book:') else None})
     return picks
 
 
@@ -2660,6 +2707,310 @@ def finalize_picks(all_picks, out_games):
     return card
 
 
+# ----------------------------------------------------------------------------- who is playing, and the schedule (sides)
+# Team ratings come from the games a team has played with its usual players. When one of them sits, the rating alone does not know.
+# Each player gets a value: his production per minute (Hollinger game score) above a bench-level replacement, times his usual minutes.
+# A team's "missing value" tonight is the value of the players it usually has but will not have (Out, Doubtful, or partly Questionable).
+# A player who has already been out for most of the last ten games is already in the rating, so he counts for little or nothing.
+# Schedule spots (rest, three games in four nights, time zones crossed, long road trips, altitude) are measured the same way.
+# How many points each of these is worth is learned from last season by the replay (python eplocks.py --replay), not assumed:
+# until then only the player value is used, at a cautious starting size, and the schedule spots are shown but count for nothing.
+TEAM_TZ = {'ATL': 0, 'BOS': 0, 'BKN': 0, 'CHA': 0, 'CLE': 0, 'DET': 0, 'IND': 0, 'MIA': 0, 'NYK': 0, 'ORL': 0, 'PHI': 0, 'TOR': 0, 'WAS': 0,
+           'CHI': -1, 'DAL': -1, 'HOU': -1, 'MEM': -1, 'MIL': -1, 'MIN': -1, 'NOP': -1, 'OKC': -1, 'SAS': -1,
+           'DEN': -2, 'PHX': -2, 'UTA': -2, 'GSW': -3, 'LAC': -3, 'LAL': -3, 'POR': -3, 'SAC': -3}
+ALTITUDE = ('DEN', 'UTA')
+SIDE_FEATS = ('impact', 'rest', 'b34', 'tz', 'trip', 'alt')
+SIDE_TFEATS = ('impact', 'b34', 'alt')
+SIDE_PRIOR = {'impact': 0.30, 'rest': 0.0, 'b34': 0.0, 'tz': 0.0, 'trip': 0.0, 'alt': 0.0}
+SIDE_TPRIOR = {'impact': 0.0, 'b34': 0.0, 'alt': 0.0}
+SIDE = {'coef': dict(SIDE_PRIOR), 'tcoef': dict(SIDE_TPRIOR), 'fitted': False, 'msg': ''}
+SIDE_CAP = {'margin': 8.0, 'total': 6.0}       # the most these adjustments can ever move a projection, in points
+SIDE_LABEL = {'impact': 'Who is playing', 'rest': 'Rest', 'b34': 'Third game in four nights', 'tz': 'Time zones crossed', 'trip': 'Long road trip', 'alt': 'Altitude'}
+RATE_K = 200.0          # minutes of prior each player's per-minute value starts with
+
+
+def gms(p):
+    """Hollinger game score for one box-score line; a close stand-in when shooting splits are missing (older stored games)."""
+    pts, reb, ast = p.get('pts') or 0, p.get('reb') or 0, p.get('ast') or 0
+    stl, blk, tov = p.get('stl') or 0, p.get('blk') or 0, p.get('tov') or 0
+    if p.get('fga') is not None:
+        orb = p.get('orb') or 0
+        return (pts + 0.4 * (p.get('fgm') or 0) - 0.7 * p['fga'] - 0.4 * ((p.get('fta') or 0) - (p.get('ftm') or 0)) + 0.7 * orb + 0.3 * max(0, reb - orb)
+                + stl + 0.7 * ast + 0.7 * blk - 0.4 * (p.get('pf') or 0) - tov)
+    return 0.55 * pts + 0.35 * reb + 0.7 * ast + stl + 0.7 * blk - tov
+
+
+class SideTracker:
+    """Walks finished games in date order. Before any game it can say what each team is missing and what spot it is in."""
+
+    def __init__(self, prior_rates=None, repl=0.30):
+        self.pl, self.team, self.prior, self.repl = {}, {}, prior_rates or {}, repl
+
+    def add(self, g):
+        host = g['home']['ab']
+        for s in ('home', 'away'):
+            t = g[s]['ab']
+            played = {p['id']: p['min'] for p in g.get('players') or [] if p.get('t') == t and (p.get('min') or 0) > 0}
+            self.team.setdefault(t, []).append((g['date'], g['id'], host, played))
+        for p in g.get('players') or []:
+            if (p.get('min') or 0) > 0:
+                s_ = self.pl.setdefault(p['id'], [0.0, 0.0])
+                s_[0] += gms(p)
+                s_[1] += p['min']
+
+    def rate(self, pid):
+        gs, mn = self.pl.get(pid, (0.0, 0.0))
+        return (gs + RATE_K * self.prior.get(pid, self.repl + 0.05)) / (mn + RATE_K)
+
+    def missing(self, t, avail, listed=lambda pid: False):
+        """avail(pid) -> chance he plays tonight (0 to 1). Returns (missing value, [(pid, value lost, usual share, tonight)])."""
+        hist = self.team.get(t, [])[-10:]
+        if len(hist) < 3:
+            return 0.0, []
+        mins, last3 = {}, set()
+        for i, (_, _, _, played) in enumerate(hist):
+            for pid, mn in played.items():
+                mins.setdefault(pid, []).append(mn)
+                if i >= len(hist) - 3:
+                    last3.add(pid)
+        M, items = 0.0, []
+        for pid, ms in mins.items():
+            exp_min = mean(ms[-5:])
+            if exp_min < 10:
+                continue
+            usual = (len(ms) + 2.0) / (len(hist) + 2.0)   # shrunk toward 'he plays': a few missed games say little, and early ratings lean on last season
+            if pid not in last3 and not listed(pid):
+                continue                   # gone from the rotation lately and not on the report: maybe traded or waived, so no guess
+            a = avail(pid)
+            d = (usual - a) * clamp((self.rate(pid) - self.repl) * exp_min, -3.0, 15.0)
+            M += d
+            if abs(d) >= 0.5:
+                items.append((pid, d, usual, a))
+        items.sort(key=lambda x: -abs(x[1]))
+        return M, items
+
+    def spot(self, t, date, host):
+        prev = [h for h in self.team.get(t, []) if h[0] < date]
+        d = dt.date.fromisoformat(date)
+        rest = 3 if not prev else min(3, (d - dt.date.fromisoformat(prev[-1][0])).days - 1)
+        b34 = 1 if sum(1 for h in prev[-3:] if (d - dt.date.fromisoformat(h[0])).days <= 3) >= 2 else 0
+        tz = abs(TEAM_TZ.get(host, 0) - TEAM_TZ.get(prev[-1][2], 0)) if prev and rest <= 1 else 0
+        trip = 0
+        if host != t:
+            trip = 1
+            for h in reversed(prev):
+                if h[2] == t:
+                    break
+                trip += 1
+        return {'rest': rest, 'b34': b34, 'tz': tz, 'trip': trip}
+
+
+def side_features(tr, home, away, date, avail_h=None, avail_a=None, listed_h=None, listed_a=None):
+    """Features from the home team's side (positive favors home) and for the total. Without avail functions, who played is read from the box (fitting)."""
+    mh, ih = tr.missing(home, avail_h or (lambda pid: 1.0), listed_h or (lambda pid: False))
+    ma, ia = tr.missing(away, avail_a or (lambda pid: 1.0), listed_a or (lambda pid: False))
+    sh, sa = tr.spot(home, date, home), tr.spot(away, date, home)
+    x = {'impact': ma - mh, 'rest': sh['rest'] - sa['rest'], 'b34': sa['b34'] - sh['b34'], 'tz': sa['tz'] - sh['tz'],
+         'trip': clamp(sa['trip'] - 2, 0, 4), 'alt': 1.0 if home in ALTITUDE else 0.0}
+    xt = {'impact': mh + ma, 'b34': sh['b34'] + sa['b34'], 'alt': x['alt']}
+    return x, xt, {'home': {'missing': mh, 'items': ih, 'spot': sh}, 'away': {'missing': ma, 'items': ia, 'spot': sa}}
+
+
+def side_adjust(x, xt):
+    am = sum(SIDE['coef'].get(k, 0.0) * x[k] for k in SIDE_FEATS)
+    at = sum(SIDE['tcoef'].get(k, 0.0) * xt[k] for k in SIDE_TFEATS)
+    return clamp(am, -SIDE_CAP['margin'], SIDE_CAP['margin']), clamp(at, -SIDE_CAP['total'], SIDE_CAP['total'])
+
+
+def side_explain(x, det, home, away, names):
+    """Plain-language lines for the site and for Claude's packet."""
+    L = []
+    for t, s in ((away, 'away'), (home, 'home')):
+        for pid, d, usual, a in det[s]['items'][:4]:
+            nm = names.get(pid, pid)
+            if d > 0:
+                L.append('%s without %s (plays %d%% of games, %s tonight): %s %.1f points of value missing' % (t, nm, round(100 * usual), 'out' if a <= 0.05 else '%d%% to play' % round(100 * a), t, d))
+            else:
+                L.append('%s has %s back (played %d%% of recent games): %s %+.1f points of value' % (t, nm, round(100 * usual), t, -d))
+    for k in SIDE_FEATS[1:]:
+        c = SIDE['coef'].get(k, 0.0)
+        if x[k] and (abs(c * x[k]) >= 0.3 or not SIDE['fitted']):
+            eff = c * x[k]
+            desc = {'rest': 'rest days %s %d, %s %d' % (home, det['home']['spot']['rest'], away, det['away']['spot']['rest']),
+                    'b34': '%s on the third game in four nights' % (away if x[k] > 0 else home),
+                    'tz': '%s crossed %d time zone%s since its last game' % (away if x[k] > 0 else home, abs(det['away' if x[k] > 0 else 'home']['spot']['tz']), '' if abs(x[k]) == 1 else 's'),
+                    'trip': '%s is %d games into a road trip' % (away, det['away']['spot']['trip']),
+                    'alt': 'game at altitude in %s' % home}[k]
+            L.append('%s: %s (%s)' % (SIDE_LABEL[k], desc, ('%+.1f to %s' % (abs(eff), home if eff > 0 else away)) if SIDE['fitted'] and abs(eff) >= 0.05 else 'not proven yet, counts for nothing'))
+    return L
+
+
+def prior_rates_from(box=None, prior_state=None):
+    """Last season's per-minute values: from the replay's box scores when loaded (full shooting splits), else from the season summary."""
+    rates, bench = {}, []
+    if box and box.get('games'):
+        acc = {}
+        for g in box['games'].values():
+            for r in g['p']:
+                if r[2] <= 0:
+                    continue
+                p = row_to_player(r)
+                a = acc.setdefault(r[0], [0.0, 0.0, 0])
+                a[0] += gms(p)
+                a[1] += r[2]
+                a[2] += 1
+        for pid, (gs, mn, n) in acc.items():
+            if mn >= 150:
+                rates[pid] = gs / mn
+            if n >= 15 and 8 <= mn / n <= 18:
+                bench.append(gs / mn)
+    elif prior_state and prior_state.get('players'):
+        for pid, p in prior_state['players'].items():
+            if p.get('min', 0) >= 150:
+                rates[pid] = gms(p) / p['min']
+                if p.get('n', 0) >= 15 and 8 <= p['min'] / p['n'] <= 18:
+                    bench.append(gms(p) / p['min'])
+    bench.sort()
+    repl = bench[len(bench) // 2] if len(bench) >= 30 else 0.30
+    return rates, repl
+
+
+ROW_KEYS = ('pts', 'reb', 'ast', 'tpm', 'stl', 'blk', 'tov', 'fgm', 'fga', 'ftm', 'fta', 'orb', 'pf', 'pm')
+
+
+def row_to_player(r):
+    p = dict(zip(ROW_KEYS, r[3:3 + len(ROW_KEYS)]), id=r[0], t=r[1], min=r[2])
+    if len(r) < 3 + len(ROW_KEYS):
+        p['fga'] = None
+    return p
+
+
+def solve(A, b):
+    """Gaussian elimination for the small ridge systems below."""
+    n = len(b)
+    M = [row[:] + [b[i]] for i, row in enumerate(A)]
+    for c in range(n):
+        piv = max(range(c, n), key=lambda r: abs(M[r][c]))
+        M[c], M[piv] = M[piv], M[c]
+        if abs(M[c][c]) < 1e-12:
+            return None
+        for r in range(n):
+            if r != c:
+                f = M[r][c] / M[c][c]
+                for k in range(c, n + 1):
+                    M[r][k] -= f * M[c][k]
+    return [M[i][n] / M[i][i] for i in range(n)]
+
+
+def ridge(rows, feats, prior, strength=0.15):
+    """Least squares of residual on features, pulled toward the starting sizes. strength: share of the data's own weight the prior gets."""
+    k = len(feats)
+    A = [[0.0] * k for _ in range(k)]
+    b = [0.0] * k
+    for x, r in rows:
+        v = [x[f] for f in feats]
+        for i in range(k):
+            b[i] += v[i] * r
+            for j in range(k):
+                A[i][j] += v[i] * v[j]
+    for i, f in enumerate(feats):
+        lam = strength * A[i][i] + 1.0
+        A[i][i] += lam
+        b[i] += lam * prior[f]
+    sol = solve(A, b)
+    if not sol:
+        return dict(prior)
+    out = dict(zip(feats, sol))
+    n = len(rows)
+    if n > len(feats) + 10:
+        # a size only counts when it clearly stands out from the noise of one season (about 2 standard errors); otherwise it is 0
+        res = [r - sum(out[f] * x[f] for f in feats) for x, r in rows]
+        sig = math.sqrt(sum(e * e for e in res) / (n - len(feats)))
+        for i, f in enumerate(feats):
+            sxx = sum(x[f] ** 2 for x, r in rows)
+            if sxx <= 0 or abs(out[f]) < 2.0 * sig / math.sqrt(sxx):
+                out[f] = 0.0
+    return out
+
+
+def run_side_fit(box, prior_state):
+    """Replays last season with ratings built only from earlier games and learns what who-is-playing and each schedule spot is worth,
+    in points of margin and total. The first part of the season fits, the rest checks, then the whole season gives the final sizes."""
+    pg = (prior_state or {}).get('games') or {}
+    games = []
+    for gid, b in box['games'].items():
+        g = pg.get(gid)
+        if not g or (g.get('home') or {}).get('pts') is None or (g.get('away') or {}).get('pts') is None:
+            continue
+        games.append(dict(g, date=g.get('date') or b['d'], players=[row_to_player(r) for r in b['p']]))
+    if len(games) < 500:
+        return None
+    games.sort(key=lambda g: (g['date'], g['id']))
+    repl = prior_rates_from(box)[1]
+    tr = SideTracker({}, repl)          # no head start: the season being replayed is the only evidence
+    by_day = {}
+    for g in games:
+        by_day.setdefault(g['date'], []).append(g)
+    seen, rows = {}, []
+    for d in sorted(by_day):
+        if len(seen) >= 150:
+            ratings, lo, lp = build_ratings(seen)
+            today_ = dt.date.fromisoformat(d)
+            for g in by_day[d]:
+                h, a = g['home']['ab'], g['away']['ab']
+                if min((ratings.get(h) or {}).get('n', 0), (ratings.get(a) or {}).get('n', 0)) < 10:
+                    continue
+                mo = project(h, a, ratings, lo, lp, today_)
+                if not mo:
+                    continue
+                played = {p['id'] for p in g['players'] if (p.get('min') or 0) > 0}
+                av = lambda pid: 1.0 if pid in played else 0.0  # noqa
+                lst = lambda pid: pid in played  # noqa
+                x, xt, _ = side_features(tr, h, a, d, av, av, lst, lst)
+                rows.append((d, x, xt, g['home']['pts'] - g['away']['pts'] - mo['margin'], g['home']['pts'] + g['away']['pts'] - mo['total']))
+        for g in by_day[d]:
+            seen[g['id']] = g
+            tr.add(g)
+    if len(rows) < 300:
+        return None
+    cut = rows[int(len(rows) * 0.6)][0]
+    fit_m = ridge([(x, r) for d, x, xt, r, rt in rows if d < cut], SIDE_FEATS, SIDE_PRIOR)
+    fit_t = ridge([(xt, rt) for d, x, xt, r, rt in rows if d < cut], SIDE_TFEATS, SIDE_TPRIOR)
+    test = [(x, xt, r, rt) for d, x, xt, r, rt in rows if d >= cut]
+
+    def mae(fn):
+        return round(mean(abs(fn(x, xt, r, rt)) for x, xt, r, rt in test), 3)
+    check = {'games': len(test),
+             'margin_error_before': mae(lambda x, xt, r, rt: r),
+             'margin_error_after': mae(lambda x, xt, r, rt: r - clamp(sum(fit_m[k] * x[k] for k in SIDE_FEATS), -SIDE_CAP['margin'], SIDE_CAP['margin'])),
+             'total_error_before': mae(lambda x, xt, r, rt: rt),
+             'total_error_after': mae(lambda x, xt, r, rt: rt - clamp(sum(fit_t[k] * xt[k] for k in SIDE_TFEATS), -SIDE_CAP['total'], SIDE_CAP['total']))}
+    coef = ridge([(x, r) for d, x, xt, r, rt in rows], SIDE_FEATS, SIDE_PRIOR)
+    tcoef = ridge([(xt, rt) for d, x, xt, r, rt in rows], SIDE_TFEATS, SIDE_TPRIOR)
+    keep_m = check['margin_error_after'] <= check['margin_error_before']
+    keep_t = check['total_error_after'] <= check['total_error_before']
+    out = {'made': dt.datetime.now(dt.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'), 'games': len(rows), 'repl': r3(repl),
+           'coef': {k: round(v, 3) for k, v in coef.items()} if keep_m else {k: 0.0 for k in SIDE_FEATS},
+           'tcoef': {k: round(v, 3) for k, v in tcoef.items()} if keep_t else {k: 0.0 for k in SIDE_TFEATS},
+           'check': check, 'used': {'margin': keep_m, 'total': keep_t}}
+    jsave(os.path.join(DATA, 'side_model.json'), out)
+    print('Side model: %s' % json.dumps({k: out[k] for k in ('coef', 'tcoef', 'check')}), flush=True)
+    return out
+
+
+def load_side_model():
+    js = jload(os.path.join(DATA, 'side_model.json'), {})
+    if js.get('coef'):
+        SIDE['coef'] = {k: float(js['coef'].get(k, 0.0)) for k in SIDE_FEATS}
+        SIDE['tcoef'] = {k: float((js.get('tcoef') or {}).get(k, 0.0)) for k in SIDE_TFEATS}
+        SIDE['fitted'] = True
+        ck = js.get('check') or {}
+        src('side_model', True, 'who-is-playing and schedule sizes learned from %d games last season; on games it had not seen, margin error %.2f -> %.2f points, total error %.2f -> %.2f' % (
+            js.get('games', 0), ck.get('margin_error_before', 0), ck.get('margin_error_after', 0), ck.get('total_error_before', 0), ck.get('total_error_after', 0)))
+    else:
+        src('side_model', True, 'who-is-playing adjustment at a cautious starting size (%.2f points per point of player value); schedule spots shown but not counted until the replay measures them' % SIDE_PRIOR['impact'])
+
+
 # ----------------------------------------------------------------------------- injury news sniper and phone alerts
 # Prop and side lines move most in the half hour after a rotation player is ruled out. The closing job already runs every 20 minutes
 # in the evening, so each time it also reads ESPN's injury report (free, no Odds API credits). When a player who plays real minutes is
@@ -2783,7 +3134,7 @@ REPLAY_SECONDS = float(os.environ.get('EPLOCKS_REPLAY_SECONDS') or 3000)
 REPLAY_MIN_GAMES = 5          # games a player needs before he is predicted
 REPLAY_MIN_MIN = 15.0         # and minutes per game over his last five
 REPLAY_MIN_N = 1000           # predictions a stat needs before its correction is used
-REPLAY_V = 1
+REPLAY_V = 2
 REPLAY_FIX = {}               # stat -> {'b': average multiplier, 's': range multiplier}; filled from data/prop_replay.json
 REPLAY_OFF = {'off': False}   # the replay itself must judge the uncorrected model
 REPLAY_SUM = {}               # short summary for the website
@@ -2815,7 +3166,7 @@ def replay_box_update():
                     if not isinstance(r, dict):
                         ok_day = False
                         continue
-                    st['games'][e['id']] = {'d': r.get('date') or ds, 'p': [[p['id'], p['t'], p.get('min') or 0] + [p.get(k) or 0 for k in ('pts', 'reb', 'ast', 'tpm', 'stl', 'blk', 'tov')]
+                    st['games'][e['id']] = {'d': r.get('date') or ds, 'p': [[p['id'], p['t'], p.get('min') or 0] + [p.get(k) or 0 for k in ROW_KEYS]
                                                                           for p in r.get('players') or []]}
                 if ok_day:
                     done.add(ds)
@@ -2922,6 +3273,14 @@ def run_replay():
                               'table_before': replay_table(rs), 'table_after': replay_table(rs, b, s)}
         print('%s: %d predictions, average x%.3f, range x%.2f, log loss %.4f -> %.4f' % (stat, len(rs), b, s, out['stats'][stat]['logloss_before'], out['stats'][stat]['logloss_after']), flush=True)
     jsave(os.path.join(DATA, 'prop_replay.json'), out)
+    try:
+        st = jload(os.path.join(DATA, 'prior.json'), None)
+        if not st or not st.get('complete'):
+            print('Side model: last season summary (data/prior.json) not complete yet; a normal run finishes it, then run replay again.', flush=True)
+        else:
+            run_side_fit(box, st)
+    except Exception as e:  # noqa
+        print('Side model fit failed: %s' % str(e)[:200], flush=True)
     return 0
 
 
@@ -3337,6 +3696,10 @@ def main(argv):
         load_replay()
     except Exception as e:  # noqa
         src('prop_replay', False, 'replay corrections not loaded: %s' % str(e)[:100])
+    try:
+        load_side_model()
+    except Exception as e:  # noqa
+        src('side_model', False, 'side model not loaded: %s' % str(e)[:100])
     cache, slate_events = update_games(today)
     try:
         books_ = fetch_game_books(slate_events)
@@ -3378,6 +3741,19 @@ def main(argv):
     if not sane:
         note('League averages look wrong (%.1f points per 100, pace %.1f). The box-score data may be damaged, so every pick is capped at Low.' % (lg_ortg, lg_pace))
     logs, name_index = build_player_logs(games, prior_player_means(prior_state) if pr_pack else None)
+    side_tr = None
+    try:
+        box_ = jload(os.path.join(DATA, 'replay_box.json'), None)
+        box_ = box_ if box_ and box_.get('complete') and box_.get('v') == REPLAY_V else None
+        rates_, repl_ = prior_rates_from(box_, prior_state if pr_pack else None)
+        side_tr = SideTracker(rates_, repl_)
+        for g_ in sorted(games.values(), key=lambda x_: (x_.get('date') or '', x_['id'])):
+            if (g_.get('home') or {}).get('pts') is not None:
+                side_tr.add(g_)
+        box_ = None
+    except Exception as e:  # noqa
+        side_tr = None
+        src('side_model', False, 'who-is-playing values could not be built: %s' % str(e)[:120])
     src('ratings', bool(ratings) and sane, ('%d teams rated from %d games%s' % (len(ratings), len(games), ' (with last season as a starting point)' if pr_pack else '')) if sane else 'league averages look wrong, so picks are capped at Low')
     shot_data = None
     try:
@@ -3533,6 +3909,27 @@ def main(argv):
         home = team_block(ev['home'], ratings, logs, injuries, inj_ok, today, name_to_abbr)
         away = team_block(ev['away'], ratings, logs, injuries, inj_ok, today, name_to_abbr)
         mo = project(home['abbr'], away['abbr'], ratings, lg_ortg, lg_pace, today)
+        side_info = None
+        if mo and side_tr:
+            try:
+                def mk_av(team_inj):
+                    mp = {norm_name(i['name']): i['status'] for i in team_inj}
+
+                    def nm(pid):
+                        return norm_name((logs.get(pid) or {}).get('name', ''))
+                    return (lambda pid: 1.0 - inj_weight(mp.get(nm(pid), ''))), (lambda pid: nm(pid) in mp)
+                av_h, ls_h = mk_av(home['injuries'] if inj_ok else [])
+                av_a, ls_a = mk_av(away['injuries'] if inj_ok else [])
+                x_, xt_, det_ = side_features(side_tr, home['abbr'], away['abbr'], today.isoformat(), av_h, av_a, ls_h, ls_a)
+                am_, at_ = side_adjust(x_, xt_)
+                mo['margin'] += am_
+                mo['total'] += at_
+                names_ = {it[0]: (logs.get(it[0]) or {}).get('name', it[0]) for s_ in ('home', 'away') for it in det_[s_]['items']}
+                side_info = {'margin': r1(am_), 'total': r1(at_), 'fitted': SIDE['fitted'], 'x': {k: r1(v) for k, v in x_.items()},
+                             'missing': {'home': r1(det_['home']['missing']), 'away': r1(det_['away']['missing'])},
+                             'lines': side_explain(x_, det_, home['abbr'], away['abbr'], names_)}
+            except Exception as e:  # noqa
+                note('Who-is-playing adjustment skipped for %s @ %s: %s' % (away['abbr'], home['abbr'], str(e)[:100]))
         crew = None
         try:
             crew = crew_info(assign.get(ev['id']), rstats, ref_src.get(ev['id'], 'ESPN'))
@@ -3563,7 +3960,7 @@ def main(argv):
                 w_, l_ = (gm['home'], gm['away']) if gm['home']['pts'] > gm['away']['pts'] else (gm['away'], gm['home'])
                 h2h.append('%s beat %s %d-%d at %s on %s' % (w_['ab'], l_['ab'], w_['pts'], l_['pts'], gm['home']['ab'], gm['date']))
         g = {'id': ev['id'], 'tip': ev['tip'], 'utc': ev['utc'], 'state': ev['state'], 'away': away, 'home': home, 'market': mk,
-             'model': {k: r1(v) for k, v in mo.items()} if mo else None, 'blend': blend, 'h2h': h2h, 'crew': crew}
+             'model': {k: r1(v) for k, v in mo.items()} if mo else None, 'blend': blend, 'h2h': h2h, 'crew': crew, 'side': side_info}
         # props for this game
         rows = []
         if mo:
@@ -3735,7 +4132,7 @@ def main(argv):
     for p in all_picks:
         if p['id'] not in have and p['game_id'] in pre_ids:
             row_ = ({k: p[k] for k in ('id', 'date', 'game_id', 'away', 'home', 'type', 'side', 'label', 'line', 'odds', 'est', 'est_raw', 'edge', 'kind', 'conf', 'units') if k in p}
-                    | {k: p[k] for k in ('fair', 'book', 'n_books', 'jp', 'est_nj', 'sd', 'utc') if p.get(k) is not None}
+                    | {k: p[k] for k in ('fair', 'book', 'n_books', 'jp', 'est_nj', 'sd', 'utc', 'alt') if p.get(k) is not None}
                            | ({'player': p['player'], 'stat': p['stat'], 'pid': p['pid']} if p['type'] == 'prop' else {})
                            | ({'sig': [i['k'] for i in p['sig']['items']], 'sig_tier': p['sig']['tier']} if p.get('sig') else {})
                     | {'posted': started.strftime('%Y-%m-%dT%H:%M:%SZ'), 'v': ENGINE_VERSION})
