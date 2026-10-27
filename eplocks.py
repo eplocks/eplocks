@@ -1151,6 +1151,9 @@ def prop_model(log, stat, line, env=1.0, mult=1.0, rm=1.0):
     prior = max(1.0, SD_K[stat] * base, math.sqrt(PROP_DISP.get(stat, 1.5) * max(base, 0.5)))
     sd = max(math.sqrt((n * pstdev(vals) ** 2 + 5 * prior ** 2) / (n + 5)), 0.9 * prior)   # a few quiet games never shrink the swing below the noise floor
     mu = base * env * mult * rm
+    fx = None if REPLAY_OFF['off'] else REPLAY_FIX.get(stat)
+    if fx:                       # corrections learned by replaying last season (see run_replay)
+        mu, sd = mu * fx['b'], sd * fx['s']
     half = abs(line - math.floor(line)) > 1e-9
     if half:
         p_over = 1 - phi((line - mu) / sd)
@@ -2657,6 +2660,290 @@ def finalize_picks(all_picks, out_games):
     return card
 
 
+# ----------------------------------------------------------------------------- injury news sniper and phone alerts
+# Prop and side lines move most in the half hour after a rotation player is ruled out. The closing job already runs every 20 minutes
+# in the evening, so each time it also reads ESPN's injury report (free, no Odds API credits). When a player who plays real minutes is
+# newly ruled out (or is back) for a game that has not tipped, it reruns the full card at once and pushes any new pick to your phone.
+NEWS_MIN_MINUTES = 20.0       # a player must average this many minutes for his news to matter
+NEWS_WINDOW = (15, 300)       # only games tipping off between 15 minutes and 5 hours from now
+NEWS_MAX_RERUNS = int(os.environ.get('EPLOCKS_NEWS_RERUNS') or 4)   # most news reruns per day (each one spends Odds API credits)
+NEWS = {'reason': None}
+NTFY_TOPIC = os.environ.get('NTFY_TOPIC', '').strip()
+SITE_URL = os.environ.get('EPLOCKS_SITE_URL') or 'https://eplocks.github.io/eplocks/'
+WATCH_PATH = os.path.join(DATA, 'injury_watch.json')
+
+
+def watch_save(injuries, day, reruns=None):
+    """Remembers the injury report as last seen, so the next check only reacts to what changed."""
+    old = jload(WATCH_PATH, {})
+    if reruns is None:
+        reruns = old.get('reruns', 0) if old.get('date') == day else 0
+    teams = {t: {norm_name(i['name']): i['status'] for i in lst} for t, lst in (injuries or {}).items()}
+    jsave(WATCH_PATH, {'date': day, 'teams': teams, 'reruns': reruns, 'seen_at': dt.datetime.now(dt.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')})
+
+
+def news_check(now=None):
+    """Returns a short description of new injury news worth a rerun, or None."""
+    now = now or dt.datetime.now(dt.timezone.utc)
+    latest = jload(os.path.join(OUT, 'latest.json'), {})
+    day = today_ct().isoformat()
+    if latest.get('for_date') != day or not latest.get('games'):
+        return None
+    name_to_abbr = {g[s]['name'].lower(): g[s]['abbr'] for g in latest['games'] for s in ('home', 'away')}
+    inj = fetch_injuries(name_to_abbr)
+    if inj is None:
+        return None
+    watch = jload(WATCH_PATH, {})
+    if watch.get('date') != day or not watch.get('teams'):
+        watch_save(inj, day, 0)          # no baseline yet today: start one, react from the next check on
+        return None
+    old, items = watch['teams'], []
+    for g in latest['games']:
+        t = parse_utc(g.get('utc'))
+        if g.get('state') != 'pre' or not t:
+            continue
+        mins_to = (t - now).total_seconds() / 60.0
+        if not NEWS_WINDOW[0] <= mins_to <= NEWS_WINDOW[1]:
+            continue
+        for s in ('away', 'home'):
+            team = g[s]['abbr']
+            new_map = {norm_name(i['name']): i['status'] for i in inj.get(team, [])}
+            old_map = old.get(team, {})
+            for p in g[s].get('rotation') or []:
+                if (p.get('min') or 0) < NEWS_MIN_MINUTES or (p.get('gp') or 0) < 2:
+                    continue
+                k = norm_name(p['name'])
+                ow, nw = inj_weight(old_map.get(k, '')), inj_weight(new_map.get(k, ''))
+                if nw >= 0.8 and ow < 0.8:
+                    items.append('%s (%s, %.0f min) now %s' % (p['name'], team, p['min'], new_map[k]))
+                elif ow >= 0.8 and nw < 0.3:
+                    items.append('%s (%s, %.0f min) is back%s' % (p['name'], team, p['min'], (': ' + new_map[k]) if new_map.get(k) else ''))
+    reruns = watch.get('reruns', 0)
+    if items and reruns >= NEWS_MAX_RERUNS:
+        print('Injury news (%s), but today\'s %d reruns are used up' % ('; '.join(items), NEWS_MAX_RERUNS), flush=True)
+        items = []
+    watch_save(inj, day, reruns + (1 if items else 0))
+    return '; '.join(items[:6]) if items else None
+
+
+def push_note(title, body, prio='default', tags='basketball'):
+    """Sends a phone notification through ntfy.sh (free app). Does nothing without the NTFY_TOPIC secret."""
+    if not NTFY_TOPIC:
+        return False
+    try:
+        safe = lambda x: x.encode('latin-1', 'ignore').decode('latin-1')  # noqa
+        req = urllib.request.Request('https://ntfy.sh/' + urllib.parse.quote(NTFY_TOPIC), data=body.encode('utf-8'), method='POST',
+                                     headers={'Title': safe(title)[:200], 'Priority': prio, 'Tags': tags, 'Click': SITE_URL})
+        with urllib.request.urlopen(req, timeout=20) as r:
+            r.read()
+        return True
+    except Exception as e:  # noqa
+        note('Phone alert failed: %s' % str(e)[:120])
+        return False
+
+
+def alert_line(p):
+    odds = '%+d' % p['odds'] if p.get('odds') is not None else 'no price'
+    book = (' at %s' % p['book']) if p.get('book') else ''
+    return '%s %s%s | %s %gu | edge %.1f%% | %s @ %s' % (p['label'], odds, book, p['conf'], p['units'], 100 * (p.get('edge') or 0), p['away'], p['home'])
+
+
+def send_alerts(prev, result):
+    """First card of the day: a summary. Later runs: only picks that were not on the card before, with the news that caused them."""
+    if not NTFY_TOPIC:
+        return
+    picks = result.get('picks') or []
+    reason = NEWS.get('reason')
+    if prev.get('for_date') != result.get('for_date'):
+        if not picks:
+            return
+        body = '\n'.join(alert_line(p) for p in picks[:5]) + ('\n+%d more on the site' % (len(picks) - 5) if len(picks) > 5 else '')
+        ok = push_note("Today's EpLocks card: %d picks" % len(picks), body)
+    else:
+        before = {(p.get('game_id'), p.get('label')) for p in prev.get('picks') or []}
+        live = {g['id'] for g in result.get('games') or [] if g.get('state') == 'pre'}
+        new = [p for p in picks if (p.get('game_id'), p.get('label')) not in before and p.get('game_id') in live]
+        if new:
+            body = ((reason + '\n\n') if reason else '') + '\n'.join(alert_line(p) for p in new[:6])
+            ok = push_note('%d new pick%s%s' % (len(new), '' if len(new) == 1 else 's', ' after injury news' if reason else ''), body, prio='high' if reason else 'default')
+        elif reason:
+            ok = push_note('Injury news: card rechecked', reason + '\n\nNo new bet cleared the bar.', prio='low')
+        else:
+            return
+    src('alerts', ok, 'phone alert sent' if ok else 'phone alert failed')
+
+
+# ----------------------------------------------------------------------------- prop model replay (no betting lines needed)
+# Replays last season game by game. Before each game, the same prop model predicts every rotation player's range for each stat
+# from his earlier games only; then the real box score shows whether the predicted chances held up ("said 60% over, happened 60%?").
+# From tens of thousands of these it learns two small corrections per stat, one for the average and one for the width of the range,
+# and the daily run applies them. Run it from the Actions tab (mode: replay); it resumes on its own if one run is not enough.
+REPLAY_STATS = ('points', 'rebounds', 'assists', 'threes', 'pra', 'pts_reb', 'pts_ast', 'reb_ast')
+REPLAY_SECONDS = float(os.environ.get('EPLOCKS_REPLAY_SECONDS') or 3000)
+REPLAY_MIN_GAMES = 5          # games a player needs before he is predicted
+REPLAY_MIN_MIN = 15.0         # and minutes per game over his last five
+REPLAY_MIN_N = 1000           # predictions a stat needs before its correction is used
+REPLAY_V = 1
+REPLAY_FIX = {}               # stat -> {'b': average multiplier, 's': range multiplier}; filled from data/prop_replay.json
+REPLAY_OFF = {'off': False}   # the replay itself must judge the uncorrected model
+REPLAY_SUM = {}               # short summary for the website
+
+
+def replay_box_update():
+    """Stores last season's player lines compactly in data/replay_box.json, resuming where the previous run stopped."""
+    path = os.path.join(DATA, 'replay_box.json')
+    rng = [PRIOR_START, PRIOR_END]
+    st = jload(path, None)
+    if not st or st.get('range') != rng or st.get('v') != REPLAY_V:
+        st = {'v': REPLAY_V, 'range': rng, 'days_done': [], 'games': {}, 'complete': False}
+    if st.get('complete'):
+        return st
+    t0 = time.time()
+    d0, d1 = dt.date.fromisoformat(PRIOR_START), dt.date.fromisoformat(PRIOR_END)
+    done, d = set(st['days_done']), d0
+    while d <= d1 and time.time() - t0 < REPLAY_SECONDS * 0.8:
+        ds = d.isoformat()
+        if ds not in done:
+            try:
+                js = http_json('%s/scoreboard?dates=%s&limit=100' % (ESPN, d.strftime('%Y%m%d')))
+                evs = [parse_event(e) for e in js.get('events') or []]
+                evs = [e for e in evs if 'home' in e and 'away' in e and e['completed'] and e['season_type'] in (None, 2) and e['id'] not in st['games']]
+                res = fetch_summaries(evs)
+                ok_day = True
+                for e in evs:
+                    r = res.get(e['id'])
+                    if not isinstance(r, dict):
+                        ok_day = False
+                        continue
+                    st['games'][e['id']] = {'d': r.get('date') or ds, 'p': [[p['id'], p['t'], p.get('min') or 0] + [p.get(k) or 0 for k in ('pts', 'reb', 'ast', 'tpm', 'stl', 'blk', 'tov')]
+                                                                          for p in r.get('players') or []]}
+                if ok_day:
+                    done.add(ds)
+            except Exception as ex:  # noqa
+                note('Replay: %s could not be loaded: %s' % (ds, str(ex)[:100]))
+        d += dt.timedelta(days=1)
+    st['days_done'] = sorted(done)
+    st['complete'] = len(done) >= (d1 - d0).days + 1
+    jsave(path, st)
+    return st
+
+
+def replay_predictions(box):
+    """Walks the season in order; returns {stat: [(mean, sd, actual), ...]} from predictions made before each game."""
+    keys = ('pts', 'reb', 'ast', 'tpm', 'stl', 'blk', 'tov')
+    logs, rows = {}, {s: [] for s in REPLAY_STATS}
+    REPLAY_OFF['off'] = True
+    try:
+        for gid, g in sorted(box['games'].items(), key=lambda kv: (kv[1]['d'], kv[0])):
+            for r in g['p']:
+                pid, team, mins = r[0], r[1], r[2]
+                p = dict(zip(keys, r[3:10]), t=team, min=mins)
+                L = logs.setdefault(pid, {'id': pid, 'team': team, 'games': []})
+                L['team'] = team
+                played = [x for x in L['games'] if x['min'] > 0]
+                if mins > 0 and len(played) >= REPLAY_MIN_GAMES and mean(x['min'] for x in played[-5:]) >= REPLAY_MIN_MIN:
+                    for s in REPLAY_STATS:
+                        m = prop_model(L, s, 0.5)
+                        if m and m['sd']:
+                            rows[s].append((m['mean'], m['sd'], STAT_FN[s](p)))
+                L['games'].append(p)
+    finally:
+        REPLAY_OFF['off'] = False
+    return rows
+
+
+def replay_events(rs, b=1.0, s=1.0, step=1):
+    """Over/under questions at the half-point lines around each prediction: (model chance of over, 1 if over happened)."""
+    out = []
+    for mu, sd, act in rs[::step]:
+        mu2, sd2 = mu * b, sd * s
+        base = math.floor(mu) + 0.5
+        for j in (-2, -1, 0, 1, 2):
+            line = base + j
+            if line <= 0:
+                continue
+            out.append((1 - phi((line - mu2) / sd2), 1.0 if act > line else 0.0))
+    return out
+
+
+def logloss(ev):
+    return -sum(y * math.log(max(p, 1e-6)) + (1 - y) * math.log(max(1 - p, 1e-6)) for p, y in ev) / max(len(ev), 1)
+
+
+def replay_fit(rs):
+    """Average multiplier from total actual vs total predicted; range multiplier by the best log loss on the over/under questions."""
+    n = len(rs)
+    tm, ta = sum(r[0] for r in rs), sum(r[2] for r in rs)
+    b = clamp(ta / tm, 0.96, 1.04) if tm else 1.0
+    step = max(1, n // 6000)
+    best = None
+    for k in range(0, 36):
+        s = 0.80 + 0.02 * k
+        ll = logloss(replay_events(rs, b, s, step))
+        if best is None or ll < best[0]:
+            best = (ll, s)
+    s = clamp(best[1], 0.85, 1.5)
+    return b, s
+
+
+def replay_table(rs, b=1.0, s=1.0):
+    """Reliability: model chance of over in 10-point buckets against how often the over happened."""
+    bk = {}
+    for p, y in replay_events(rs, b, s, max(1, len(rs) // 20000)):
+        k = min(9, int(p * 10))
+        c = bk.setdefault(k, [0, 0.0, 0.0])
+        c[0] += 1
+        c[1] += p
+        c[2] += y
+    return [{'bucket': '%d-%d%%' % (k * 10, k * 10 + 10), 'n': c[0], 'model': r3(c[1] / c[0]), 'actual': r3(c[2] / c[0])} for k, c in sorted(bk.items()) if c[0] >= 50]
+
+
+def run_replay():
+    """--replay: loads last season (resumable) and, once complete, writes data/prop_replay.json with the per-stat corrections."""
+    box = replay_box_update()
+    if not box.get('complete'):
+        msg = 'Replay: %d of the season\'s days loaded. Run it again to finish.' % len(box['days_done'])
+        print(msg, flush=True)
+        jsave(os.path.join(DATA, 'prop_replay.json'), {'complete': False, 'days': len(box['days_done']), 'msg': msg})
+        return 0
+    rows = replay_predictions(box)
+    out = {'complete': True, 'v': REPLAY_V, 'season': box['range'], 'games': len(box['games']), 'made': dt.datetime.now(dt.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'), 'stats': {}}
+    for stat, rs in rows.items():
+        if len(rs) < 200:
+            continue
+        b, s = replay_fit(rs)
+        before = replay_events(rs, 1.0, 1.0, max(1, len(rs) // 6000))
+        after = replay_events(rs, b, s, max(1, len(rs) // 6000))
+        z = [(a - m) / sd for m, sd, a in rs]
+        out['stats'][stat] = {'n': len(rs), 'b': r3(b), 's': r3(s), 'use': len(rs) >= REPLAY_MIN_N,
+                              'avg_pred': r1(mean(r[0] for r in rs)), 'avg_actual': r1(mean(r[2] for r in rs)),
+                              'in50': r3(sum(1 for x in z if abs(x) <= 0.674) / len(z)), 'in80': r3(sum(1 for x in z if abs(x) <= 1.282) / len(z)),
+                              'logloss_before': round(logloss(before), 4), 'logloss_after': round(logloss(after), 4),
+                              'table_before': replay_table(rs), 'table_after': replay_table(rs, b, s)}
+        print('%s: %d predictions, average x%.3f, range x%.2f, log loss %.4f -> %.4f' % (stat, len(rs), b, s, out['stats'][stat]['logloss_before'], out['stats'][stat]['logloss_after']), flush=True)
+    jsave(os.path.join(DATA, 'prop_replay.json'), out)
+    return 0
+
+
+def load_replay():
+    js = jload(os.path.join(DATA, 'prop_replay.json'), {})
+    REPLAY_FIX.clear()
+    REPLAY_SUM.clear()
+    if js.get('complete'):
+        REPLAY_SUM.update({'games': js.get('games'), 'made': js.get('made'), 'stats': {k: {x: v.get(x) for x in ('n', 'b', 's', 'use', 'in50', 'in80', 'table_before', 'table_after')}
+                                                                                     for k, v in (js.get('stats') or {}).items()}})
+    if not js.get('complete'):
+        if js.get('days'):
+            src('prop_replay', False, js.get('msg') or 'last-season replay not finished yet')
+        return
+    for stat, v in (js.get('stats') or {}).items():
+        if v.get('use'):
+            REPLAY_FIX[stat] = {'b': v['b'], 's': v['s']}
+    if REPLAY_FIX:
+        src('prop_replay', True, 'prop ranges tuned from %s last-season predictions: %s' % (
+            '{:,}'.format(sum(v['n'] for v in js['stats'].values())), ', '.join('%s x%.2f' % (STAT_NAMES.get(k, k).lower(), v['s']) for k, v in REPLAY_FIX.items())))
+
+
 # ----------------------------------------------------------------------------- main
 def team_block(ev_team, ratings, logs, injuries, inj_ok, today, name_to_abbr):
     a = ev_team['abbr']
@@ -3024,7 +3311,20 @@ def main(argv):
     if only_data:
         API_KEY = ''
     if '--closing' in argv:
-        return run_closing()
+        rc = run_closing()
+        try:
+            reason = news_check()
+        except Exception as e:  # noqa
+            print('Injury check failed: %s' % str(e)[:160], flush=True)
+            reason = None
+        if not reason:
+            return rc
+        print('Injury news: %s. Rerunning the card.' % reason, flush=True)
+        STATUS['sources'].clear()
+        STATUS['notes'].clear()
+        NEWS['reason'] = reason
+    if '--replay' in argv:
+        return run_replay()
     if '--backtest' in argv:
         bt = run_backtest(None)
         print(json.dumps({'backtest': bool(bt), 'status': STATUS['sources'].get('backtest'), 'notes': STATUS['notes'][-3:]}), flush=True)
@@ -3033,6 +3333,10 @@ def main(argv):
     started = dt.datetime.now(dt.timezone.utc)
     print('EpLocks run for', today, flush=True)
 
+    try:
+        load_replay()
+    except Exception as e:  # noqa
+        src('prop_replay', False, 'replay corrections not loaded: %s' % str(e)[:100])
     cache, slate_events = update_games(today)
     try:
         books_ = fetch_game_books(slate_events)
@@ -3102,6 +3406,13 @@ def main(argv):
         for s in ('home', 'away'):
             name_to_abbr.setdefault(g[s]['name'].lower(), g[s]['ab'])
     injuries = fetch_injuries(name_to_abbr)
+    if NEWS.get('reason'):
+        note('Rerun after injury news: %s' % NEWS['reason'])
+    try:
+        if injuries is not None:
+            watch_save(injuries, today.isoformat())
+    except Exception as e:  # noqa
+        note('Injury snapshot not saved: %s' % str(e)[:100])
     tg = team_gids(games)
     inj_ok = injuries is not None
     pdef = profiles = prof_lg = None
@@ -3447,7 +3758,7 @@ def main(argv):
         'odds': {'left': ODDS['left'], 'used': ODDS['used'], 'calls': ODDS['calls']},
         'status': {k: v for k, v in STATUS.items() if not k.startswith('_')}, 'games': out_games,
         'picks': [dict(p, label=p['label']) for p in all_picks], 'props_unmatched': unmatched[:60], 'props_not_playing': [dict(p) for p in not_playing][:60],
-        'props_lines': len(lines) + (len(auto) if auto else 0), 'audit': audit}
+        'props_lines': len(lines) + (len(auto) if auto else 0), 'audit': audit, 'replay': dict(REPLAY_SUM) or None}
     # drop heavy duplicates
     for g in result['games']:
         for t in ('away', 'home'):
@@ -3460,6 +3771,13 @@ def main(argv):
         print('Game data failed; kept previous output', flush=True)
         return 0
     jsave(os.path.join(OUT, 'latest.json'), result)
+    try:
+        send_alerts(prev, result)
+        if STATUS['sources'].get('alerts'):
+            result['status'] = {k: v for k, v in STATUS.items() if not k.startswith('_')}
+            jsave(os.path.join(OUT, 'latest.json'), result)
+    except Exception as e:  # noqa
+        print('Alerts failed: %s' % str(e)[:160], flush=True)
     print('Wrote %d games, %d picks' % (len(out_games), len(all_picks)), flush=True)
     return 0
 

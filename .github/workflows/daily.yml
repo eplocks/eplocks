@@ -5,15 +5,16 @@ on:
     # 15:00 UTC = 10:00 AM CDT and 22:30 UTC = 5:30 PM CDT (one hour earlier after Nov 1). Games tip off in the evening.
     - cron: "0 15 * * *"
     - cron: "30 22 * * *"
-    # every 20 minutes from 4 PM to midnight Central: saves each pick's closing line just before tip-off (does nothing, and costs nothing, when no game is about to start)
+    # every 20 minutes from 4 PM to midnight Central: saves each pick's closing line just before tip-off and checks the injury report;
+    # when a rotation player is newly ruled out (or back) it reruns the card and sends new picks to your phone
     - cron: "*/20 22-23,0-5 * * *"
   workflow_dispatch:
     inputs:
       mode:
-        description: "run = full update, closing = save closing lines now, backtest = replay last season"
+        description: "run = full update, closing = save closing lines (and check injury news) now, replay = check the prop model against last season, backtest = replay last season against its lines"
         default: "run"
         type: choice
-        options: [run, closing, backtest]
+        options: [run, closing, replay, backtest]
   push:
     paths:
       - "props.txt"
@@ -44,12 +45,14 @@ jobs:
           EPLOCKS_MODEL: ${{ vars.EPLOCKS_MODEL }}
           EPLOCKS_SEASON_START: ${{ vars.EPLOCKS_SEASON_START }}
           EPLOCKS_JUDGMENT_WEIGHT: ${{ vars.EPLOCKS_JUDGMENT_WEIGHT }}
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
         run: |
           MODE="${{ inputs.mode }}"
           if [ "${{ github.event.schedule }}" = "*/20 22-23,0-5 * * *" ]; then MODE=closing; fi
           case "$MODE" in
             closing) python eplocks.py --closing ;;
             backtest) python eplocks.py --backtest ;;
+            replay) python eplocks.py --replay ;;
             *) python eplocks.py ;;
           esac
       - name: Save results

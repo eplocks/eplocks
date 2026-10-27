@@ -2969,6 +2969,26 @@ function audKey(g){
   if (g.kind === 'market') return g.key.indexOf('prop:') === 0 ? (STAT[g.key.slice(5)] || g.key.slice(5)) + ' props' : g.key.charAt(0).toUpperCase() + g.key.slice(1);
   return g.key.charAt(0).toUpperCase() + g.key.slice(1);
 }
+function renderReplay(root){
+  var r = S.latest && S.latest.replay;
+  if (!r || !r.stats) return;
+  var ks = Object.keys(r.stats);
+  if (!ks.length) return;
+  root.append(el('h2', {text:'Prop model check'}));
+  root.append(el('p', {class:'small mut', text:'Every game of last season (' + (r.games || 0) + ' games) was replayed. Before each game the prop model predicted every rotation player from his earlier games only, then the box score showed what happened. If the model is honest, about 50% of results land inside its middle-50% range and 80% inside its middle-80% range. The fix column is the range correction the daily run now applies.'}));
+  root.append(table(['Stat', 'Predictions', 'In 50% range', 'In 80% range', 'Range fix'], ks.map(function(k){
+    var v = r.stats[k];
+    return [STAT[k] || k, Number(v.n).toLocaleString(), pct(v.in50), pct(v.in80), v.use ? 'x' + Number(v.s).toFixed(2) : 'not used'];
+  })));
+  var pt = r.stats.points;
+  if (pt && pt.table_before && pt.table_after){
+    var aft = {}; pt.table_after.forEach(function(x){ aft[x.bucket] = x; });
+    root.append(el('p', {class:'small', style:'margin-top:10px', text:'Points: when the model said the over had this chance, how often it happened'}));
+    root.append(table(['Model said', 'Happened (before fix)', 'Happened (after fix)'], pt.table_before.map(function(x){
+      var a = aft[x.bucket]; return [x.bucket, pct(x.actual), a ? pct(a.actual) : 'n/a'];
+    })));
+  }
+}
 function renderAudit(root){
   var a = S.latest && S.latest.audit;
   if (!a) return;
@@ -3002,6 +3022,7 @@ function renderTracker(){
     tile('ROI', st.stake ? (100 * st.net / st.stake).toFixed(1) + '%' : 'n/a', 'Net units divided by units risked.')));
   root.append(el('p', {class:'small mut', text:'Every pick the site publishes is logged here and graded automatically from real final box scores. Player props with a player who did not play are voided. Nothing is hand-picked after the fact.'}));
   renderAudit(root);
+  renderReplay(root);
   var open = H.filter(function(p){ return !p.result; }).length, unp = H.filter(function(p){ return p.result && p.result !== 'V' && p.kind === 'assumed'; }).length;
   if (open || unp) root.append(el('p', {class:'small mut', text:[open ? open + ' pick' + (open === 1 ? ' is' : 's are') + ' still open.' : '', unp ? unp + ' graded pick' + (unp === 1 ? ' had' : 's had') + ' no real price and ' + (unp === 1 ? 'is' : 'are') + ' left out of the record and ROI.' : ''].join(' ').trim()}));
   var types = Object.keys(st.by);
