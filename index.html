@@ -1012,6 +1012,22 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
 /* ===== v12 part 8 ===== */
 .wg input{max-width:160px}
 /* ===== end v12 part 8 ===== */
+/* ===== v12 part 9: tracker charts ===== */
+.chartbox{background:var(--surface);border:1px solid var(--line);border-radius:var(--r2);padding:var(--s3)}
+.chartbox.narrow{max-width:420px}
+.chartbox p{margin:var(--s2) 0 0}
+.chart{display:block;width:100%;height:auto}
+.ch-zero{stroke:var(--line);stroke-width:1}
+.ch-diag{stroke:var(--mut);stroke-width:1.5;stroke-dasharray:5 5}
+.ch-ax{fill:var(--mut);font:500 11px var(--f-mono)}
+.ch-line{fill:none;stroke:var(--good);stroke-width:2.5;stroke-linejoin:round;stroke-linecap:round}
+.ch-line.neg{stroke:var(--bad)}
+.ch-area{fill:color-mix(in srgb,var(--good) 14%,transparent);stroke:none}
+.ch-area.neg{fill:color-mix(in srgb,var(--bad) 12%,transparent)}
+.ch-dot{fill:var(--good);stroke:var(--surface);stroke-width:2}
+.ch-dot.neg{fill:var(--bad)}
+.ch-pt{fill:color-mix(in srgb,var(--acc) 55%,transparent);stroke:var(--acc);stroke-width:1.5}
+/* ===== end v12 part 9 ===== */
 </style>
 </head>
 <body>
@@ -3423,6 +3439,50 @@ function renderTracker(){
   if (S.trTab === 'mine') return renderMyBets(root);
   renderPickTrack(root);
 }
+/* ---- small inline charts for the Tracker ---- */
+var SVGNS = 'http://www.w3.org/2000/svg';
+function sv(tag, at){ var n = document.createElementNS(SVGNS, tag); for (var k in at) n.setAttribute(k, at[k]); return n; }
+function unitsChart(list){
+  var g = list.filter(function(p){ return p.result && p.result !== 'V' && (p.kind == null || p.kind === 'priced'); });
+  if (g.length < 2) return null;
+  var by = {}; g.forEach(function(p){ by[p.date] = (by[p.date] || 0) + (p.profit || 0); });
+  var days = Object.keys(by).sort(), cum = 0, pts = [{d:'', v:0}];
+  days.forEach(function(d){ cum += by[d]; pts.push({d:d, v:cum}); });
+  var W = 360, H = 170, P = {l:38, r:10, t:12, b:24};   /* close to phone width, so the axis text stays readable */
+  var vs = pts.map(function(x){ return x.v; }), lo = Math.min(0, Math.min.apply(null, vs)), hi = Math.max(0, Math.max.apply(null, vs));
+  if (hi - lo < 2){ var mid = (hi + lo) / 2; lo = mid - 1; hi = mid + 1; }
+  var X = function(i){ return P.l + (W - P.l - P.r) * (pts.length === 1 ? 0 : i / (pts.length - 1)); };
+  var Y = function(v){ return P.t + (H - P.t - P.b) * (1 - (v - lo) / (hi - lo)); };
+  var svg = sv('svg', {viewBox:'0 0 ' + W + ' ' + H, class:'chart', role:'img', 'aria-label':'Units won over time: ' + (cum >= 0 ? '+' : '') + cum.toFixed(2) + ' units after ' + days.length + ' days'});
+  svg.append(sv('line', {x1:P.l, x2:W - P.r, y1:Y(0), y2:Y(0), class:'ch-zero'}));
+  [lo, hi].forEach(function(v){ var t = sv('text', {x:P.l - 6, y:Y(v) + 4, class:'ch-ax', 'text-anchor':'end'}); t.textContent = (v > 0 ? '+' : '') + v.toFixed(1); svg.append(t); });
+  var d = pts.map(function(x, i){ return (i ? 'L' : 'M') + X(i).toFixed(1) + ' ' + Y(x.v).toFixed(1); }).join(' ');
+  svg.append(sv('path', {d:d + ' L' + X(pts.length - 1).toFixed(1) + ' ' + Y(0).toFixed(1) + ' L' + X(0).toFixed(1) + ' ' + Y(0).toFixed(1) + 'Z', class:'ch-area' + (cum < 0 ? ' neg' : '')}));
+  svg.append(sv('path', {d:d, class:'ch-line' + (cum < 0 ? ' neg' : '')}));
+  var last = pts[pts.length - 1];
+  svg.append(sv('circle', {cx:X(pts.length - 1), cy:Y(last.v), r:4, class:'ch-dot' + (cum < 0 ? ' neg' : '')}));
+  (pts.length > 2 ? [1, pts.length - 1] : [pts.length - 1]).forEach(function(i){ if (!pts[i] || !pts[i].d) return; var t = sv('text', {x:X(i), y:H - 6, class:'ch-ax', 'text-anchor':i === 1 ? 'start' : 'end'}); t.textContent = dayLabel(pts[i].d); svg.append(t); });
+  return el('div', {class:'chartbox'}, svg);
+}
+function calibChart(buckets){
+  var ks = Object.keys(buckets).map(Number).filter(function(k){ return buckets[k].n >= 3; }).sort(function(a, b){ return a - b; });
+  if (ks.length < 2) return null;
+  var W = 320, H = 240, P = {l:40, r:12, t:12, b:34}, lo = .3, hi = .9;
+  var X = function(v){ return P.l + (W - P.l - P.r) * (Math.max(lo, Math.min(hi, v)) - lo) / (hi - lo); };
+  var Y = function(v){ return P.t + (H - P.t - P.b) * (1 - (Math.max(lo, Math.min(hi, v)) - lo) / (hi - lo)); };
+  var svg = sv('svg', {viewBox:'0 0 ' + W + ' ' + H, class:'chart calib', role:'img', 'aria-label':'Model chance against how often picks actually won'});
+  svg.append(sv('line', {x1:X(lo), y1:Y(lo), x2:X(hi), y2:Y(hi), class:'ch-diag'}));
+  [.3, .5, .7, .9].forEach(function(v){
+    var t = sv('text', {x:X(v), y:H - 18, class:'ch-ax', 'text-anchor':'middle'}); t.textContent = Math.round(v * 100) + '%'; svg.append(t);
+    var u = sv('text', {x:P.l - 6, y:Y(v) + 4, class:'ch-ax', 'text-anchor':'end'}); u.textContent = Math.round(v * 100) + '%'; svg.append(u);
+  });
+  var cap = sv('text', {x:(P.l + W - P.r) / 2, y:H - 2, class:'ch-ax', 'text-anchor':'middle'}); cap.textContent = 'Model said'; svg.append(cap);
+  ks.forEach(function(k){
+    var b = buckets[k], r = Math.max(4, Math.min(14, Math.sqrt(b.n) * 1.6));
+    svg.append(sv('circle', {cx:X(b.est / b.n), cy:Y(b.w / b.n), r:r, class:'ch-pt'}));
+  });
+  return el('div', {class:'chartbox narrow'}, svg, el('p', {class:'small mut', text:'Dots on the dashed line mean the model\'s chances are honest. Dots below it mean the picks won less often than the model said. Bigger dots hold more picks.'}));
+}
 function renderPickTrack(root){
   var H = S.history, st = stats(H), dec = st.w + st.l;
   function tile(k, v, tip){ return el('div', {class:'tile', 'data-tip':tip, tabindex:'0'}, el('span', {text:k}), el('b', {text:v})); }
@@ -3431,6 +3491,7 @@ function renderPickTrack(root){
     tile('Win %', dec ? (100 * st.w / dec).toFixed(1) + '%' : 'n/a', 'Wins divided by wins plus losses.'),
     tile('Units', (st.net >= 0 ? '+' : '') + st.net.toFixed(2), 'Profit in units at the posted price. Picks without a real price are left out.'),
     tile('ROI', st.stake ? (100 * st.net / st.stake).toFixed(1) + '%' : 'n/a', 'Net units divided by units risked.')));
+  var uc = unitsChart(H); if (uc){ root.append(el('h2', {text:'Units over time'})); root.append(uc); }
   root.append(help('Every pick the site publishes is logged here and graded automatically from real final box scores. Player props with a player who did not play are voided. Nothing is hand-picked after the fact.'));
   renderAudit(root);
   renderReplay(root);
@@ -3447,6 +3508,7 @@ function renderPickTrack(root){
     root.append(table(['Confidence', 'Picks', 'Model said', 'Actually won', 'Units'], ['High', 'Medium', 'Low'].filter(function(c){ return st.conf[c]; }).map(function(c){
       var x = st.conf[c]; return [c, x.n, x.n ? pct(x.est / x.n) : 'n/a', x.n ? pct(x.w / x.n) : 'n/a', (x.net >= 0 ? '+' : '') + x.net.toFixed(2)]; })));
     var bks = Object.keys(st.buckets).map(Number).sort(function(a, b){ return a - b; });
+    var cc = calibChart(st.buckets); if (cc) root.append(cc);
     if (bks.length) root.append(table(['Estimated win chance', 'Picks', 'Model said', 'Actually won'], bks.map(function(k){ var b = st.buckets[k]; return [(k * 10) + '-' + (k * 10 + 10) + '%', b.n, pct(b.est / b.n), pct(b.w / b.n)]; })));
     root.append(help('If "Model said" runs well above "Actually won" over a large sample, treat the model\'s probabilities as too high. Samples under about 30 picks per row mean very little.'));
   }

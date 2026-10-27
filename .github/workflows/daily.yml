@@ -35,6 +35,8 @@ jobs:
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -50,15 +52,24 @@ jobs:
         run: |
           MODE="${{ inputs.mode }}"
           if [ "${{ github.event.schedule }}" = "*/20 22-23,0-5 * * *" ]; then MODE=closing; fi
-          # editing replay.txt (any change, from github.com or the app) starts the last-season replay
-          if [ "${{ github.event_name }}" = "push" ] && [ "${{ contains(github.event.head_commit.modified, 'replay.txt') || contains(github.event.head_commit.added, 'replay.txt') }}" = "true" ]; then MODE=replay; fi
           case "$MODE" in
             closing) python eplocks.py --closing ;;
             backtest) python eplocks.py --backtest ;;
-            replay) python eplocks.py --replay ;;
+            replay) echo "replay runs in the next step" ;;
             *) python eplocks.py ;;
           esac
+      - name: Replay past seasons (runs until it has finished once, or when replay.txt changes)
+        if: ${{ github.event.schedule != '*/20 22-23,0-5 * * *' && inputs.mode != 'closing' }}
+        continue-on-error: true
+        timeout-minutes: 50
+        env:
+          EPLOCKS_REPLAY_SECONDS: "2400"
+        run: |
+          DONE=$(python -c "import json; print(json.load(open('data/prop_replay.json')).get('complete', False))" 2>/dev/null || echo False)
+          ASKED=$(git diff --name-only HEAD~1 HEAD 2>/dev/null | grep -c '^replay.txt$' || true)
+          if [ "$DONE" != "True" ] || [ "$ASKED" != "0" ] || [ "${{ inputs.mode }}" = "replay" ]; then python eplocks.py --replay; else echo "Replay already complete; edit replay.txt to run it again"; fi
       - name: Save results
+        if: ${{ always() }}
         run: |
           git config user.name "eplocks-bot"
           git config user.email "eplocks-bot@users.noreply.github.com"

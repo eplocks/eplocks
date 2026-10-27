@@ -3352,6 +3352,9 @@ def replay_box_update(rng, t0):
                                             'p': [[p['id'], p['t'], p.get('min') or 0] + [p.get(k) or 0 for k in ROW_KEYS] for p in r.get('players') or []]}
                 if ok_day:
                     done.add(ds)
+                    if len(done) % 20 == 0:        # save progress as it goes, so a run that is cut off still keeps what it loaded
+                        st['days_done'] = sorted(done)
+                        jsave(path, st)
             except Exception as ex:  # noqa
                 note('Replay: %s could not be loaded: %s' % (ds, str(ex)[:100]))
         d += dt.timedelta(days=1)
