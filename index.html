@@ -108,12 +108,7 @@ p{margin:0}
 .wp .a{background:var(--ca,var(--hdr-mut))}
 .wp .h{background:var(--ch,var(--acc))}
 .game[data-hot="away"] .wp .h,.game[data-hot="home"] .wp .a{opacity:.3}
-.wpl{display:flex;justify-content:space-between;font:500 12px var(--f-mono);color:var(--mut)}
 .lines{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
-.cell{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px 10px;min-width:0}
-.cell span{display:block;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--mut)}
-.cell b{font:700 20px/1.2 var(--f-disp);font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
-.cell small{display:block;font:500 11px var(--f-mono);color:var(--mut)}
 details>summary{cursor:pointer;font-size:14px;color:var(--mut);min-height:32px;display:flex;align-items:center;transition:color .15s ease}
 details>summary:hover{color:var(--fg)}
 .tscroll{overflow-x:auto;background:var(--surface);border:1px solid var(--line);border-radius:8px}
@@ -127,12 +122,6 @@ tbody tr:hover{background:var(--surface2)}
 .ana b.k{font:600 11px var(--f-body);letter-spacing:.08em;text-transform:uppercase;color:var(--mut);display:block}
 .ana ul{margin:2px 0 0;padding-left:18px}
 .ana li{overflow-wrap:anywhere}
-.lpick{border-left:3px solid var(--line);padding:2px 0 2px 10px;display:grid;gap:2px;min-width:0;transition:padding-left .18s ease}
-.lpick:hover{padding-left:14px}
-.lpick.High{border-left-color:var(--good)}
-.lpick.Medium{border-left-color:var(--gold)}
-.lpick.Low{border-left-color:var(--mut)}
-.lpick b{font-weight:600;overflow-wrap:anywhere}
 .mono{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
 .lock{width:18px;height:18px;flex:none;vertical-align:-3px}
 .lock .sh{transition:transform .22s ease}
@@ -141,20 +130,13 @@ tbody tr:hover{background:var(--surface2)}
 .lock.Medium .sh{transform:translateY(-1.5px)}
 .lock.Low{color:var(--mut)}
 .lock.Low .sh{transform:translateY(-3.5px)}
-.pick:hover .lock .sh,.lpick:hover .lock .sh{transform:translateY(0)}
+.pick:hover .lock .sh{transform:translateY(0)}
 .pick{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px;display:grid;gap:8px;min-width:0}
-.p-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .rank{font:700 22px/1 var(--f-disp);color:var(--acc)}
 .conf{font:600 11px var(--f-body);letter-spacing:.05em;text-transform:uppercase;padding:2px 7px;border-radius:4px;border:1px solid currentColor}
 .conf.High{color:var(--good)}
 .conf.Medium{color:var(--gold)}
 .conf.Low{color:var(--mut)}
-.p-title{font:700 26px/1.1 var(--f-disp);letter-spacing:.01em;margin:0;overflow-wrap:anywhere}
-.p-title .mono{font-size:15px;color:var(--mut);font-weight:500;margin-left:6px}
-.nums{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:13px;color:var(--mut)}
-.nums b{font:600 14px var(--f-mono);color:var(--fg)}
-.nums b.pos{color:var(--good)}
-.nums b.neg{color:var(--bad)}
 .meter{position:relative;height:8px;border-radius:4px;background:var(--surface2);margin:8px 0 2px}
 .meter .fill{position:absolute;top:0;bottom:0;border-radius:4px;background:var(--good);opacity:.85;transition:opacity .18s ease}
 .meter .fill.neg{background:var(--bad)}
@@ -197,10 +179,6 @@ code{font:500 13px var(--f-mono);background:var(--surface2);padding:1px 5px;bord
 .ult .big{font:700 54px/1 var(--f-disp);color:var(--hdr-acc);font-variant-numeric:tabular-nums}
 .ult .head{display:flex;flex-wrap:wrap;gap:6px 18px;align-items:flex-end;justify-content:space-between}
 .ult .mut,.ult .small{color:var(--hdr-mut)}
-.ult .nums{color:var(--hdr-mut)}
-.ult .nums b{color:var(--hdr-fg)}
-.ult .nums b.pos{color:#35D49A}
-.ult .nums b.neg{color:#ff9d94}
 .legs{display:grid;gap:8px}
 .leg{display:grid;gap:2px;min-width:0;border-left:3px solid var(--line);padding:6px 0 6px 12px;background:rgba(127,150,185,.08);border-radius:0 8px 8px 0}
 .leg.High{border-left-color:var(--good)}
@@ -214,7 +192,6 @@ code{font:500 13px var(--f-mono);background:var(--surface2);padding:1px 5px;bord
 .ult .btn:hover{border-color:var(--hdr-acc);color:var(--hdr-acc)}
 .ticket{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px;display:grid;gap:10px;min-width:0;transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease}
 .ticket:hover{transform:translateY(-2px);box-shadow:var(--shadow);border-color:var(--acc)}
-.ticket.is-ult{border-color:var(--acc);box-shadow:inset 0 0 0 1px var(--acc)}
 .t-head{display:flex;align-items:flex-end;justify-content:space-between;gap:10px;flex-wrap:wrap}
 .t-head h3{font:700 24px/1 var(--f-disp);margin:0;letter-spacing:.02em}
 .t-odds{font:700 34px/1 var(--f-disp);color:var(--acc);font-variant-numeric:tabular-nums}
@@ -263,10 +240,6 @@ code{font:500 13px var(--f-mono);background:var(--surface2);padding:1px 5px;bord
 .tm-row{display:flex;align-items:center;gap:10px}
 .team.home .tm-row{flex-direction:row-reverse;justify-self:end}
 .team .av{--s:48px}
-.p-main{display:flex;gap:12px;align-items:flex-start}
-.p-main>.av,.p-main>.avs{--s:56px}
-.p-main>.avs .av{--s:40px}
-.p-body{display:grid;gap:8px;min-width:0;flex:1}
 .leg{display:flex;gap:10px;align-items:center}
 .leg .av,.leg .avs{--s:36px}
 .leg-body{display:grid;gap:2px;min-width:0}
@@ -337,8 +310,6 @@ body.noscroll{overflow:hidden}
 tr.clk{cursor:pointer}
 tr.clk:hover{background:var(--surface2)}
 tr.clk:focus-visible{outline:2px solid var(--acc);outline-offset:-2px}
-.lpick.clk{cursor:pointer}
-.chev{margin-left:8px;color:var(--acc);font-weight:700}
 .leg.clk,.strip .lv.clk{cursor:pointer}
 .ptag{display:inline-block;font:600 10px var(--f-mono);padding:1px 6px;border-radius:999px;border:1px solid var(--line);color:var(--mut);margin:2px 4px 0 0}
 .ptag.hit{border-color:var(--good);color:var(--good)}
@@ -373,8 +344,6 @@ svg.bars .bl.sm{font-size:8px;font-weight:500}
 svg.bars .ln{stroke:var(--gold);stroke-width:1.5;stroke-dasharray:5 4}
 svg.bars .lt{font:700 9px var(--f-mono);fill:var(--gold);text-anchor:start}
 .game.clk-card,.pick.clk-card{cursor:pointer}
-.go-row{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
-.go-hint{color:var(--acc);font-weight:600}
 .btn.go{border-color:var(--acc);color:var(--acc)}
 .btn.go:hover{background:var(--acc);color:var(--on-acc)}
 .lean{margin:0}
@@ -409,7 +378,6 @@ section.enter{animation:tabIn .32s cubic-bezier(.2,.8,.2,1) both}
 .pick{border-left:4px solid var(--line)}
 .pick.c-High{border-left-color:var(--good)}
 .pick.c-Medium{border-left-color:var(--gold)}
-.row-btn{display:block;justify-self:start}
 .btn,.slipbtn,.qchip,.fab,.ibtn{-webkit-tap-highlight-color:transparent}
 
 /* tiers and chips */
@@ -419,33 +387,10 @@ section.enter{animation:tabIn .32s cubic-bezier(.2,.8,.2,1) both}
 @keyframes gleam{0%,100%{background-position:0 0}50%{background-position:100% 0}}
 .tier.t-Solid{background:var(--good);color:var(--on-acc)}
 .tier.t-Notable{background:transparent;color:var(--blue);border:1px solid var(--blue)}
-.sigchips{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
-.sigchip{font:600 11px var(--f-body);padding:2px 8px;border-radius:999px;background:var(--surface2);border:1px solid var(--line);color:var(--fg);cursor:help}
 .siglist{margin:0;padding-left:18px;display:grid;gap:6px;font-size:13px}
 .siglist li{overflow-wrap:anywhere}
 .sigbox{background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:10px 12px;display:grid;gap:8px}
 .sig-h{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-.sigban{position:relative;overflow:hidden;appearance:none;width:100%;text-align:left;cursor:pointer;display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:12px;border:1px solid var(--line);background:var(--surface);color:var(--fg);font:inherit;box-shadow:inset 4px 0 0 var(--tc,var(--gold));transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease}
-.sigban.t-Strong{--tc:var(--gold)}.sigban.t-Solid{--tc:var(--good)}.sigban.t-Notable{--tc:var(--blue)}
-.sigban:hover{transform:translateY(-2px);border-color:var(--tc)}
-.sigban::after{content:"";position:absolute;inset:0;background:linear-gradient(110deg,transparent 30%,rgba(255,255,255,.14) 50%,transparent 70%);transform:translateX(-120%);animation:sweep 4s ease-in-out infinite;pointer-events:none}
-.sb-ic{flex:none;width:34px;height:34px;border-radius:50%;display:grid;place-items:center;background:var(--tc);color:var(--tier-ink);font-size:16px}
-.sb-t{flex:1;min-width:0;display:grid;gap:1px;overflow-wrap:anywhere}
-.sb-t b{font:700 11px var(--f-body);letter-spacing:.1em;text-transform:uppercase;color:var(--mut)}
-.sb-t span{font-size:14px;font-weight:600}
-.sigc{--tc:var(--line);background:var(--surface);border:1px solid var(--line);border-left:4px solid var(--tc);border-radius:12px;padding:14px;display:grid;gap:10px;min-width:0;animation:rise .35s ease both;animation-delay:calc(var(--i,0) * 40ms);transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease}
-.sigc.t-Strong{--tc:var(--gold)}.sigc.t-Solid{--tc:var(--good)}.sigc.t-Notable{--tc:var(--blue)}
-.sigc.clk-card{cursor:pointer}
-.sigc:hover{transform:translateY(-2px);box-shadow:var(--shadow);border-color:var(--tc)}
-.sigc.dim{opacity:.6}
-.sc-top{display:flex;gap:12px;align-items:flex-start}
-.sc-top>.av{--s:48px}
-.sc-top>.avs{--s:34px}
-.sc-id{flex:1;min-width:0;display:grid;gap:4px}
-.sc-tags{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
-.ring{flex:none;width:52px;height:52px;border-radius:50%;display:grid;place-items:center;position:relative;background:conic-gradient(var(--tc) calc(var(--v,0) * 1%),var(--surface2) 0)}
-.ring::before{content:"";position:absolute;inset:5px;border-radius:50%;background:var(--surface)}
-.ring b{position:relative;font:700 18px var(--f-disp)}
 
 /* slip */
 .slipbtn{appearance:none;font:600 12px var(--f-body);padding:6px 13px;min-height:32px;border-radius:999px;border:1px solid var(--acc);color:var(--acc);background:transparent;cursor:pointer;transition:background .15s ease,color .15s ease,transform .15s ease}
@@ -527,10 +472,6 @@ body.noscroll .dock{display:none}
 .acel-row .leg{width:100%}
 @media (max-width:480px){.hero h1{font-size:30px}.msg-x{padding-left:0}}
 
-.lpick{position:relative}
-.lpick>b{padding-right:38px}
-.lpick>b .slipbtn.mini{position:absolute;right:0;top:0}
-
 /* ===== EpLocks rebrand: Hardwood Terminal layout and type, original navy + emerald palette =====
    Layer order: primitives -> semantic -> components. Everything below reads tokens. */
 :root{
@@ -589,7 +530,7 @@ html.tx,html.tx *{transition-duration:.25s!important}
 
 /* ---------- type voice ---------- */
 h2{font:800 24px/1.1 var(--f-disp);letter-spacing:.03em;text-transform:uppercase;color:var(--fg);margin:10px 0 0}
-.cell span,.tile span,.blk h3,.ctl .row>b,.wg span,.mk-card .k,.ana b.k,.cwrap h4,.sb-t b,.ai-tag,.sc-lab{font:500 12px var(--f-mono);letter-spacing:0;text-transform:none;color:var(--mut)}
+.tile span,.blk h3,.ctl .row>b,.wg span,.mk-card .k,.ana b.k,.cwrap h4,.ai-tag{font:500 12px var(--f-mono);letter-spacing:0;text-transform:none;color:var(--mut)}
 th{font:500 11.5px var(--f-mono);letter-spacing:0;text-transform:none;color:var(--mut)}
 .pill,.conf,.chip,.tier,.ult .badge{font:800 13px/1 var(--f-disp);letter-spacing:.05em;text-transform:uppercase}
 .pill{padding:3px 6px;border-radius:3px}
@@ -598,7 +539,7 @@ th{font:500 11.5px var(--f-mono);letter-spacing:0;text-transform:none;color:var(
 .empty b{font:800 22px var(--f-disp);letter-spacing:.04em}
 .legal{font-size:12px}
 .note{border-radius:6px}
-.btn,.seg,.cell,.tile,.ib2{border-radius:4px}
+.btn,.seg,.tile,.ib2{border-radius:4px}
 .btn{font-weight:600}
 .btn:hover{border-color:var(--acc);color:var(--fg)}
 .seg button[aria-pressed="true"]{box-shadow:inset 0 -2px 0 var(--acc)}
@@ -619,26 +560,21 @@ th{font:500 11.5px var(--f-mono);letter-spacing:0;text-transform:none;color:var(
 .tile{padding:10px 12px}
 .tile b{font:800 26px/1.15 var(--f-disp)}
 
-/* ---------- cards: flat, hairline, no lift ---------- */
-.game,.pick,.tile,.pgroup,.ticket,.sigc,.mk-card,.blk,.ctl,.method details,.empty,.skel,.tscroll,.cwrap,.sigbox,.acet{border-radius:6px}
-.game,.sigc,.ult{animation:none}
-.game:hover,.pick:hover,.ticket:hover,.sigc:hover,.mk-card:hover,.tile:hover{transform:none;box-shadow:none;border-color:var(--acc)}
+/* ---------- cards: flat, hairline, no lift ---------- */.game,.pick,.tile,.pgroup,.ticket,.mk-card,.blk,.ctl,.method details,.empty,.skel,.tscroll,.cwrap,.sigbox,.acet{border-radius:6px}
+.game,.ult{animation:none}
+.game:hover,.pick:hover,.ticket:hover,.mk-card:hover,.tile:hover{transform:none;box-shadow:none;border-color:var(--acc)}
 .game{padding:14px 14px 12px}
 .game::before{height:4px;border-radius:0;background:linear-gradient(90deg,var(--ca,var(--acc)) 50%,var(--ch,var(--acc)) 50%);opacity:1}
 .game:hover::before{transform:none}
 .ab{font:900 56px/.9 var(--f-disp);letter-spacing:.01em}
 .at{font:700 14px var(--f-disp);letter-spacing:.12em}
 .wp{height:6px;border-radius:0;gap:2px}
-.cell b{font:800 24px/1.15 var(--f-disp);letter-spacing:.01em}
-.cell small,.rec,.tip,.wpl,.mlab{font-family:var(--f-mono)}
+.rec,.tip,.mlab{font-family:var(--f-mono)}
 .lines{gap:6px}
-.cell{background:var(--bg)}
-.p-title{font:800 30px/1.02 var(--f-disp);letter-spacing:.01em}
-.p-title .mono{font:500 14px var(--f-mono);color:var(--mut)}
 .rank{font:900 28px/1 var(--f-disp);color:var(--acc)}
 .pick{border-left-width:4px}
-.pick.c-High,.lpick.High,.leg.High{border-left-color:var(--good)}
-.pick.c-Medium,.lpick.Medium,.leg.Medium{border-left-color:var(--gold)}
+.pick.c-High,.leg.High{border-left-color:var(--good)}
+.pick.c-Medium,.leg.Medium{border-left-color:var(--gold)}
 .lock.High,.conf.High{color:var(--good)}
 .lock.Medium,.conf.Medium{color:var(--gold)}
 .meter{height:6px;border-radius:0}
@@ -648,7 +584,6 @@ th{font:500 11.5px var(--f-mono);letter-spacing:0;text-transform:none;color:var(
 .t-odds{font:800 38px/1 var(--f-disp);color:var(--acc)}
 .pg-h b{font:800 22px var(--f-disp);letter-spacing:.04em}
 .mk-card .big{font:800 20px/1.1 var(--f-disp);letter-spacing:.03em}
-.ticket.is-ult{box-shadow:none;border-color:var(--acc)}
 
 /* ---------- parlay "ult" slab ---------- */
 .ult{border:0;border-radius:0;background:var(--hdr2);box-shadow:inset 0 0 0 1px rgba(255,255,255,.1),inset 0 4px 0 var(--hdr-acc);padding:22px 18px 18px;
@@ -664,22 +599,6 @@ th{font:500 11.5px var(--f-mono);letter-spacing:0;text-transform:none;color:var(
 .tier.t-Strong{background:var(--strong);color:var(--on-strong);box-shadow:none;animation:none}
 .tier.t-Solid{background:var(--acc-fill);color:var(--on-fill)}
 .tier.t-Notable{background:transparent;color:var(--blue);border:1px solid var(--blue)}
-.sigchip{border-radius:3px;font:500 12px var(--f-mono)}
-.sigban{border-radius:0;border:0;padding:14px 16px;background:var(--surface);box-shadow:inset 4px 0 0 var(--tc),inset 0 0 0 1px var(--line);
-  clip-path:polygon(0 0,100% 0,100% calc(100% - 14px),calc(100% - 14px) 100%,0 100%)}
-.sigban::after{display:none}
-.sigban:hover{transform:none;border-color:transparent;box-shadow:inset 4px 0 0 var(--tc),inset 0 0 0 1px var(--tc)}
-.sigban.t-Strong{--tc:var(--strong);background:var(--strong);color:var(--on-strong);box-shadow:none}
-.sigban.t-Strong:hover{box-shadow:inset 0 0 0 2px var(--on-strong)}
-.sigban.t-Strong .sb-t b,.sigban.t-Strong .che{color:var(--on-strong)}
-.sigban.t-Strong .sb-ic{background:var(--on-strong);color:var(--strong)}
-.sigban.t-Solid{--tc:var(--good)}
-.sb-ic{border-radius:4px;width:32px;height:32px;background:var(--tc);color:var(--surface)}
-.sb-t b{font:700 20px/1 var(--f-disp);letter-spacing:.04em;text-transform:uppercase;color:var(--mut)}
-.sb-t span{font-size:15px}
-.sigc.t-Strong,.sigban.t-Strong{--tc:var(--strong)}
-.sigc.t-Solid{--tc:var(--good)}
-.ring b{font:800 20px var(--f-disp)}
 
 /* ---------- slip, Ace, dock, toasts ---------- */
 .slipbtn{border-radius:4px;border-color:var(--acc);color:var(--acc);font-weight:700}
@@ -746,7 +665,6 @@ section.enter{animation:tabIn .16s ease both}
 .av.face:not(.mono){box-shadow:0 0 0 2px var(--acc)}
 
 .best{color:var(--acc);font-weight:700}
-.tracker-h{margin-top:18px}
 /* ===== v12 clean: calm, readable, one focus per card =====
    Replaces the v11 layer. One self-contained block; delete it to roll back to the older look.
    Rules: one key number per card, details one tap away, generous space, larger text, few borders,
@@ -1131,12 +1049,6 @@ function teamColors(a, h){
   var ca = TC[a] || '#9aa3b2', ch = TC[h] || '#ef4a5f', dh = Math.abs(hue(ca) - hue(ch)), d = Math.min(dh, 360 - dh);
   return d < 28 ? [ca, 'var(--acc)'] : [ca, ch];
 }
-function lockSvg(level){
-  var l = ['High', 'Medium', 'Low'].indexOf(level) >= 0 ? level : 'Medium';
-  var t = document.createElement('template');
-  t.innerHTML = '<svg class="lock ' + l + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path class="sh" d="M8 11V8a4 4 0 0 1 8 0v3"/><rect x="5" y="11" width="14" height="9" rx="2"/></svg>';
-  return t.content.firstChild;
-}
 /* Team crests: drawn locally from team colours, so they never depend on a network image and never go blank. */
 var TCOL = {ATL:['#E03A3E','#C1D32F'],BOS:['#007A33','#BA9653'],BKN:['#1F1F1F','#9AA0A6'],CHA:['#1D1160','#00A3B5'],CHI:['#CE1141','#111111'],CLE:['#860038','#FDBB30'],
   DAL:['#00538C','#B8C4CA'],DEN:['#0E2240','#FEC524'],DET:['#C8102E','#1D42BA'],GSW:['#1D428A','#FFC72C'],HOU:['#CE1141','#C4CED4'],IND:['#002D62','#FDBB30'],
@@ -1218,7 +1130,6 @@ function mergeHelps(root){
     }
   });
 }
-function confTxt(c){ return {High:'High confidence', Medium:'Medium confidence', Low:'Low confidence'}[c] || c; }
 function betFacts(p){
   var bits = ['Model ' + pct(p.est), 'price ' + pct(p.implied)];
   if (p.units) bits.push(p.units + 'u');
@@ -1973,13 +1884,6 @@ function gameBody(g){
 }
 
 /* ---- v10: books, Claude's read, closing line value, backtest ---- */
-function bookLine(p, tag){
-  var bits = [];
-  if (p.book) bits.push('Best price ' + fo(p.odds) + ' at ' + p.book + (p.n_books ? ' (' + p.n_books + ' books)' : ''));
-  if (p.fair != null) bits.push('market fair ' + pct(p.fair));
-  if (p.jp != null) bits.push('Claude\'s read ' + pct(p.jp) + ' (model ' + pct(p.est_nj) + ')');
-  return bits.length ? el(tag || 'span', {class:'small mut', text:bits.join(' · ')}) : null;
-}
 function shopPanel(g){
   var m = g.market; if (!m || !m.books || !m.books.length) return null;
   var h = g.home, a = g.away, f = m.fair || {}, sh = m.shop || {};
@@ -2476,10 +2380,6 @@ function tierEl(sig, mini){
   if (!sig || !sig.tier) return null;
   return el('span', {class:'tier t-' + sig.tier + (mini ? ' mini' : ''), title:sig.tier + ' signal, ' + sig.score + ' out of 100: ' + sig.items.length + ' pattern' + (sig.items.length === 1 ? '' : 's') + ' line up'}, '✦ ', sig.tier);
 }
-function sigChips(sig, max){
-  var items = (sig.items || []).slice().sort(function(a, b){ return b.w - a.w; }).slice(0, max || 4);
-  return el('div', {class:'sigchips'}, tierEl(sig), items.map(function(i){ return el('span', {class:'sigchip', title:i.t, text:SIGL[i.k] || i.k}); }));
-}
 var SR = null;
 function sigStats(){
   if (SR && SR.n === S.history.length) return SR;
@@ -2532,19 +2432,6 @@ function sigBoard(){
   return out;
 }
 function sigCount(){ return sigBoard().filter(function(x){ return !started(x.p) && x.sig.tier !== 'Notable'; }).length; }
-function sigPill(g){
-  var n = sigBoard().filter(function(x){ return x.g.id === g.id; }), top = n[0];
-  if (!top) return null;
-  return el('span', {class:'tier t-' + top.sig.tier + ' mini', title:n.length + ' pattern' + (n.length === 1 ? '' : 's') + ' worth a look in this game. Best: ' + top.p.label}, '✦ ', n.length + (n.length === 1 ? ' signal' : ' signals'));
-}
-function openLeg(p){ var g = gameById(p.game_id); if (!g) return; if (p.type === 'prop' && p.pid) openPlayer(g.id, p.pid, p.stat); else openGame(g.id); }
-function sigBanner(){
-  var b = sigBoard().filter(function(x){ return !started(x.p); })[0];
-  if (!b) return null;
-  var d = el('button', {type:'button', class:'sigban t-' + b.sig.tier, onclick:function(){ showTab('signals'); }},
-    el('span', {class:'sb-ic', text:'✦'}), el('span', {class:'sb-t'}, el('b', {text:'Standout on the board'}), el('span', {text:b.p.label + ' · ' + fo(b.p.odds) + ' · ' + b.sig.tier + ' signal, ' + b.sig.items.length + ' pattern' + (b.sig.items.length === 1 ? '' : 's')})), el('span', {class:'chev', text:'See all ›'}));
-  return d;
-}
 function sigCard(it, i){
   var p = it.p;
   var card = betCard(p, i, {patterns:true});

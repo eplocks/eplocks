@@ -48,6 +48,8 @@ JUDG_CAP = 0.04        # and never by more than this much probability, whatever 
 JUDG = {'w': W_JUDG, 'n': 0, 'brier_j': None, 'brier_m': None}
 BLEND_MAX = 0.5        # most weight the model's own number gets against the market's (last season's replay can lower it)
 CLOSE_WINDOW_MIN = int(os.environ.get('EPLOCKS_CLOSE_MINUTES') or 25)    # closing mode records a pick's closing line this many minutes before tip-off
+PROPS_STALE_H = 8      # reused props older than this are dropped rather than priced
+PROPS_REUSE_MIN = int(os.environ.get('EPLOCKS_PROPS_REUSE_MINUTES') or 60)   # props pulled this recently are reused instead of paid for again
 ODDS_MIN_CREDITS = int(os.environ.get('EPLOCKS_ODDS_MIN_CREDITS') or 40)  # never spend the Odds API key below this many credits
 
 # Last season as a starting point, and shot locations (both optional: if either fails the run carries on without it)
@@ -1893,19 +1895,49 @@ def fetch_odds_props(slate_events):
         if ev['state'] == 'pre':
             mine[(nick(ev['home']['name']), nick(ev['away']['name']))] = ev
     out, fails, per = [], 0, len(markets) * len(ODDS_REGIONS.split(','))
+    # today's props are kept per game, so a run that cannot (or need not) spend credits reuses the last good lines instead of losing them
+    cpath = os.path.join(DATA, 'props_auto.json')
+    day = today_ct().isoformat()
+    cache = jload(cpath, {})
+    if cache.get('date') != day:
+        cache = {'date': day, 'games': {}}
+    now = time.time()
+    reused, short = 0, False
     for e in events if isinstance(events, list) else []:
         if (nick(e.get('home_team')), nick(e.get('away_team'))) not in mine:
             continue
-        if not odds_ok(per):
-            note('Odds API credits are nearly used up (%s left), so some games have no auto-pulled props this run' % ODDS['left'])
-            break
+        ce = cache['games'].get(e['id'])
+        if ce and now - ce.get('t', 0) > PROPS_STALE_H * 3600:
+            ce = None                       # too old: prices this stale would show edges that are no longer on offer
+        fresh = ce and now - ce.get('t', 0) < PROPS_REUSE_MIN * 60
+        if fresh or not odds_ok(per):
+            if not fresh:
+                short = True
+            if ce:
+                out.extend(ce['props'])
+                reused += 1
+            continue
         try:
             js = odds_get('events/%s/odds' % e['id'], {'regions': ODDS_REGIONS, 'markets': ','.join(markets), 'oddsFormat': 'american'})
         except Exception as ex:  # noqa
             fails += 1
             note('Props fetch failed for %s: %s' % (e.get('id'), str(ex)[:120]))
+            if ce:
+                out.extend(ce['props'])
+                reused += 1
             continue
-        out.extend(agg_props(js))
+        got = agg_props(js)
+        if got:
+            cache['games'][e['id']] = {'t': now, 'props': got}
+        elif ce:
+            got = ce['props']
+            reused += 1
+        out.extend(got)
+    jsave(cpath, cache)
+    if short:
+        note('Odds API credits are nearly used up (%s left), so props were not refreshed this run%s' % (ODDS['left'], '; the last lines pulled today are used instead' if reused else ''))
+    elif reused:
+        note('Props for %d games were pulled less than %d minutes ago and are reused to save Odds API credits' % (reused, PROPS_REUSE_MIN))
     ok = bool(out)
     nbk = max([p['n_books'] for p in out] or [0])
     src('odds_api', ok, ('%d props for %d games from up to %d books; %s credits left%s' % (len(out), len(mine), nbk, ODDS['left'] if ODDS['left'] is not None else '?', ('; %d games failed' % fails) if fails else '')) if ok else
@@ -3431,18 +3463,19 @@ def logloss(ev):
 
 
 def replay_fit(rs):
-    """Average multiplier from total actual vs total predicted; range multiplier by the best log loss on the over/under questions."""
-    n = len(rs)
-    tm, ta = sum(r[0] for r in rs), sum(r[2] for r in rs)
-    b = clamp(ta / tm, 0.96, 1.04) if tm else 1.0
-    step = max(1, n // 6000)
+    """Centre and range multipliers chosen together by the best log loss on the over/under questions.
+    The centre is not the plain average: stats like points are skewed (a few big nights pull the average up), so the line he
+    beats half the time sits a little below his average. Fitting on over/under outcomes finds that point directly."""
+    step = max(1, len(rs) // 6000)
     best = None
-    for k in range(0, 36):
-        s = 0.80 + 0.02 * k
-        ll = logloss(replay_events(rs, b, s, step))
-        if best is None or ll < best[0]:
-            best = (ll, s)
-    return b, clamp(best[1], 0.85, 1.5)
+    for i in range(0, 13):
+        b = 0.92 + 0.01 * i
+        for k in range(0, 31):
+            s = 0.85 + 0.02 * k
+            ll = logloss(replay_events(rs, b, s, step))
+            if best is None or ll < best[0]:
+                best = (ll, b, s)
+    return best[1], best[2]
 
 
 def replay_table(rs, b=1.0, s=1.0):
