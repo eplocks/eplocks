@@ -36,7 +36,7 @@ HCA = float(os.environ.get('EPLOCKS_HOME_EDGE') or 2.2)      # home-court points
 SD_MARGIN, SD_TOTAL = 12.0, 17.5                              # typical NBA error vs closing lines
 B2B_PTS = 1.5                                                 # heuristic back-to-back penalty (points of margin)
 MAX_PROP_ROWS = 60
-ENGINE_VERSION = '7.1'
+ENGINE_VERSION = '7.2'
 SZ_V = 4               # box-score format version: 2 adds player positions, 3 adds officials and team fouls, 4 adds player shooting splits and +/- (older stored games are re-read once)
 PRIOR_V = 2            # last-season summary format version (2 adds defense by position)
 CLAUDE_BUDGET = float(os.environ.get('EPLOCKS_CLAUDE_SECONDS') or 1500)   # stop asking Claude after this many seconds so a run always finishes
@@ -45,6 +45,7 @@ T0 = time.time()
 CL_T0 = None           # when the Claude phase starts (after last season has loaded), so a long first run does not eat the Claude budget
 W_JUDG = float(os.environ.get('EPLOCKS_JUDGMENT_WEIGHT') or 0.10)   # how far Claude's own probability moves the model's (0 switches the judgment layer off)
 JUDG_CAP = 0.04        # and never by more than this much probability, whatever the weight has grown to
+JUDG_TRUST_N = 200     # graded picks at which Claude's measured skill counts at half strength
 JUDG = {'w': W_JUDG, 'n': 0, 'brier_j': None, 'brier_m': None}
 BLEND_MAX = 0.5        # most weight the model's own number gets against the market's (last season's replay can lower it)
 CLOSE_WINDOW_MIN = int(os.environ.get('EPLOCKS_CLOSE_MINUTES') or 25)    # closing mode records a pick's closing line this many minutes before tip-off
@@ -1212,6 +1213,44 @@ def build_player_logs(games, prior_means=None):
 TEAMSTATE = {'ts': None}
 
 
+def count_cdf(k, mu, var):
+    """P(X <= k) for a count with this mean and variance: negative binomial when the counts swing more than their average, Poisson otherwise."""
+    if k < 0:
+        return 0.0
+    mu = max(mu, 1e-3)
+    k = int(k)
+    if var <= mu * 1.0001:
+        term = math.exp(-mu)
+        p = term
+        for i in range(1, k + 1):
+            term *= mu / i
+            p += term
+        return min(1.0, p)
+    r = mu * mu / (var - mu)
+    q = mu / (mu + r)
+    term = math.exp(r * math.log(1 - q))
+    p = term
+    for i in range(1, k + 1):
+        term *= (r + i - 1) / i * q
+        p += term
+    return min(1.0, p)
+
+
+def prop_probs(mu, sd, line, dist='normal'):
+    """(chance of over, chance of under) for a line; whole-number lines can push, so the two need not add to one."""
+    half = abs(line - math.floor(line)) > 1e-9
+    if dist == 'count':
+        var = sd * sd
+        if half:
+            po = 1 - count_cdf(math.floor(line), mu, var)
+            return po, 1 - po
+        return 1 - count_cdf(line, mu, var), count_cdf(line - 1, mu, var)
+    if half:
+        po = 1 - phi((line - mu) / sd)
+        return po, 1 - po
+    return 1 - phi((line + 0.5 - mu) / sd), phi((line - 0.5 - mu) / sd)
+
+
 def prop_model(log, stat, line, env=1.0, mult=1.0, rm=1.0, ctx=None):
     fn = STAT_FN.get(stat)
     if not fn or not log:
@@ -1254,21 +1293,16 @@ def prop_model(log, stat, line, env=1.0, mult=1.0, rm=1.0, ctx=None):
     am = 1.0 if REPLAY_OFF['off'] else adv_mult(terms)
     mu = base * env * mult * rm * am
     fx = None if REPLAY_OFF['off'] else REPLAY_FIX.get(stat)
+    dist = 'normal'
     if fx:                       # corrections learned by replaying last season (see run_replay)
-        mu, sd = mu * fx['b'], sd * fx['s']
-    half = abs(line - math.floor(line)) > 1e-9
-    if half:
-        p_over = 1 - phi((line - mu) / sd)
-        p_under = 1 - p_over
-    else:
-        p_over = 1 - phi((line + 0.5 - mu) / sd)
-        p_under = phi((line - 0.5 - mu) / sd)
+        mu, sd, dist = mu * fx['b'], sd * fx['s'], fx.get('dist', 'normal')
+    p_over, p_under = prop_probs(mu, sd, line, dist)
     last10 = vals[-10:]
     return {'n': n, 'n_eff': n_eff, 'prior_mean': r1(prior_mean) if prior_mean is not None else None, 'changed': changed, 'prior_team': prior_team,
             'season': r1(season), 'l10': r1(l10), 'l5': r1(l5), 'mean': r1(mu), 'sd': r1(sd), 'p_over': r3(p_over), 'p_under': r3(p_under),
             'hit_l10': sum(1 for v in last10 if v > line), 'n_l10': len(last10), 'hit_all': sum(1 for v in vals if v > line),
             'min_avg': r1(mean(g['min'] for g in gl)), 'min_l5': r1(mean(g['min'] for g in gl[-5:])),
-            'adv': {c: round(t, 4) for c, t in terms.items()}, 'adv_mult': r3(am), 'adv_note': adv_note(terms) if am != 1.0 else ''}
+            'adv': {c: round(t, 4) for c, t in terms.items()}, 'adv_mult': r3(am), 'adv_note': adv_note(terms) if am != 1.0 else '', 'dist': dist}
 
 
 # ----------------------------------------------------------------------------- role changes, injuries, calibration
@@ -1413,9 +1447,11 @@ def pm_changed(L):
     return {'changed': pm['changed'], 'prior_team': pm['prior_team']} if pm else {}
 
 
-CAL_PRIOR = {'game': 1.0, 'prop': 0.7}   # starting belief about how much of our edge is real (props are less proven than game bets)
-CAL_STRENGTH = 1.0                       # a few hundred graded picks before the results outweigh the starting belief (results are noisy)
+CAL_PRIOR = {'game': 1.0, 'prop': 0.5}   # starting belief about how much of the sample-adjusted edge is real (props are less proven than game bets)
+CAL_PICKS = 200                          # graded picks the starting belief is worth: it takes about this many before the record outweighs it
+CAL_ROWS = 2000                          # the same, counted in shadow readings: about two weeks of nights, because one night's readings rise and fall together
 CAL = dict(CAL_PRIOR)
+CAL_INFO = {}
 
 
 SAMPLE_K = float(os.environ.get('EPLOCKS_SAMPLE_K') or 10)   # games of evidence at which a player's own numbers get half a say against the market price
@@ -1433,23 +1469,63 @@ def cal_p(p, odds, cls, fair=None, n_eff=None):
     return clamp(q + lam * (p - q), 0.01, 0.99)
 
 
-def build_calibration(history):
-    """Learns, from graded picks, how much of the model's edge over the price is real: outcome - price ~ lambda * (estimate - price).
-    Ridge-shrunk toward a starting belief because a few hundred picks say very little."""
+def pick_shrink(h):
+    """The small-sample factor a prop pick was priced with (n_eff / (n_eff + SAMPLE_K)). Older rows did not store it: estimated from the
+    games behind the pick (a player with a last-season record gets a few games of credit)."""
+    if h.get('type') != 'prop':
+        return 1.0
+    if h.get('shr') is not None:
+        return float(h['shr'])
+    try:
+        n = int(str((h.get('snap') or {}).get('hit_l10') or '').split('/')[1])
+    except (IndexError, ValueError):
+        n = 5
+    ne = n + 4 if n < 10 else 12
+    return ne / (ne + SAMPLE_K)
+
+
+def build_calibration(history, shadow=None):
+    """Learns how much of the model's edge over the price is real: outcome - price ~ lambda * (sample-adjusted estimate - price).
+    The gap is measured the way the picks use it (after the small-sample shrink), so the shrink is not counted twice.
+    The starting belief is worth CAL_PICKS graded picks, so a hot or cold first week cannot swing it; graded shadow readings
+    (every priced prop, not only the picks) are used for props once there are enough, because they arrive ~150 a night."""
     rows = {'game': [], 'prop': []}
+    shadow_from = None
+    sh_rows = []
+    for r in shadow or []:
+        if r.get('a') is None or r.get('fo') is None or r.get('p') is None or r['a'] == r['ln']:
+            continue
+        sh_rows.append((r.get('sh', 1.0) * (r['p'] - r['fo']), (1.0 if r['a'] > r['ln'] else 0.0) - r['fo']))
+        shadow_from = min(shadow_from or r['d'], r['d'])
+    use_shadow = len(sh_rows) >= 300
     for h in history:
         if h.get('result') not in ('W', 'L') or h.get('odds') is None or h.get('kind', 'priced') != 'priced':
             continue
         est = h.get('est_raw', h.get('est'))
         if est is None:
             continue
+        k = 'prop' if h.get('type') == 'prop' else 'game'
+        if k == 'prop' and use_shadow and h.get('date', '') >= shadow_from:
+            continue                  # already in the shadow readings
         q = h['fair'] if h.get('fair') is not None else impl(h['odds'])
-        rows['prop' if h.get('type') == 'prop' else 'game'].append((est - q, (1.0 if h['result'] == 'W' else 0.0) - q))
-    res = {}
+        rows[k].append((pick_shrink(h) * (est - q), (1.0 if h['result'] == 'W' else 0.0) - q, 1))
+    if use_shadow:
+        rows['prop'] += [(x, y, 0) for x, y in sh_rows]
+    res, info = {}, {}
     for k, rs in rows.items():
-        sxy, sxx = sum(x * y for x, y in rs), sum(x * x for x, y in rs)
-        res[k] = clamp((sxy + CAL_STRENGTH * CAL_PRIOR[k]) / (sxx + CAL_STRENGTH), 0.3, 1.0)
-    return res, {k: len(v) for k, v in rows.items()}
+        if not rs:
+            res[k] = CAL_PRIOR[k]
+            info[k] = {'n': 0, 'data': None}
+            continue
+        sxy, sxx = sum(x * y for x, y, _ in rs), sum(x * x for x, y, _ in rs)
+        n_pick = sum(1 for r in rs if r[2])
+        n_sh = len(rs) - n_pick
+        # the belief is worth CAL_PICKS picks (or CAL_ROWS readings) of the typical size seen here
+        strength = (sxx / len(rs)) * (CAL_ROWS if n_sh else CAL_PICKS)
+        res[k] = clamp((sxy + strength * CAL_PRIOR[k]) / (sxx + strength), 0.3, 1.0)
+        info[k] = {'n': len(rs), 'picks': n_pick, 'shadow': n_sh, 'data': r3(sxy / sxx) if sxx > 0 else None,
+                   'weight': r3(sxx / (sxx + strength)), 'se': r3(math.sqrt(0.25 / sxx)) if sxx > 0 else None}
+    return res, info
 
 
 # ----------------------------------------------------------------------------- coaching tendencies, matchups and position defense
@@ -2459,6 +2535,7 @@ def build_judgment(history):
         bm = mean((m_ - y) ** 2 for j, m_, y in rows)
         JUDG['brier_j'], JUDG['brier_m'] = r3(bj), r3(bm)
         skill = (bm - bj) / bm if bm > 0 else 0.0
+        skill *= len(rows) / (len(rows) + JUDG_TRUST_N)     # a Brier gap on 40 picks is mostly luck: the weight grows into its evidence
         JUDG['w'] = clamp(W_JUDG * clamp(1.0 + 8.0 * skill, 0.0, 2.0), 0.0, 0.2)
     return dict(JUDG)
 
@@ -2583,7 +2660,8 @@ def prop_pick(row, mult, injured_flag, jp_over=None, concern=False, why=''):
     return {'type': 'prop', 'side': side, 'label': '%s %s %g %s' % (row['player'], side, row['line'], STAT_NAMES.get(row['stat'], row['stat']).lower()), 'line': row['line'], 'odds': pr,
             'est': r3(p), 'est_raw': r3(p_raw), 'implied': r3(impl(pr)), 'edge': r3(edge), 'kind': kind, 'conf': conf, 'units': units, 'player': row['player'], 'stat': row['stat'],
             'pid': row['pid'], 'mean': pm['mean'], 'hit_l10': '%d/%d' % (pm['hit_l10'], pm['n_l10']), 'flag': flag, 'fair': r3(fair), 'jp': r3(jpu), 'est_nj': r3(pc),
-            'book': row.get('over_book' if side == 'over' else 'under_book'), 'n_books': row.get('n_books'), 'sd': pm.get('sd')}
+            'book': row.get('over_book' if side == 'over' else 'under_book'), 'n_books': row.get('n_books'), 'sd': pm.get('sd'),
+            'shr': r3(n / (n + SAMPLE_K))}
 
 
 def rank_key(p):
@@ -3753,7 +3831,12 @@ REPLAY_MIN_GAMES = 5          # games a player needs before he is predicted
 REPLAY_MIN_MIN = 15.0         # and minutes per game over his last five
 REPLAY_MIN_N = 1000           # predictions a stat needs before its correction is used
 REPLAY_V = 3
-REPLAY_FIX = {}               # stat -> {'b': average multiplier, 's': range multiplier}; filled from data/prop_replay.json
+REPLAY_FIX = {}               # stat -> {'b': average multiplier, 's': range multiplier, 'dist': 'normal' or 'count'}; filled from data/prop_replay.json
+REPLAY_FIT_V = 2              # 2: fit on the lines near a player's typical output, count curves for low-count stats
+FIT_LINES = (-1, 0, 1)        # half-point lines around the prediction the fit uses (books post near the middle)
+TEST_LINES = (-1, 0)          # and the ones the held-out check scores
+COUNT_STATS = ('threes', 'assists', 'rebounds', 'steals', 'blocks')
+COUNT_GAIN = 0.001            # a count curve has to beat the bell curve by this much held-out log loss to replace it
 REPLAY_OFF = {'off': False}   # the replay itself must judge the uncorrected model
 REPLAY_SUM = {}               # short summary for the website
 
@@ -3866,7 +3949,7 @@ def replay_predictions(box, cfg=None):
     return rows
 
 
-def replay_events(rs, b=1.0, s=1.0, step=1, lines_from=None):
+def replay_events(rs, b=1.0, s=1.0, step=1, lines_from=None, lines=(-2, -1, 0, 1, 2), dist='normal'):
     """Over/under questions at the half-point lines around each prediction: (model chance of over, 1 if over happened).
     lines_from: another set of predictions (same games, same order) whose means set the lines, so candidates face identical questions."""
     out = []
@@ -3875,11 +3958,12 @@ def replay_events(rs, b=1.0, s=1.0, step=1, lines_from=None):
         mu, sd, act = rs[i][0], rs[i][1], rs[i][2]
         mu2, sd2 = mu * b, sd * s
         base = math.floor(ref[i][0]) + 0.5
-        for j in (-2, -1, 0, 1, 2):
+        for j in lines:
             line = base + j
             if line <= 0:
                 continue
-            out.append((1 - phi((line - mu2) / sd2), 1.0 if act > line else 0.0))
+            po = prop_probs(mu2, sd2, line, dist)[0]
+            out.append((min(max(po, 1e-6), 1 - 1e-6), 1.0 if act > line else 0.0))
     return out
 
 
@@ -3887,26 +3971,29 @@ def logloss(ev):
     return -sum(y * math.log(max(p, 1e-6)) + (1 - y) * math.log(max(1 - p, 1e-6)) for p, y in ev) / max(len(ev), 1)
 
 
-def replay_fit(rs):
-    """Centre and range multipliers chosen together by the best log loss on the over/under questions.
-    The centre is not the plain average: stats like points are skewed (a few big nights pull the average up), so the line he
-    beats half the time sits a little below his average. Fitting on over/under outcomes finds that point directly."""
-    step = max(1, len(rs) // 6000)
-    best = None
-    for i in range(0, 13):
-        b = 0.92 + 0.01 * i
-        for k in range(0, 31):
-            s = 0.85 + 0.02 * k
-            ll = logloss(replay_events(rs, b, s, step))
-            if best is None or ll < best[0]:
-                best = (ll, b, s)
-    return best[1], best[2]
+def replay_fit(rs, dist='normal'):
+    """Range and centre multipliers, each fit where it can be measured honestly.
+    The range (how wide the outcomes swing) is fit on all five lines around the prediction, because only lines away from the middle show
+    whether the swing is right. The centre is then fit on the lines books actually post (near the player's typical output), with the range
+    held: stats like points are skewed (a few big nights pull the average up), so the line he beats half the time sits a little below his
+    average, and that is the part that decides overs against unders. Coarse search first, then fine, over ranges wide enough that no
+    answer sits at the edge."""
+    step = max(1, len(rs) // 5000)
+
+    def score(b, s, lines):
+        return logloss(replay_events(rs, b, s, step, lines=lines, dist=dist))
+    allL = (-2, -1, 0, 1, 2)
+    best = min(((score(b, s, allL), b, s) for b in [0.80 + 0.04 * i for i in range(10)] for s in [0.45 + 0.08 * k for k in range(14)]), key=lambda x: x[0])
+    best = min(((score(b, s, allL), b, s) for b in [best[1] + 0.01 * i for i in range(-4, 5)] for s in [best[2] + 0.02 * k for k in range(-4, 5)] if s > 0.3), key=lambda x: x[0])
+    s_ = best[2]
+    bc = min(((score(b, s_, FIT_LINES), b) for b in [0.84 + 0.01 * i for i in range(31)]), key=lambda x: x[0])[1]
+    return round(bc, 3), round(s_, 3)
 
 
-def replay_table(rs, b=1.0, s=1.0):
+def replay_table(rs, b=1.0, s=1.0, dist='normal'):
     """Reliability: model chance of over in 10-point buckets against how often the over happened."""
     bk = {}
-    for p, y in replay_events(rs, b, s, max(1, len(rs) // 20000)):
+    for p, y in replay_events(rs, b, s, max(1, len(rs) // 20000), dist=dist):
         k = min(9, int(p * 10))
         c = bk.setdefault(k, [0, 0.0, 0.0])
         c[0] += 1
@@ -3915,7 +4002,7 @@ def replay_table(rs, b=1.0, s=1.0):
     return [{'bucket': '%d-%d%%' % (k * 10, k * 10 + 10), 'n': c[0], 'model': r3(c[1] / c[0]), 'actual': r3(c[2] / c[0])} for k, c in sorted(bk.items()) if c[0] >= 50]
 
 
-def adv_events(rs, b, s, k, step=1):
+def adv_events(rs, b, s, k, step=1, dist='normal'):
     """Over/under questions with the adversity multiplier for trust levels k applied (rows carry their situation terms)."""
     out = []
     for i in range(0, len(rs), step):
@@ -3923,11 +4010,12 @@ def adv_events(rs, b, s, k, step=1):
         terms = dict(zip(ADV_CTX, r[4])) if len(r) > 4 else {}
         mu2, sd2 = r[0] * b * adv_mult(terms, k), r[1] * s
         base = math.floor(r[0]) + 0.5
-        for j in (-2, -1, 0, 1, 2):
+        for j in FIT_LINES:
             line = base + j
             if line <= 0:
                 continue
-            out.append((1 - phi((line - mu2) / sd2), 1.0 if r[2] > line else 0.0))
+            po = prop_probs(mu2, sd2, line, dist)[0]
+            out.append((min(max(po, 1e-6), 1 - 1e-6), 1.0 if r[2] > line else 0.0))
     return out
 
 
@@ -3945,7 +4033,7 @@ def fit_adv(rows, stats):
         for stat, rs in part.items():
             st = stats.get(stat) or {}
             b, s_ = (st.get('b', 1.0), st.get('s', 1.0)) if st.get('use') else (1.0, 1.0)
-            ev = adv_events(rs, b, s_, k, step=max(1, len(rs) // 3000))
+            ev = adv_events(rs, b, s_, k, step=max(1, len(rs) // 3000), dist=st.get('dist', 'normal') if st.get('use') else 'normal')
             num += logloss(ev) * len(ev)
             den += len(ev)
         return num / max(den, 1)
@@ -4037,7 +4125,7 @@ def run_replay():
     if best['score'] > base_score - 0.0005:       # a change has to clearly beat the current method, not tie it
         best = cand[0]
     rows = best['rows']
-    out = {'complete': True, 'v': REPLAY_V, 'seasons': [b['range'] for b in boxes], 'games': sum(len(b['games']) for b in boxes),
+    out = {'complete': True, 'v': REPLAY_V, 'fit_v': REPLAY_FIT_V, 'seasons': [b['range'] for b in boxes], 'games': sum(len(b['games']) for b in boxes),
            'made': dt.datetime.now(dt.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
            'cfg': {'w': best['w'], 'permin': best['permin'], 'name': best['name']},
            'candidates': [{k: c[k] for k in ('name', 'score')} for c in cand], 'stats': {}}
@@ -4049,19 +4137,58 @@ def run_replay():
         if len(allr) < 200:
             continue
         tr, te = split_rows([r[stat] for r in rows])
-        bt, stt = replay_fit(tr)
-        hold_before = logloss(replay_events(te, 1.0, 1.0, max(1, len(te) // 6000)))
-        hold_after = logloss(replay_events(te, bt, stt, max(1, len(te) // 6000)))
-        helps = hold_after < hold_before
-        b, s = replay_fit(allr) if helps else (1.0, 1.0)
+        stp = max(1, len(te) // 6000)
+
+        def held(b_, s_, d_):
+            ev = replay_events(te, b_, s_, stp, lines=TEST_LINES, dist=d_)
+            return logloss(ev), sum(p_ - y_ for p_, y_ in ev) / max(len(ev), 1)
+
+        def held_all(b_, s_, d_):
+            return logloss(replay_events(te, b_, s_, stp, dist=d_))
+        hold_before, bias_before = held(1.0, 1.0, 'normal')
+        bt, stt = replay_fit(tr, 'normal')
+        hold_after, bias_after = held(bt, stt, 'normal')
+        dist, curves = 'normal', {'normal': {'held_out': round(hold_after, 5), 'over_bias': round(bias_after, 4), 'b': bt, 's': stt}}
+        if stat in COUNT_STATS:
+            bc, sc = replay_fit(tr, 'count')
+            hc, bc_bias = held(bc, sc, 'count')
+            curves['count'] = {'held_out': round(hc, 5), 'over_bias': round(bc_bias, 4), 'b': bc, 's': sc}
+            if hc < hold_after - COUNT_GAIN:
+                dist, hold_after, bias_after = 'count', hc, bc_bias
+        # kept when it predicts better on unseen games across all lines and is no worse on the lines books post
+        bb, sb = curves[dist]['b'], curves[dist]['s']
+        raw_all = held_all(1.0, 1.0, 'normal')
+        helps = held_all(bb, sb, dist) < raw_all and hold_after <= hold_before + 0.0005
+        curves[dist]['held_out_all'] = round(held_all(bb, sb, dist), 5)
+        curves['raw_held_out_all'] = round(raw_all, 5)
+        b, s = replay_fit(allr, dist) if helps else (1.0, 1.0)
+        if not helps and dist == 'normal':
+            # the centre did not earn its place; the range alone still can (outcomes swinging wider than the raw model thinks is the
+            # most common error, and leaving it in makes the model more sure of itself than it should be)
+            h_s = held_all(1.0, sb, 'normal')
+            hn, bn = held(1.0, sb, 'normal')
+            if h_s < raw_all and hn <= hold_before + 0.0005:
+                helps, b, s, hold_after, bias_after = True, 1.0, replay_fit(allr, 'normal')[1], hn, bn
+                curves['range_only'] = {'held_out': round(hn, 5), 'held_out_all': round(h_s, 5), 's': sb}
+        if not helps and dist == 'normal':
+            # nothing beat the raw model on the late-season games it was checked on, but if outcomes plainly land outside the model's
+            # 50% range more than half the time, the range is widened to the width that covers half: when the checks tie, humbler wins
+            zs = sorted(abs(r[2] - r[0]) / r[1] for r in allr)
+            s_cov = zs[len(zs) // 2] / 0.6745
+            if s_cov > 1.03:
+                helps, b, s = True, 1.0, round(min(s_cov, 1.35), 3)
+                hold_after, bias_after = held(1.0, s, 'normal')
+                curves['coverage'] = {'s': s, 'why': 'half of outcomes need a %.2fx wider range to fall inside the 50%% band' % s_cov}
         z = [(r[2] - r[0]) / r[1] for r in allr]
-        out['stats'][stat] = {'n': len(allr), 'b': r3(b), 's': r3(s), 'use': helps and len(allr) >= REPLAY_MIN_N,
+        out['stats'][stat] = {'n': len(allr), 'b': r3(b), 's': r3(s), 'dist': dist if helps else 'normal', 'curves': curves,
+                              'over_bias_before': round(bias_before, 4), 'over_bias_after': round(bias_after if helps else bias_before, 4),
+                              'use': helps and len(allr) >= REPLAY_MIN_N,
                               'avg_pred': r1(mean(r[0] for r in allr)), 'avg_actual': r1(mean(r[2] for r in allr)),
                               'in50': r3(sum(1 for x in z if abs(x) <= 0.674) / len(z)), 'in80': r3(sum(1 for x in z if abs(x) <= 1.282) / len(z)),
                               'holdout_before': round(hold_before, 4), 'holdout_after': round(hold_after, 4),
-                              'table_before': replay_table(allr), 'table_after': replay_table(allr, b, s)}
-        print('%s: %d predictions, average x%.3f, range x%.2f, held-out log loss %.4f -> %.4f%s' % (
-            stat, len(allr), b, s, hold_before, hold_after, '' if helps else ' (no gain, not used)'), flush=True)
+                              'table_before': replay_table(allr), 'table_after': replay_table(allr, b, s, dist if helps else 'normal')}
+        print('%s: %d predictions, %s curve, average x%.3f, range x%.2f, held-out log loss %.4f -> %.4f, over-lean %+.3f -> %+.3f%s' % (
+            stat, len(allr), dist, b, s, hold_before, hold_after, bias_before, bias_after if helps else bias_before, '' if helps else ' (no gain, not used)'), flush=True)
     # 3. how much to trust each player's adversity splits, learned with the corrections above in place
     try:
         out['adv'] = fit_adv(rows, out['stats'])
@@ -4092,7 +4219,7 @@ def load_replay():
         ADV['k'] = {c: float(js['adv']['k'].get(c, 0.0)) for c in ADV_CTX}
     REPLAY_SUM.clear()
     if js.get('complete'):
-        REPLAY_SUM.update({'games': js.get('games'), 'made': js.get('made'), 'cfg': js.get('cfg'), 'candidates': js.get('candidates'), 'adv': js.get('adv'), 'stats': {k: {x: v.get(x) for x in ('n', 'b', 's', 'use', 'in50', 'in80', 'holdout_before', 'holdout_after', 'table_before', 'table_after')}
+        REPLAY_SUM.update({'games': js.get('games'), 'made': js.get('made'), 'cfg': js.get('cfg'), 'candidates': js.get('candidates'), 'adv': js.get('adv'), 'stats': {k: {x: v.get(x) for x in ('n', 'b', 's', 'use', 'dist', 'over_bias_before', 'over_bias_after', 'in50', 'in80', 'holdout_before', 'holdout_after', 'table_before', 'table_after')}
                                                                                      for k, v in (js.get('stats') or {}).items()}})
     if not js.get('complete'):
         if js.get('days'):
@@ -4100,10 +4227,151 @@ def load_replay():
         return
     for stat, v in (js.get('stats') or {}).items():
         if v.get('use'):
-            REPLAY_FIX[stat] = {'b': v['b'], 's': v['s']}
+            REPLAY_FIX[stat] = {'b': v['b'], 's': v['s'], 'dist': v.get('dist', 'normal') if js.get('fit_v') == REPLAY_FIT_V else 'normal'}
     if REPLAY_FIX:
         src('prop_replay', True, 'prop ranges tuned from %s replayed predictions: %s' % (
-            '{:,}'.format(sum(v['n'] for v in js['stats'].values())), ', '.join('%s x%.2f' % (STAT_NAMES.get(k, k).lower(), v['s']) for k, v in REPLAY_FIX.items())))
+            '{:,}'.format(sum(v['n'] for v in js['stats'].values())), ', '.join('%s x%.2f%s' % (STAT_NAMES.get(k, k).lower(), v['s'], ' (count curve)' if v.get('dist') == 'count' else '') for k, v in REPLAY_FIX.items())))
+
+
+# ----------------------------------------------------------------------------- the shadow ledger
+# The record only holds the handful of picks that make the card, so it grows by 5 to 10 results a night and every rule tuned on it rests on
+# a few dozen bets. The model reads ~150 priced props a night. Each one is written here with the prices and the model's numbers from the last
+# run before tip, graded from the box score, and used to measure the model: calibration, which stats and edge sizes hold up, whether the
+# card's rules (the edge bar, needing a pattern) earn their keep. These are readings, not bets: they never appear in the record or the units.
+SHADOW_DAYS = 160
+
+
+def shadow_path(month):
+    return os.path.join(DATA, 'shadow_%s.json' % month)
+
+
+def load_shadow(today):
+    """One file per month, so finished months never change in the repository."""
+    start = (today - dt.timedelta(days=SHADOW_DAYS)).isoformat()
+    out, m = [], dt.date(int(start[:4]), int(start[5:7]), 1)
+    while m <= today:
+        out += [r for r in jload(shadow_path(m.strftime('%Y-%m')), []) if r.get('d', '') >= start]
+        m = dt.date(m.year + (m.month == 12), m.month % 12 + 1, 1)
+    return out
+
+
+def save_shadow(shadow):
+    by = {}
+    for r in shadow:
+        by.setdefault(r['d'][:7], []).append(r)
+    for mo, rs in by.items():
+        jsave(shadow_path(mo), rs)
+
+
+def shadow_record(shadow, out_games, day, history, stamp):
+    picked = {(h['game_id'], str(h.get('pid')), h.get('stat')): h['side'] for h in history if h.get('date') == day and h.get('type') == 'prop' and not h.get('pulled')}
+    idx = {(r['g'], r['pid'], r['st']): r for r in shadow if r['d'] == day}
+    n = 0
+    for g in out_games:
+        if g.get('state') != 'pre':
+            continue
+        for r in g.get('prop_rows') or []:
+            m = r.get('model')
+            if not m or r.get('skipped') or r.get('over') is None or r.get('under') is None or r.get('pid') is None:
+                continue                      # both sides need a real price for a fair reading
+            k = (g['id'], str(r['pid']), r['stat'])
+            ne = m.get('n_eff', m['n'])
+            sig = r.get('sig')
+            row = {'d': day, 'g': g['id'], 'pid': str(r['pid']), 'st': r['stat'], 'ln': r['line'], 'o': r['over'], 'u': r['under'], 'fo': r.get('fair_over'),
+                   'nb': r.get('n_books'), 'p': m['p_over'], 'qo': (r.get('cal') or {}).get('over'), 'qu': (r.get('cal') or {}).get('under'),
+                   'sh': r3(ne / (ne + SAMPLE_K)), 'mu': m['mean'], 'sd': m['sd'], 'n': m['n'], 'rm': r.get('rm'), 'env': r.get('env'), 'pf': r.get('pf'), 'cv': m.get('dist'),
+                   'sg': [sig['side'], sig.get('tier') or '', [i['k'] for i in sig['items']]] if sig else None, 'pk': picked.get(k), 't': stamp}
+            old = idx.get(k)
+            if old is not None:
+                if 'a' in old:
+                    continue
+                old.update(row)
+            else:
+                shadow.append(row)
+                idx[k] = row
+            n += 1
+    return n
+
+
+def grade_shadow(shadow, games, today):
+    n = 0
+    for r in shadow:
+        if 'a' in r:
+            continue
+        g = games.get(r['g'])
+        if not g or g['home'].get('pts') is None:
+            try:
+                if (today - dt.date.fromisoformat(r['d'])).days > 4:
+                    r['a'] = None
+                    n += 1
+            except ValueError:
+                pass
+            continue
+        row = next((x for x in g.get('players') or [] if str(x['id']) == r['pid']), None)
+        r['a'] = STAT_FN[r['st']](row) if row else None      # did not play: no reading (books void these too)
+        n += 1
+    return n
+
+
+def shadow_side(r):
+    """The side the model preferred at the calibrated numbers, its edge at the posted price, and whether it won (None on a push)."""
+    qo, qu = r.get('qo'), r.get('qu')
+    if qo is None or qu is None:
+        return None
+    eo, eu = qo - impl(r['o']), qu - impl(r['u'])
+    side, e, pr = ('over', eo, r['o']) if eo >= eu else ('under', eu, r['u'])
+    a = r.get('a')
+    won = None if a is None or a == r['ln'] else ((a > r['ln']) == (side == 'over'))
+    return side, e, pr, won, (qo if side == 'over' else qu)
+
+
+def shadow_report(shadow):
+    """What the graded readings say about the model. Results are at the best posted price, which is a little kinder than one book."""
+    rows = []
+    for r in shadow:
+        if r.get('a') is None:
+            continue
+        x = shadow_side(r)
+        if not x or x[3] is None:
+            continue
+        side, e, pr, won, q = x
+        profit = ((pr / 100.0) if pr > 0 else (100.0 / -pr)) if won else -1.0
+        sig_same = bool(r.get('sg') and r['sg'][0] == side)
+        up = side == 'over'
+
+        def leans(v, lo, hi):
+            return v is not None and ((up and v >= hi) or (not up and v <= lo))
+        rows.append({'st': r['st'], 'side': side, 'e': e, 'q': q, 'won': won, 'pf': profit, 'sig': sig_same, 'pk': bool(r.get('pk')),
+                     'role': leans((r.get('rm') or 1.0) / (r.get('pf') or 1.0), 0.96, 1.04), 'pos': leans(r.get('pf'), 0.97, 1.03), 'pace': leans(r.get('env'), 0.98, 1.02),
+                     'fo': r['fo'] if side == 'over' else (None if r.get('fo') is None else 1 - r['fo'])})
+
+    def grp(rs):
+        if not rs:
+            return None
+        n = len(rs)
+        w = sum(1 for r in rs if r['won'])
+        fair = [r['fo'] for r in rs if r['fo'] is not None]
+        return {'n': n, 'w': w, 'hit': r3(w / n), 'model': r3(mean(r['q'] for r in rs)), 'market': r3(mean(fair)) if fair else None,
+                'roi': r3(sum(r['pf'] for r in rs) / n)}
+    eb = (('below 0', -9, 0), ('0 to 2', 0, .02), ('2 to 3', .02, .03), ('3 to 5', .03, .05), ('5 and up', .05, 9))
+    out = {'made': dt.datetime.now(dt.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'), 'n': len(rows),
+           'days': len({r['d'] for r in shadow if r.get('a') is not None}),
+           'all': grp(rows),
+           'by_edge': [dict(grp([r for r in rows if lo <= r['e'] < hi]) or {'n': 0}, k=k) for k, lo, hi in eb],
+           'by_stat': {st: grp([r for r in rows if r['st'] == st]) for st in sorted({r['st'] for r in rows})},
+           'by_side': {sd: grp([r for r in rows if r['side'] == sd]) for sd in ('over', 'under')},
+           'rule_pattern': {'with': grp([r for r in rows if r['e'] >= PROP_MIN_EDGE and r['sig']]), 'without': grp([r for r in rows if r['e'] >= PROP_MIN_EDGE and not r['sig']])},
+           'picked': grp([r for r in rows if r['pk']]),
+           # the adjustments the replay cannot test (it has no positions, injuries or market totals): do readings they push toward the side do better?
+           'adjust': {k: {'with': grp([r for r in rows if r[k]]), 'without': grp([r for r in rows if not r[k]])} for k in ('role', 'pos', 'pace')}}
+    # how the calibrated chance matched what happened, for the side the model liked
+    cb = []
+    for lo in (.4, .45, .5, .55, .6, .65):
+        rs = [r for r in rows if lo <= r['q'] < lo + .05]
+        if len(rs) >= 30:
+            cb.append({'k': '%d-%d%%' % (round(lo * 100), round(lo * 100) + 5), 'n': len(rs), 'model': r3(mean(r['q'] for r in rs)), 'hit': r3(sum(1 for r in rs if r['won']) / len(rs))})
+    out['calibration'] = cb
+    return out
 
 
 # ----------------------------------------------------------------------------- posting and locking the card
@@ -4133,7 +4401,7 @@ def game_postable(g, now):
 
 def history_row(p, started):
     row = ({k: p[k] for k in ('id', 'date', 'game_id', 'away', 'home', 'type', 'side', 'label', 'line', 'odds', 'est', 'est_raw', 'edge', 'kind', 'conf', 'units') if k in p}
-           | {k: p[k] for k in ('fair', 'book', 'n_books', 'jp', 'est_nj', 'sd', 'utc', 'alt') if p.get(k) is not None}
+           | {k: p[k] for k in ('fair', 'book', 'n_books', 'jp', 'est_nj', 'sd', 'utc', 'alt', 'shr', 'first') if p.get(k) is not None}
            | ({'player': p['player'], 'stat': p['stat'], 'pid': p['pid']} if p['type'] == 'prop' else {})
            | ({'sig': [i['k'] for i in p['sig']['items']], 'sig_tier': p['sig']['tier']} if p.get('sig') else {})
            | {'posted': started.strftime('%Y-%m-%dT%H:%M:%SZ'), 'v': ENGINE_VERSION})
@@ -4384,6 +4652,9 @@ def run_closing():
             continue
         h['close'] = dict(c, t=stamp)
         h.update(clv_calc(h, c))
+        f0 = h.get('first')
+        if f0 and f0.get('odds') is not None and f0.get('t') and f0['t'] < h.get('posted', f0['t']):
+            h['clv_first'] = clv_calc(dict(h, line=f0.get('line'), odds=f0['odds']), c)['clv']
         if not h.get('utc') and gmap.get(h['game_id']):
             h['utc'] = gmap[h['game_id']].get('utc')
         n_ok += 1
@@ -4764,6 +5035,14 @@ def main(argv):
     ch = grade_history(history, games, today)
     if ch:
         note('Graded %d finished picks' % ch)
+    shadow = load_shadow(today)
+    try:
+        gs_ = grade_shadow(shadow, games, today)
+        sg_ = sum(1 for r in shadow if r.get('a') is not None)
+        src('shadow', True, '%d graded readings of every priced prop over %d days (%d graded this run); used to measure the model, never as picks' % (
+            sg_, len({r['d'] for r in shadow if r.get('a') is not None}), gs_))
+    except Exception as e:  # noqa
+        src('shadow', False, 'shadow grading failed: %s' % str(e)[:120])
     parlays_ = jload(os.path.join(OUT, 'parlays.json'), [])
     try:
         if grade_parlays(parlays_, games, today):
@@ -4771,10 +5050,16 @@ def main(argv):
     except Exception as e:  # noqa
         note('Parlay grading failed: %s' % str(e)[:120])
     try:
-        cal, cal_n = build_calibration(history)
+        cal, cal_n = build_calibration(history, shadow)
         CAL.update(cal)
-        src('calibration', True, 'game picks x%.2f, prop picks x%.2f of the raw edge (from %d + %d graded picks; starting assumptions until a few hundred are graded)' % (
-            CAL['game'], CAL['prop'], cal_n['game'], cal_n['prop']))
+        CAL_INFO.clear(); CAL_INFO.update(cal_n)
+
+        def ci_(k):
+            i = cal_n.get(k) or {}
+            if not i.get('n'):
+                return 'starting belief, nothing graded yet'
+            return 'from %d graded%s, the record carries %d%% of the weight' % (i['n'], ' (%d shadow readings)' % i['shadow'] if i.get('shadow') else '', round(100 * (i.get('weight') or 0)))
+        src('calibration', True, 'game picks keep x%.2f of the sample-adjusted edge (%s); props x%.2f (%s)' % (CAL['game'], ci_('game'), CAL['prop'], ci_('prop')))
     except Exception as e:  # noqa
         src('calibration', False, 'self-calibration failed: %s' % str(e)[:120])
     try:
@@ -5084,9 +5369,27 @@ def main(argv):
 
     # the record: picks are posted once (from POST_HOUR, or close to tip) and then stay, see lock_card
     today_s = today.isoformat()
+    first_seen = seen_today.setdefault('_picks', {})
+    for p_ in all_picks:                   # the first price each bet was seen at today, for the posting-time test
+        fk = '|'.join(str(x) for x in pick_key(p_))
+        if fk not in first_seen:
+            first_seen[fk] = {'t': started.strftime('%Y-%m-%dT%H:%M:%SZ'), 'line': p_.get('line'), 'odds': p_.get('odds'), 'edge': p_.get('edge')}
+        p_['first'] = first_seen[fk]
     all_picks, history = lock_card(all_picks, out_games, history, today, started)
+    for p_ in all_picks:
+        p_.pop('first', None)
     jsave(lines_path, lines_seen)
     jsave(hist_path, history)
+    try:
+        nsh = shadow_record(shadow, out_games, today.isoformat(), history, started.strftime('%Y-%m-%dT%H:%M:%SZ'))
+        save_shadow(shadow)
+        rep_ = shadow_report(shadow)
+        rep_['calibration_fit'] = CAL_INFO
+        jsave(os.path.join(DATA, 'shadow_report.json'), rep_)
+        if nsh:
+            note('Shadow ledger: %d priced props read for today' % nsh)
+    except Exception as e:  # noqa
+        note('Shadow ledger failed: %s' % str(e)[:120])
     try:
         update_parlays([p for p in all_picks if not p.get('early')], out_games, games, today, started.strftime('%Y-%m-%dT%H:%M:%SZ'))
     except Exception as e:  # noqa

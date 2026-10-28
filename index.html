@@ -1070,6 +1070,27 @@ html.boot .hstats{animation:riseIn .6s cubic-bezier(.2,.8,.2,1) .45s both}
 /* ===== end v13b ===== */
 .unit-prev{margin:0;padding:8px 10px;border-radius:var(--r1);background:color-mix(in srgb,var(--acc) 8%,transparent);border:1px solid color-mix(in srgb,var(--acc) 25%,var(--line))}
 .btn.sm{min-height:32px;padding:4px 10px;font-size:13px}
+
+/* ===== v14 tracker: the closing line first, receipts ===== */
+.clvhead{border:1px solid var(--line);border-radius:var(--r2);background:var(--surface);padding:var(--s4);display:grid;gap:var(--s2);margin-bottom:var(--s3)}
+.clvhead.good{border-color:color-mix(in srgb,var(--acc) 55%,var(--line))}
+.clvhead.warn{border-color:color-mix(in srgb,var(--warn) 55%,var(--line))}
+.clvhead.bad{border-color:color-mix(in srgb,var(--bad) 55%,var(--line))}
+.clvh-top{display:flex;flex-wrap:wrap;gap:var(--s4) var(--s5);align-items:flex-end}
+.clvh-top>div{display:grid;gap:2px}
+.clvh-k{font-size:var(--t-small);color:var(--mut)}
+.clvh-v{font:900 40px/1 var(--f-disp);font-variant-numeric:tabular-nums}
+.clvh-v.sm{font-size:26px}
+.clvh-bar{height:8px;border-radius:4px;background:var(--surface2);overflow:hidden}
+.clvh-bar i{display:block;height:100%;background:var(--acc);border-radius:4px}
+.clvh-n{margin:0;color:var(--mut)}
+.clvh-s{margin:0}
+.rc-h{display:flex;justify-content:space-between;align-items:flex-start;gap:var(--s2)}
+.receipt{margin:4px 0 0}
+.receipt:empty{display:none}
+.receipt .ok{color:var(--acc);font-weight:700}
+.receipt .warn{color:var(--warn);font-weight:700}
+/* ===== end v14 ===== */
 </style>
 </head>
 <body>
@@ -2245,14 +2266,9 @@ function judgStats(H){
 function trackExtras(root, H){
   function tile(k, v, tip){ return el('div', {class:'tile', 'data-tip':tip, tabindex:'0'}, el('span', {text:k}), el('b', {text:v})); }
   var cv = clvStats(H), L = S.latest || {};
-  root.append(el('h2', {text:'Did we beat the closing line?'}));
+  root.append(el('h2', {text:'Closing line by market'}));
   if (cv.n){
     var t = cv.tot;
-    root.append(el('div', {class:'tiles'},
-      tile('Beat the close', pct(t.pos / t.n), 'Share of picks whose number was better than the closing number.'),
-      tile('Edge vs close', (t.sum / t.n >= 0 ? '+' : '') + (100 * t.sum / t.n).toFixed(1) + '%', 'Average of (closing no-vig chance, adjusted for any line move) minus the price paid, in percentage points.'),
-      tile('Line gained', t.npts ? sg(t.pts / t.npts, 2) + ' pts' : 'n/a', 'Average points of line the pick got compared with the close (moneylines excluded).'),
-      tile('Picks', String(cv.n), 'Picks with a saved closing line.')));
     var ks = Object.keys(cv.by);
     root.append(table(['Market', 'Picks', 'Beat the close', 'Edge vs close', 'Line gained'], ks.map(function(k){ var b = cv.by[k];
       return [k, b.n, pct(b.pos / b.n), (b.sum / b.n >= 0 ? '+' : '') + (100 * b.sum / b.n).toFixed(1) + '%', b.npts ? sg(b.pts / b.npts, 2) + ' pts' : 'n/a']; })));
@@ -4265,9 +4281,83 @@ function calibChart(buckets){
   });
   return el('div', {class:'chartbox narrow'}, svg, el('p', {class:'small mut', text:'Dots on the dashed line mean the model\'s chances are honest. Dots below it mean the picks won less often than the model said. Bigger dots hold more picks.'}));
 }
+/* ---- the number that decides whether this works: beating the closing line, with the checkpoint set in advance ---- */
+var CLV_CHECK = 300;
+function closeHeadline(root, H){
+  var cv = clvStats(H), t = cv.tot, n = cv.n, beat = n ? t.pos / n : null, avg = n ? t.sum / n : null;
+  var state, cls;
+  if (n < 50){ state = n ? 'Too early to read. ' + n + ' pick' + (n === 1 ? ' has' : 's have') + ' a closing line; a first read needs about 50.' : 'Starts tonight. A few minutes before tip the engine saves the closing line next to every open pick.'; cls = ''; }
+  else if (n < CLV_CHECK){ state = 'First read: ' + (beat > .5 && avg > 0 ? 'getting better numbers than the close so far, which is the right sign. ' : 'not beating the close yet. ') + 'The real checkpoint is at ' + CLV_CHECK + ' picks.'; cls = beat > .5 && avg > 0 ? 'good' : 'warn'; }
+  else { var pass = beat > .52 && avg > 0; state = pass ? 'Checkpoint passed: over ' + n + ' picks the model has beaten the closing line ' + pct(beat) + ' of the time. That is the strongest evidence of real skill a picks model can show.' : 'Checkpoint missed: over ' + n + ' picks the model is not beating the close. The plan says stop and rethink the model before betting more.'; cls = pass ? 'good' : 'bad'; }
+  var prog = Math.min(1, n / CLV_CHECK);
+  var box = el('section', {class:'clvhead ' + cls},
+    el('div', {class:'clvh-top'},
+      el('div', {}, el('span', {class:'clvh-k', text:'Beat the closing line'}), el('b', {class:'clvh-v', text:beat == null ? '—' : pct(beat)})),
+      el('div', {}, el('span', {class:'clvh-k', text:'Edge vs the close'}), el('b', {class:'clvh-v sm', text:avg == null ? '—' : (avg >= 0 ? '+' : '') + (100 * avg).toFixed(1) + ' pts'}))),
+    el('div', {class:'clvh-bar', role:'progressbar', 'aria-valuemin':'0', 'aria-valuemax':String(CLV_CHECK), 'aria-valuenow':String(Math.min(n, CLV_CHECK)), 'aria-label':'Picks toward the checkpoint'}, el('i', {style:'width:' + (100 * prog).toFixed(1) + '%'})),
+    el('p', {class:'small clvh-n', text:n + ' of ' + CLV_CHECK + ' picks toward the checkpoint'}),
+    el('p', {class:'clvh-s', text:state}));
+  root.append(box);
+  /* the posting-time test: would the first price we saw have beaten the close more than the posted one? */
+  var ft = H.filter(function(p){ return p.clv != null && p.clv_first != null; });
+  if (ft.length){
+    var a = ft.filter(function(p){ return p.clv > 0; }).length, b = ft.filter(function(p){ return p.clv_first > 0; }).length;
+    var ma = ft.reduce(function(s, p){ return s + p.clv; }, 0) / ft.length, mb = ft.reduce(function(s, p){ return s + p.clv_first; }, 0) / ft.length;
+    root.append(el('div', {class:'note small'}, el('b', {text:'When to post, measured: '}), 'on ' + ft.length + ' pick' + (ft.length === 1 ? '' : 's') + ' first seen earlier in the day, the first price would have beaten the close ' + pct(b / ft.length) + ' of the time (' + (mb >= 0 ? '+' : '') + (100 * mb).toFixed(1) + ' pts) against ' + pct(a / ft.length) + ' at the posted time (' + (ma >= 0 ? '+' : '') + (100 * ma).toFixed(1) + ' pts).' + (ft.length < 60 ? ' Too few to act on yet.' : '')));
+  }
+}
+/* ---- receipts: every pick sits in a public file on GitHub, and every version of that file is kept ---- */
+var REPO = 'eplocks/eplocks';
+function receipt(p, out){
+  if (!p.posted){ out.textContent = 'This pick was logged before posting times were saved, so there is no receipt to look up.'; return; }
+  out.textContent = 'Looking it up on GitHub…';
+  var t0 = new Date(p.posted), t1 = new Date(t0.getTime() + 6 * 3600e3);
+  fetch('https://api.github.com/repos/' + REPO + '/commits?path=data/history.json&per_page=100&since=' + t0.toISOString() + '&until=' + t1.toISOString())
+    .then(function(r){ if (!r.ok) throw new Error(r.status === 403 ? 'GitHub is rate limiting lookups from this network; try again in a bit' : 'GitHub returned ' + r.status); return r.json(); })
+    .then(function(list){
+      if (!Array.isArray(list) || !list.length) throw new Error('no saved version found in the hours after it was posted');
+      var c = list[list.length - 1], sha = c.sha;
+      return fetch('https://raw.githubusercontent.com/' + REPO + '/' + sha + '/data/history.json').then(function(r){ if (!r.ok) throw new Error('could not open that version'); return r.json(); }).then(function(old){
+        var hit = (old || []).filter(function(h){ return h.id === p.id; })[0];
+        out.textContent = '';
+        var when = new Date(c.commit.committer.date);
+        if (!hit){ out.append('Not found in the first version after posting. Older picks may have been saved under a different format.'); return; }
+        var same = hit.odds === p.odds && hit.line === p.line && hit.side === p.side;
+        out.append(el('span', {class:same ? 'ok' : 'warn', text:same ? '✓ Verified. ' : 'Found, but the saved price differs. '}),
+          'Saved to GitHub ' + when.toLocaleString([], {month:'short', day:'numeric', hour:'numeric', minute:'2-digit'}) + ' as ' + hit.label + ' at ' + fo(hit.odds) + ', before the game. ',
+          el('a', {href:'https://github.com/' + REPO + '/blob/' + sha + '/data/history.json', target:'_blank', rel:'noopener', text:'See that exact file'}), ' · ',
+          el('a', {href:'https://github.com/' + REPO + '/commit/' + sha, target:'_blank', rel:'noopener', text:'the save (' + sha.slice(0, 7) + ')'}));
+      });
+    })
+    .catch(function(e){ out.textContent = 'Could not check right now: ' + (e && e.message || e) + '.'; });
+}
+/* ---- what the shadow ledger (every priced prop, graded quietly) says about the model ---- */
+function shadowBlock(root){
+  if (S.shadow === undefined){
+    S.shadow = null;
+    getJson('data/shadow_report.json', null).then(function(r){ S.shadow = r || false; if (S.tab === 'track' && S.trTab === 'picks'){ var y = window.scrollY; renderTracker(); window.scrollTo(0, y); } });
+    return;
+  }
+  var R = S.shadow;
+  root.append(el('h2', {text:'What the model is learning'}));
+  if (!R || !R.n){ root.append(help('Every night the model reads about 150 priced props but only a few become picks. From tonight each reading is graded quietly against the box score, so the model gets checked on hundreds of results a week instead of a handful. These are readings, not bets, and never count in the record above.')); return; }
+  function row(k, g){ return g && g.n ? [k, g.n, pct(g.hit), g.model != null ? pct(g.model) : 'n/a', (g.roi >= 0 ? '+' : '') + (100 * g.roi).toFixed(1) + '%'] : [k, 0, '—', '—', '—']; }
+  root.append(el('p', {class:'small', text:R.n.toLocaleString('en-US') + ' graded readings over ' + R.days + ' night' + (R.days === 1 ? '' : 's') + '. For each one: the side the model liked, how often it won, what the model said, and the return at the best posted price.'}));
+  root.append(table(['Model edge', 'Readings', 'Won', 'Model said', 'Return'], (R.by_edge || []).map(function(g){ return row(g.k + ' pts', g); }), 1));
+  var rp = R.rule_pattern || {};
+  root.append(table(['Edge 3+ props', 'Readings', 'Won', 'Model said', 'Return'], [row('with a pattern', rp['with']), row('without one', rp.without)], 1));
+  var aj = R.adjust || {}, AJ = {role:'Teammates out', pos:'Opponent defense by position', pace:'Game pace'};
+  var ajRows = []; Object.keys(AJ).forEach(function(k){ if (aj[k]){ ajRows.push(row(AJ[k] + ': pushed this way', aj[k]['with'])); ajRows.push(row(AJ[k] + ': not', aj[k].without)); } });
+  if (ajRows.length) root.append(table(['Adjustment', 'Readings', 'Won', 'Model said', 'Return'], ajRows, 1));
+  var bs = R.by_stat || {};
+  root.append(table(['Stat', 'Readings', 'Won', 'Model said', 'Return'], Object.keys(bs).map(function(k){ return row(STAT[k] || k, bs[k]); }).concat([row('All overs', (R.by_side || {}).over), row('All unders', (R.by_side || {}).under)]), 1));
+  root.append(help(['If "Won" keeps running below "Model said" in the bigger rows, the model is too sure of itself and the calibration pulls its edges down on its own. The card\'s rules (a 3-point edge, a pattern behind every prop) are checked here too: a rule stays only if the rows it keeps beat the rows it drops.',
+    'Returns use the best price across books and every reading at 1 unit, which is kinder than betting at one book. Under about 500 readings a row is noise.'], 'How to read this'));
+}
 function renderPickTrack(root){
   var H = S.history, st = stats(H), dec = st.w + st.l;
   function tile(k, v, tip){ return el('div', {class:'tile', 'data-tip':tip, tabindex:'0'}, el('span', {text:k}), el('b', {text:v})); }
+  closeHeadline(root, H);
   root.append(el('div', {class:'tiles'},
     tile('Record', st.w + '-' + st.l + '-' + st.pu, 'Wins, losses and pushes among graded picks with a real price.'),
     tile('Win %', dec ? (100 * st.w / dec).toFixed(1) + '%' : 'n/a', 'Wins divided by wins plus losses.'),
@@ -4295,11 +4385,16 @@ function renderPickTrack(root){
     root.append(help('If "Model said" runs well above "Actually won" over a large sample, treat the model\'s probabilities as too high. Samples under about 30 picks per row mean very little.'));
   }
   if (!H.length){ root.append(el('div', {class:'empty'}, el('b', {text:'Nothing logged yet'}), 'Today\'s picks are logged when the daily run publishes them and graded after the games finish.')); return; }
+  shadowBlock(root);
   root.append(el('h2', {text:'Pick history'}));
+  root.append(help('Every pick is written to a public file on GitHub when it is posted, and GitHub keeps every version of that file with the time it was saved. Tap Receipt on any pick to pull up the version saved right after it was posted and check the price yourself. Nothing can be quietly changed after the fact.'));
   H.slice().reverse().slice(0, 80).forEach(function(p){
-    root.append(el('div', {class:'note'}, el('b', {text:p.label}), el('span', {class:'mono mut', text:' ' + fo(p.odds)}),
+    var rout = el('p', {class:'small receipt', 'aria-live':'polite'}), rb = el('button', {type:'button', class:'btn sm', text:'Receipt'});
+    rb.onclick = function(){ rb.disabled = true; receipt(p, rout); };
+    root.append(el('div', {class:'note'}, el('div', {class:'rc-h'}, el('div', {}, el('b', {text:p.label}), el('span', {class:'mono mut', text:' ' + fo(p.odds)})), p.posted ? rb : null), rout,
       el('p', {class:'small mut', text:[dayLabel(p.date), p.away + ' @ ' + p.home, p.conf, p.units + 'u', 'est ' + pct(p.est), p.clv != null ? 'CLV ' + fe(p.clv) + '%' : '', p.kind === 'assumed' ? 'no real price' : '', p.posted ? 'posted ' + new Date(p.posted).toLocaleTimeString([], {hour:'numeric', minute:'2-digit'}) : '', p.result ? (p.result === 'V' ? 'void' : p.result + (p.profit != null ? ' ' + (p.profit >= 0 ? '+' : '') + p.profit.toFixed(2) + 'u' : '')) + (p.final ? ' · ' + p.final : '') : 'pending'].filter(Boolean).join(' · ')})));
   });
+  root.append(el('p', {class:'small'}, el('a', {href:'https://github.com/' + REPO + '/commits/main/data/history.json', target:'_blank', rel:'noopener', text:'Every saved version of the record on GitHub'})));
 }
 
 /* ---- method ---- */
@@ -4321,7 +4416,7 @@ function renderMethod(){
       li('Who is playing.', 'Every player has a value: his production per minute (game score) above a bench-level replacement, times his usual minutes. Players ruled out, doubtful or questionable take their value off the team, except players who have already been missing most games (the rating already knows). Schedule spots (rest, three games in four nights, time zones crossed, long road trips, altitude) are measured too. How many points each is worth is learned from last season\'s games, and a spot only counts once it clearly stands out from the noise.'),
       li('Blend with the market.', 'The betting line already holds a lot of information, so the model is only given a share of the weight (never more than ' + Math.round((P.blend_max != null ? P.blend_max : 0.5) * 100) + '%, and less while teams have few games).'),
       li('Price the bet.', 'The blended number becomes a chance using a normal curve (typical miss ' + (P.sd_margin || 12) + ' points on the spread and ' + (P.sd_total || 17.5) + ' on the total). A bet needs an edge of at least 2 points to be listed.'),
-      li('Price the props.', 'A player\'s season, last-10 and last-5 averages are blended with last season. The estimate is adjusted for a new team or role, teammates who are out, blowout risk, the opponent\'s defense against his position (never more than 6%) and the game\'s expected pace. The spread comes from his own game-to-game swings.'),
+      li('Price the props.', 'A player\'s season, last-10 and last-5 averages are blended with last season. The estimate is adjusted for a new team or role, teammates who are out, blowout risk, the opponent\'s defense against his position (never more than 6%) and the game\'s expected pace. The spread comes from his own game-to-game swings. The shape of the curve is chosen per stat by replaying two full seasons: most stats use a bell curve, low-count stats like 3-pointers use a count curve (you cannot make 1.5 threes), and both are tuned on the lines books actually post.'),
       li('Compare the books.', 'With an Odds API key, every US book\'s spread, total, moneyline and player props are read. The most common line is the consensus, each bet is priced at the best number on offer, and the bookmaker margin is removed to get the market\'s fair chance. The model is pulled toward that fair chance, not toward the padded price.'),
       li('Claude writes the analysis.', 'Claude reads the same numbers and writes the reasoning and risks. It may nudge a game number by at most 2 points (total 5) and a prop by at most 10%, and only for a reason stated in the data. It never sets probabilities, confidence or stakes.'),
       li('Claude\'s own read.', 'Besides writing the analysis, Claude is asked what it believes the realistic chance of each outcome is, counting what numbers cannot see (motivation, schedule spot, rotation habits, how a matchup tends to play). That probability is held within 12 points of the market\'s fair price, counts for a small share of the final chance (' + Math.round(((P.judgment && P.judgment.w != null) ? P.judgment.w : 0.1) * 100) + '%, never more than 4 points of movement), and can lower confidence or trim a stake when Claude flags a concern. It is a tracked estimate, scored against the model on every graded pick, and its weight rises or falls with its record. It is not inside information, and it cannot override the numbers.'),
