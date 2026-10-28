@@ -984,7 +984,8 @@ body::after{content:"";position:fixed;inset:-20%;z-index:-1;pointer-events:none;
     radial-gradient(34% 26% at 82% 8%,color-mix(in srgb,var(--blue) 9%,transparent),transparent 70%);
   animation:arena 38s ease-in-out infinite alternate;will-change:transform}
 @keyframes arena{from{transform:translate3d(-3%,0,0) scale(1)}to{transform:translate3d(3%,4%,0) scale(1.08)}}
-main.in,.hdr{position:relative;z-index:1}
+main.in{position:relative;z-index:1}
+.hdr{z-index:38}   /* keeps the sticky header and the phone tab bar above the page (the tab bar lives inside the header) */
 
 /* opening moment, once per visit */
 html.boot .brand .mark .sh{animation:shackle .55s cubic-bezier(.3,1.6,.5,1) .15s both}
@@ -1049,6 +1050,10 @@ section.enter{animation:tabIn2 .28s cubic-bezier(.2,.8,.2,1) both}
 .more-it:hover{border-color:color-mix(in srgb,var(--acc) 55%,var(--line))}
 @media (max-width:360px){.more-grid{grid-template-columns:1fr}}
 @media (max-width:640px){.tabs button{flex:1 1 0;padding:16px 4px 14px;font-size:15px}.tabs{overflow:hidden}}
+/* five tabs always fit: labels may shrink, and on the smallest phones the type tightens */
+@media (max-width:640px){.tabs button{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:clip}}
+@media (max-width:390px){.tabs button{font-size:13px;letter-spacing:.01em;padding:16px 1px 14px}.tabs button .count{margin-left:3px;padding:1px 5px;font-size:11px}}
+@media (max-width:340px){.tabs button{font-size:12px;letter-spacing:0}.tabs button .count{display:none}}
 
 @media (prefers-reduced-motion:reduce){
   body::after,html.boot *,section.enter,.bet-edge b,.game.is-live::before,.slipbtn.on,.win-flash{animation:none!important}
