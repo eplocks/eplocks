@@ -1068,6 +1068,8 @@ html.boot .hstats{animation:riseIn .6s cubic-bezier(.2,.8,.2,1) .45s both}
 :root[data-theme="light"] .bet-edge b,:root[data-theme="light"] .nums b.pos{text-shadow:none!important;animation:none!important}
 @media (prefers-color-scheme:light){:root:not([data-theme="dark"]) .bet-edge b,:root:not([data-theme="dark"]) .nums b.pos{text-shadow:none!important;animation:none!important}}
 /* ===== end v13b ===== */
+.unit-prev{margin:0;padding:8px 10px;border-radius:var(--r1);background:color-mix(in srgb,var(--acc) 8%,transparent);border:1px solid color-mix(in srgb,var(--acc) 25%,var(--line))}
+.btn.sm{min-height:32px;padding:4px 10px;font-size:13px}
 </style>
 </head>
 <body>
@@ -2675,14 +2677,18 @@ var POOL = null;
 function acePool(){
   var L = S.latest; if (!L) return [];
   if (POOL && POOL.at === L.generated_at) return POOL.list;
-  var out = [], seen = {};
-  (L.picks || []).forEach(function(p){ if (p.odds == null || p.est == null || !p.game_id) return; seen[legKey(p)] = 1; out.push(p); });
-  L.games.forEach(function(g){ (g.prop_rows || []).forEach(function(r){
-    if (r.skipped || !r.model || r.pid == null) return;
-    var b = bestSide(r), p = leanPick(g, r, b.side);
-    if (seen[legKey(p)] || p.edge < .02 || p.edge > .2) return;
-    seen[legKey(p)] = 1; out.push(p);
-  }); });
+  var out = [], seen = {}, cardType = {};
+  (L.picks || []).forEach(function(p){ if (p.odds == null || p.est == null || !p.game_id) return; seen[legKey(p)] = 1; cardType[p.game_id + '|' + p.type] = 1; out.push(p); });
+  L.games.forEach(function(g){
+    (g.prop_rows || []).forEach(function(r){
+      if (r.skipped || !r.model || r.pid == null) return;
+      var b = bestSide(r), p = leanPick(g, r, b.side);
+      if (seen[legKey(p)] || p.edge < .015 || p.edge > .2) return;
+      seen[legKey(p)] = 1; out.push(p);
+    });
+    /* spreads, totals and moneylines the card passed on, when the model still leans one way */
+    try { gameLeans(g).forEach(function(p){ if (cardType[p.game_id + '|' + p.type] || seen[legKey(p)] || p.edge < .015 || p.edge > .1) return; seen[legKey(p)] = 1; out.push(p); }); } catch(e){}
+  });
   POOL = {at:L.generated_at, list:out};
   return out;
 }
@@ -2872,7 +2878,14 @@ function slipBody(){
     out.textContent = 'A $' + w.toFixed(2).replace(/\.00$/, '') + ' bet wins $' + (w * t.profit).toFixed(2) + ' and returns $' + (w * t.D).toFixed(2) + '. Model-expected result: ' + (t.ev >= 0 ? '+' : '-') + '$' + Math.abs(w * t.ev).toFixed(2) + ' (' + (t.evc >= 0 ? '+' : '-') + '$' + Math.abs(w * t.evc).toFixed(2) + ' if only half the edge is real). Estimates, not promises.';
   }
   inp.oninput = upd; upd();
-  wrap.append(el('div', {class:'blk'}, el('h3', {text:'What it pays'}), el('label', {class:'wg'}, el('span', {text:'Wager $'}), inp), out));
+  var pu = planUnitNow(), planRow = null;
+  if (pu && suggestU(t)){
+    var ps = stakeRound(pu * suggestU(t));
+    planRow = el('p', {class:'small mut'}, 'Your plan: 1 unit = ' + money(pu) + '. For this ticket it suggests ' + suggestU(t) + 'u, ' + money(ps) + '. ',
+      el('button', {type:'button', class:'btn sm', text:'Use ' + money(ps), onclick:function(){ inp.value = String(ps); upd(); }}));
+  } else if (pu) planRow = el('p', {class:'small mut', text:'Your plan: 1 unit = ' + money(pu) + '. This ticket does not hold up if only half the edge is real, so the plan would pass on it.'});
+  else planRow = el('p', {class:'small mut', text:'Set a bankroll on the Plan tab and this will suggest a stake.'});
+  wrap.append(el('div', {class:'blk'}, el('h3', {text:'What it pays'}), el('label', {class:'wg'}, el('span', {text:'Wager $'}), inp), out, planRow));
   warns.forEach(function(w){ wrap.append(el('div', {class:'note warn small', text:w})); });
   var clr = el('button', {type:'button', class:'btn', text:'Clear slip'}), armed = false;
   clr.onclick = function(){
@@ -2918,108 +2931,322 @@ var GLOSS = {
 function aceKey(){ return lsGet('eplocks_ace_key', ''); }
 
 /* ---- reading what the person typed ---- */
+function normTxt(s){ try { s = String(s).normalize('NFD').replace(/[\u0300-\u036f]/g, ''); } catch(e){ s = String(s); } return s.toLowerCase(); }
+function nameKey(s){ return normTxt(s).replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim(); }
+function lev(a, b){
+  if (Math.abs(a.length - b.length) > 2) return 9;
+  var d = [], i, j; for (i = 0; i <= b.length; i++) d[i] = [i];
+  for (j = 0; j <= a.length; j++) d[0][j] = j;
+  for (i = 1; i <= b.length; i++) for (j = 1; j <= a.length; j++){
+    d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (b[i - 1] === a[j - 1] ? 0 : 1));
+    if (i > 1 && j > 1 && b[i - 1] === a[j - 2] && b[i - 2] === a[j - 1]) d[i][j] = Math.min(d[i][j], d[i - 2][j - 2] + 1);   /* swapped letters count as one typo */
+  }
+  return d[b.length][a.length];
+}
+/* what fans call players, mapped to the name on the box score */
+var PNICK = {lebron:'lebron james', bron:'lebron james', 'king james':'lebron james', giannis:'giannis antetokounmpo', 'greek freak':'giannis antetokounmpo', luka:'luka doncic',
+  joker:'nikola jokic', steph:'stephen curry', 'chef curry':'stephen curry', kd:'kevin durant', sga:'shai gilgeous alexander', shai:'shai gilgeous alexander', ad:'anthony davis',
+  'the brow':'anthony davis', wemby:'victor wembanyama', wemb:'victor wembanyama', ant:'anthony edwards', 'ant man':'anthony edwards', zion:'zion williamson', dame:'damian lillard',
+  'jimmy buckets':'jimmy butler', trae:'trae young', ja:'ja morant', spida:'donovan mitchell', jb:'jaylen brown', jt:'jayson tatum', kawhi:'kawhi leonard', 'the beard':'james harden',
+  embiid:'joel embiid', cade:'cade cunningham', scottie:'scottie barnes', paolo:'paolo banchero', chet:'chet holmgren', kat:'karl anthony towns', brunson:'jalen brunson',
+  sabonis:'domantas sabonis', 'jaren jackson':'jaren jackson jr', jjj:'jaren jackson jr', fox:'deaaron fox', bam:'bam adebayo', herro:'tyler herro', lamelo:'lamelo ball', melo:'lamelo ball',
+  haliburton:'tyrese haliburton', hali:'tyrese haliburton', maxey:'tyrese maxey', jokic:'nikola jokic', doncic:'luka doncic', sengun:'alperen sengun', jdub:'jalen williams'};
+/* last names that are also ordinary words: only matched with the first name or a capital letter */
+var WORD_NAMES = {smart:1, white:1, green:1, young:1, love:1, holiday:1, black:1, hart:1, ball:1, early:1, house:1, rose:1, price:1, best:1, will:1, long:1, little:1, rich:1, strong:1,
+  sharp:1, brown:1, hunter:1, wells:1, bridges:1, jackson:1, porter:1, allen:1, walker:1, brooks:1, mann:1, payne:1, ford:1, case:1, king:1, james:1, morris:1, miller:1, johnson:1,
+  williams:1, thompson:1, davis:1, jones:1, smith:1, carter:1, watson:1, key:1, gay:1, battle:1, christie:1, harris:1, murray:1, grant:1, butler:1};
+/* everyday betting words that must never be read as a misspelled name */
+var COMMON = ('points rebounds assists threes parlay parlays safest safer tonight props picks plays under overs unders games signals strong longshot payout bigger value today which would ' +
+  'could should about think better there their where against spread spreads total totals moneyline favorites underdogs underdog combo ticket build bests highest lowest every other player ' +
+  'players teams hitting night round leans legit model edges odds prices price lines line books sportsbook books money units unit stake bankroll record winning losing streak ' +
+  'matchup matchups defense starters bench sleeper sleepers random different another anything nothing something someone guard guards center centers forward forwards rookies ' +
+  'between minus plus juice chalk early late slate sweat cover covers winner wins losing would maybe please thanks great hello there these those right now first second third ' +
+  'fourth fifth again change swap replace remove without except include including only just make give show tell explain review check hottest coldest').split(' ');
+var COMMON_SET = {}; COMMON.forEach(function(w){ COMMON_SET[w] = 1; });
 function aceIndex(){
   var teams = [], players = [];
   (S.latest ? S.latest.games : []).forEach(function(g){
     [g.away, g.home].forEach(function(t){ teams.push({abbr:t.abbr, name:t.name, gid:g.id}); });
     var seen = {};
-    function add(pid, name, team){ if (pid == null || seen[pid] || !name) return; seen[pid] = 1; players.push({pid:String(pid), name:name, team:team, gid:g.id}); }
+    function add(pid, name, team){ if (pid == null || seen[pid] || !name) return; seen[pid] = 1; players.push({pid:String(pid), name:name, key:nameKey(name), team:team, gid:g.id}); }
     (g.player_board || []).forEach(function(b){ add(b.pid, b.name, b.team); });
     (g.prop_rows || []).forEach(function(r){ add(r.pid, r.player || r.name, r.team); });
     Object.keys(g.plogs || {}).forEach(function(pid){ add(pid, g.plogs[pid].name, g.plogs[pid].team); });
   });
   return {teams:teams, players:players};
 }
+function findTeams(t, raw, ix){
+  var out = [];
+  var words = t.split(' ').filter(function(w){ return w.length >= 5 && !COMMON_SET[w]; });
+  ix.teams.forEach(function(tm){
+    var ok = new RegExp('\\b' + tm.abbr + '\\b').test(raw) || (LOWER_OK.test(tm.abbr) && new RegExp('\\b' + tm.abbr.toLowerCase() + '\\b').test(t));
+    var nicks = Object.keys(NICK).filter(function(k){ return NICK[k] === tm.abbr; });
+    if (!ok) nicks.forEach(function(k){ if (new RegExp('\\b' + k + '\\b').test(t)) ok = true; });
+    if (!ok) nameKey(tm.name).split(' ').forEach(function(w){ if (w.length >= 5 && !CITY_STOP[w] && new RegExp('\\b' + w + 's?\\b').test(t)) ok = true; });
+    /* small typos in a nickname: "celitcs", "nugets" */
+    if (!ok) nicks.concat(nameKey(tm.name).split(' ')).forEach(function(k){ if (k.length < 5 || CITY_STOP[k]) return; words.forEach(function(w){ if (w[0] === k[0] && lev(w, k) <= 1) ok = true; }); });
+    if (ok && out.indexOf(tm) < 0) out.push(tm);
+  });
+  return out;
+}
+function findPlayers(t, raw, ix){
+  var out = [], lastCount = {}, rawN = normTxt(raw);
+  ix.players.forEach(function(p){ var w = lastName(p.name); lastCount[w] = (lastCount[w] || 0) + 1; });
+  function push(p){ if (out.indexOf(p.pid) < 0) out.push(p.pid); }
+  Object.keys(PNICK).forEach(function(k){
+    if (!new RegExp('\\b' + k + '\\b').test(t)) return;
+    var full = PNICK[k], p = ix.players.filter(function(x){ return x.key === full || x.key.replace(/ (jr|sr|ii|iii|iv)$/, '') === full; })[0];
+    if (p) push(p); else if (ix.miss && ix.miss.indexOf(k) < 0) ix.miss.push(k);
+  });
+  ix.players.forEach(function(p){
+    var ln = lastName(p.name);
+    if (t.indexOf(' ' + p.key + ' ') >= 0){ push(p); return; }
+    if (ln.length < 3 || lastCount[ln] !== 1) return;
+    if (!new RegExp('\\b' + ln + '(\'?s)?\\b').test(t)) return;
+    if (WORD_NAMES[ln]){
+      /* "smart signals" is not Marcus Smart; "Smart over 9.5" and "is Smart good" are */
+      var Cap = ln[0].toUpperCase() + ln.slice(1);
+      var capMid = new RegExp('[^.!?\\s]\\s+' + Cap + '\\b').test(raw);
+      var near = new RegExp('\\b' + ln + "('?s)?\\s+(over|under|o\\d|u\\d|points|rebounds|assists|threes|pts|reb|ast|props?|line|\\d)").test(t);
+      if (!capMid && !near) return;
+    }
+    push(p);
+  });
+  if (!out.length){
+    /* one small typo in a last name ("tatumm", "brunsen"), only when exactly one player fits */
+    var words = t.split(' ').filter(function(w){ return w.length >= 5 && !COMMON_SET[w] && !NICK[w]; });
+    words.forEach(function(w){
+      var c = ix.players.filter(function(p){ var ln = lastName(p.name); return ln.length >= 5 && ln[0] === w[0] && lev(w, ln) <= (ln.length >= 8 ? 2 : 1); });
+      if (c.length === 1) push(c[0]);
+    });
+  }
+  return out;
+}
+var STAT_IX = {points:[3], rebounds:[4], assists:[5], threes:[6], steals:[7], blocks:[8], turnovers:[9], pra:[3, 4, 5], pts_reb:[3, 4], pts_ast:[3, 5], reb_ast:[4, 5]};
+function findStats(t){
+  var out = [];
+  if (/\b(pts ?\+ ?reb|points ?\+ ?rebounds|p ?\+ ?r|pr)\b/.test(t)) out.push('pts_reb');
+  if (/\b(pts ?\+ ?ast|points ?\+ ?assists|p ?\+ ?a|pa)\b/.test(t)) out.push('pts_ast');
+  if (/\b(reb ?\+ ?ast|rebounds ?\+ ?assists|r ?\+ ?a|ra)\b/.test(t)) out.push('reb_ast');
+  if (/points rebounds (and )?assists|pts reb ast|\bpra\b|p ?\+ ?r ?\+ ?a/.test(t)) return ['pra'];
+  if (out.length) return out;
+  STAT_RX.forEach(function(s){ if (s[0].test(t) && out.indexOf(s[1]) < 0) out.push(s[1]); });
+  return out;
+}
+function blankQ(){
+  return {raw:'', n:null, count:null, style:null, target:null, props:null, types:[], stats:[], side:null, minConf:null, gids:[], pids:[], teams:[], sgp:false, sigOnly:false, multi:false,
+    safer:false, bigger:false, add:0, fewer:false, again:false, swap:false, stake:null, parlay:false, single:false, exclude:{}, must:null,
+    notTeams:[], notPids:[], notStats:[], notTypes:[], oddsMin:null, oddsMax:null, dog:false, fav:false, venue:null, when:null, offCard:false, random:false, hot:false, matchup:false,
+    tier:null, lineMin:null, lineMax:null, num:null, numSide:null, numOdds:null, pron:false, only:false};
+}
 function aceParse(q, ix){
-  var raw = q, t = ' ' + q.toLowerCase().replace(/[^a-z0-9+\-$.%@\/ ]/g, ' ').replace(/\s+/g, ' ') + ' ';
-  var o = {raw:raw, n:null, style:null, target:null, props:null, types:[], stats:[], side:null, minConf:null, gids:[], pids:[], teams:[], sgp:false, sigOnly:false, multi:false,
-    safer:false, bigger:false, add:0, fewer:false, again:false, swap:false, stake:null, parlay:false, single:false, exclude:{}, must:null};
-  var m = /(\d)\s*[- ]?\s*(leg|legs|pick|picks|team|man|way|play|plays|fold)\b/.exec(t);
+  var raw = q, t = ' ' + normTxt(q).replace(/([,;!?])/g, ' $1 ').replace(/[^a-z0-9+\-$.%@\/',;!? ]/g, ' ').replace(/'(?!s\b)/g, ' ').replace(/\s+/g, ' ') + ' ';
+  var o = blankQ(); o.raw = raw;
+  if (/\b(not on the (card|site)|off the (card|board)|sleepers?|hidden gems?|under the radar|deep cuts?|different from the (site|card|parlays? tab)|not the same|something new|fresh legs|not the usual|outside the card|leans? only|only leans?)\b/.test(t)){ o.offCard = true; t = t.replace(/\bnot (on the (card|site)|the same|the usual)\b/g, ' '); }
+  /* "no Lakers", "without Tatum", "skip rebounds": read the exclusions first, then blank them out so they are not read as wanted */
+  var tp = t, neg = /\b(no|not|without|except|excluding|exclude|skip|avoid|minus|leave out|nothing (?:on|from)|stay away from|besides|other than)\s+((?:the\s+)?[a-z0-9'.+\- ]{2,40}?)(?=\s(?:and|but|with|or|in|for|on|only|please)\b|[,.;!?]|\s*$)/g, m;
+  while ((m = neg.exec(t))){
+    var span = ' ' + m[2] + ' ', sr = m[2];
+    if (/^\s*(more than|less than|over|under|worse|better|juice|heavy|big|sure|really|too|leg|legs|parlay|parlays|same|one|a |an |the same)\b/.test(sr)) continue;
+    findTeams(span, sr.toUpperCase() === sr ? sr : '', ix).forEach(function(tm){ if (o.notTeams.indexOf(tm.abbr) < 0) o.notTeams.push(tm.abbr); });
+    findPlayers(span, sr, ix).forEach(function(pid){ if (o.notPids.indexOf(pid) < 0) o.notPids.push(pid); });
+    findStats(span).forEach(function(s){ o.notStats.push(s); });
+    if (/\bprops?\b/.test(span)) o.props = false;
+    if (/\bspreads?\b/.test(span)) o.notTypes.push('spread');
+    if (/\b(moneylines?|ml)\b/.test(span)) o.notTypes.push('moneyline');
+    if (/\btotals?\b/.test(span)) o.notTypes.push('total');
+    if (/\bovers\b/.test(span)) o.side = 'under';
+    if (/\bunders\b/.test(span)) o.side = 'over';
+    if (/\b(leans?|unlogged)\b/.test(span)) o.noLean = true;
+    tp = tp.replace(m[0], ' ');
+  }
+  t = tp;
+  m = /(\d)\s*[- ]?\s*(leg|legs|team|man|way|fold|pick|play)\b(?!s)/.exec(t);
   if (m) o.n = parseInt(m[1], 10);
-  else { m = /\b(one|two|three|four|five|six|seven|eight|single|double|triple|quad)[- ](leg|legs|pick|picks|team|man|way|play|fold|parlay)\b/.exec(t); if (m) o.n = NUMW[m[1]]; }
-  if (/\b(parlays?|legs?|ticket|tickets|accumulator|acca|combo|slip)\b/.test(t) && !/\bmy slip\b/.test(t)) o.parlay = true;
-  if (/\b(single|straight bet|one pick|one bet|just one|best bet|top play|top pick|best pick|only one|one play|lock of the night|pick of the night)\b/.test(t)){ o.single = true; if (o.n == null) o.n = 1; }
+  else { m = /\b(one|two|three|four|five|six|seven|eight|single|double|triple|quad)[- ](leg|legs|team|man|way|fold|parlay|pick|play)\b(?!s)/.exec(t); if (m) o.n = NUMW[m[1]]; }
+  if (/\b(parlays?|legs?|ticket|tickets|accumulator|acca|combo|slip|sgp)\b/.test(t) && !/\bmy slip\b/.test(t)) o.parlay = true;
+  /* "5 picks", "top 3 props", "three plays": a list of singles, not a parlay */
+  m = /\b(?:top\s+)?(\d|one|two|three|four|five|six|seven|eight)\s+(?:best\s+|good\s+|safe\s+|safest\s+)?(picks|plays|bets|props|singles|options|ideas|overs|unders|players)\b/.exec(t) || /\btop\s+(\d|three|four|five|six|seven|eight)\b/.exec(t);
+  if (m && !o.parlay){ o.count = /\d/.test(m[1]) ? parseInt(m[1], 10) : NUMW[m[1]]; o.count = Math.max(1, Math.min(8, o.count)); }
+  else if (m && o.parlay && o.n == null){ o.n = /\d/.test(m[1]) ? parseInt(m[1], 10) : NUMW[m[1]]; }
+  if (/\b(single|straight bet|one pick|one bet|just one|best bet|top play|top pick|best pick|only one|one play|lock of the night|pick of the night|play of the day|pick of the day)\b/.test(t) && !o.count){ o.single = true; if (o.n == null) o.n = 1; }
   if (o.n != null) o.n = Math.max(1, Math.min(6, o.n));
   if (o.n > 1) o.parlay = true;
-  if (/\b(safe|safest|safer|conservative|most likely|high prob\w*|sure thing|banker|low risk|least risky|likeliest|best chance)\b/.test(t)) o.style = 'safe';
-  else if (/\b(value|best edge|biggest edge|plus ev|\+ev|most edge|sharpest)\b/.test(t)) o.style = 'value';
+  if (/\b(safe|safest|safer|conservative|most likely|high prob\w*|sure thing|banker|low risk|least risky|likeliest|best chance|surest)\b/.test(t)) o.style = 'safe';
+  else if (/\b(value|best edge|biggest edge|plus ev|\+ev|most edge|sharpest|sharp)\b/.test(t)) o.style = 'value';
   else if (/\b(long ?shots?|moon ?shots?|lotto|lottery|big payout|big payday|high payout|big odds|upside|degen|swing for|home run|juiced|juice it)\b/.test(t)) o.style = 'long';
   if (/\b(safer|less risk\w*|more safe)\b/.test(t)) o.safer = true;
   if (/\b(bigger|more payout|higher payout|riskier|more upside|more risk|bigger payout|juice it|spicier|spice it)\b/.test(t)) o.bigger = true;
+  /* odds rules for each leg: "plus money", "-150 or better", "no heavy juice", "between -150 and +150" */
+  if (/\b(plus[- ]?money|plus odds|positive odds|plus prices?|dogs? only)\b|\+ ?odds\b/.test(t)) o.oddsMin = 100;
+  m = /\bbetween\s*([+-]?\d{3,4})\s*(?:and|to|-)\s*([+-]?\d{3,4})\b/.exec(t);
+  if (m){ var a1 = parseInt(m[1], 10), a2 = parseInt(m[2], 10); if (Math.abs(a1) >= 100 && Math.abs(a2) >= 100){ o.oddsMin = Math.min(a1, a2) < 0 && Math.max(a1, a2) > 0 ? Math.min(a1, a2) : Math.min(a1, a2); o.oddsMax = Math.max(a1, a2); t = t.replace(m[0], ' '); } }
+  m = /\b(?:no worse than|nothing worse than|not worse than|at least|minimum|min odds)\s*([+-])\s?(\d{3,4})\b/.exec(t) || /(?:^|\s)([+-])\s?(\d{3,4})\s*(?:or better|or higher|and up|or longer)\b/.exec(t);
+  if (m){ o.oddsMin = (m[1] === '-' ? -1 : 1) * parseInt(m[2], 10); t = t.replace(m[0], ' '); }
+  m = /\b(?:each|every|per|all)\s*(?:leg|pick)s?\s*(?:at|over|above|of)?\s*([+-])\s?(\d{3,4})\b/.exec(t) || /\blegs?\s*(?:at|over|above)\s*([+-])\s?(\d{3,4})\b/.exec(t);
+  if (m){ o.oddsMin = (m[1] === '-' ? -1 : 1) * parseInt(m[2], 10); t = t.replace(m[0], ' '); }
+  if (/\bno (heavy |big )?(juice|juiced legs|heavy favorites|big favorites)\b|\bnothing juiced\b/.test(t) && o.oddsMin == null) o.oddsMin = -150;
   m = /(?:^|[\s(])\+\s?(\d{3,4})\b/.exec(t); if (m) o.target = parseInt(m[1], 10);
   if (!o.target){ m = /\b(\d+(?:\.\d+)?)\s?(?:x|to 1|to one)\b/.exec(t); if (m && parseFloat(m[1]) >= 2) o.target = amer(parseFloat(m[1]) + (/to (1|one)/.test(m[0]) ? 1 : 0)); }
-  if (/\bprops?\b|\bplayers?\b/.test(t) && !/\b(no|without|skip|except) props?\b/.test(t)) o.props = true;
-  if (/\b(no|without|skip) props?\b|\bgames? only\b|\bgame bets?\b/.test(t)) o.props = false;
-  if (/\b(spreads?|against the spread|ats)\b/.test(t)) o.types.push('spread');
-  if (/\b(moneylines?|ml|straight up|outright)\b/.test(t)) o.types.push('moneyline');
-  if (/\b(totals?|over under|o\/u|game total)\b/.test(t)) o.types.push('total');
-  STAT_RX.forEach(function(s){ if (s[0].test(t) && o.stats.indexOf(s[1]) < 0) o.stats.push(s[1]); });
-  if (/points rebounds assists|pts reb ast|\bpra\b/.test(t)) o.stats = ['pra'];
+  if (/\bunder ?dogs?\b|\bdogs\b|\bupsets?\b|\bupset pick\b/.test(t)){ o.dog = true; t = t.replace(/\s*\bunder ?dogs?\b\s*/g, ' dogs ').replace(/\s+/g, ' '); }
+  if (/\b(favou?rites?|chalk|favs?)\b/.test(t) && !/\bno (heavy |big )?favou?rites\b/.test(t)) o.fav = true;
+  if (/\bhome (teams?|sides?|dogs?|favou?rites?|players?)\b|\bat home\b/.test(t)) o.venue = 'home';
+  else if (/\b(road|away|visiting) (teams?|sides?|dogs?|favou?rites?|players?)\b|\bon the road\b/.test(t)) o.venue = 'away';
+  if (/\b(early|first|earliest) (games?|slate|tips?|window)\b/.test(t)) o.when = 'early';
+  else if (/\b(late|latest|night ?cap|west coast|last) (games?|slate|tips?|window)\b|\blate night\b/.test(t)) o.when = 'late';
+  if (/\b(random|surprise me|mix it up|shuffle|wild ?card|whatever|dealer'?s choice|roll the dice)\b/.test(t)) o.random = true;
+  if (/\b(hot|hottest|on fire|heaters?|streaking|in form|been hitting|cashing|consistent|reliable)\b/.test(t)) o.hot = true;
+  if (/\b(matchups?|soft defen\w*|weak defen\w*|exploit\w*|bad defen\w*)\b/.test(t)) o.matchup = true;
+  if (/\b(stars?|superstars?|big names?|best players)\b/.test(t)) o.tier = 'star';
+  else if (/\b(role players?|bench (guys|players)|role guys)\b/.test(t)) o.tier = 'role';
+  if (/\bprops?\b|\bplayers?\b/.test(t) && o.props !== false) o.props = true;
+  if (/\bgames? only\b|\bgame bets?\b|\bgame lines?\b|\bteam bets?\b/.test(t)) o.props = false;
+  if (/\b(spreads?|against the spread|ats|covers?)\b/.test(t)) o.types.push('spread');
+  if (/\b(moneylines?|ml|straight up|outright|to win|who wins|winners?)\b/.test(t)) o.types.push('moneyline');
+  if (/\b(game totals?|totals|over under|o\/u|team totals?)\b/.test(t) || (/\btotal\b/.test(t) && !/\btotal (points|rebounds|assists|threes)\b/.test(t))) o.types.push('total');
+  o.stats = findStats(t);
+  /* a number: "Tatum over 26.5", "o26.5", "25+ points", "can he get 10 rebounds", "at -120" */
+  m = /\b(over|under|o|u)\s?(\d+(?:\.\d)?)\b/.exec(t);
+  if (m && parseFloat(m[2]) < 100){ o.num = parseFloat(m[2]); o.numSide = m[1][0] === 'u' ? 'under' : 'over'; }
+  else {
+    m = /\b(\d+(?:\.\d)?)\s?\+(?!\d)/.exec(t) || /\b(\d+(?:\.\d)?)\s?(?:or more|plus)\b/.exec(t);
+    if (m && parseFloat(m[1]) < 100 && parseFloat(m[1]) >= 0.5){ o.num = Math.floor(parseFloat(m[1])) - 0.5; o.numSide = 'over'; }
+    else { m = /\b(score|get|have|grab|hit|drop|put up|record|make|reach|go for)\s+(\d+(?:\.\d)?)\b/.exec(t); if (m && parseFloat(m[2]) < 100){ var nn = parseFloat(m[2]); o.num = nn % 1 ? nn : nn - 0.5; o.numSide = 'over'; } }
+    if (o.num == null){ m = /\b(less than|fewer than|below|under)\s+(\d+(?:\.\d)?)\b/.exec(t); if (m && parseFloat(m[2]) < 100){ var n2 = parseFloat(m[2]); o.num = n2 % 1 ? n2 : n2 - 0.5; o.numSide = 'under'; } }
+  }
+  m = /\bat\s*([+-]\s?\d{3,4})\b/.exec(t); if (m) o.numOdds = parseInt(m[1].replace(/\s/g, ''), 10);
   var hasO = /\bovers?\b/.test(t), hasU = /\bunders?\b/.test(t);
-  if (hasU && !hasO) o.side = 'under'; else if (hasO && !hasU) o.side = 'over';
-  if (/\bhigh confidence\b|\bhigh only\b|\bonly high\b/.test(t)) o.minConf = 'High'; else if (/\bmedium (or better|\+|and up)\b|\bat least medium\b|\bmedium\+/.test(t)) o.minConf = 'Medium';
-  if (/\b(same game|sgp|one game parlay)\b/.test(t)) o.sgp = true;
+  if (o.side == null){ if (hasU && !hasO) o.side = 'under'; else if (hasO && !hasU) o.side = 'over'; }
+  if (o.numSide && o.side == null) o.side = o.numSide;
+  if (/\bhigh confidence\b|\bhigh only\b|\bonly high\b/.test(t)) o.minConf = 'High'; else if (/\bmedium (or better|\+|and up)\b|\bat least medium\b|\bmedium\+|\bmedium confidence\b/.test(t)) o.minConf = 'Medium';
+  if (/\b(same game|sgp|one game parlay|single game parlay)\b/.test(t)) o.sgp = true;
   if (/\b(signals?|patterns?|stands? out|standouts?|smart)\b/.test(t)) o.sigOnly = true;
-  if (/\b(options|ideas|some|few|couple|several|variety|a bunch)\b/.test(t) || /\bparlays\b/.test(t)) o.multi = true;
+  if (/\b(options|ideas|several|variety|a bunch|a few parlays|some parlays|couple parlays|parlays)\b/.test(t)) o.multi = true;
   if (/\b(add (a |one |another )?(leg|pick|more)|one more|more legs?|extra leg)\b/.test(t)) o.add = 1;
+  if (/\badd\b/.test(t)) o.addWord = true;
   if (/\b(fewer|one less|less legs|remove a leg|drop a leg|smaller)\b/.test(t)) o.fewer = true;
   if (/\b(another|different|something else|again|new one|re-?roll|next one|else)\b/.test(t)) o.again = true;
   if (/\b(swap|replace|change|ditch|get rid of|take out|remove|drop)\b/.test(t)) o.swap = true;
+  if (/\b(only|just)\b/.test(t)) o.only = true;
+  if (/\b(him|his|he|he'?s)\b/.test(t)) o.pron = 'player';
+  else if (/\b(that game|this game|the game|same game)\b/.test(t)) o.pron = 'game';
   m = /\$\s?(\d+(?:\.\d+)?)/.exec(t) || /\b(\d+(?:\.\d+)?)\s?(?:bucks|dollars)\b/.exec(t); if (m) o.stake = parseFloat(m[1]);
-  /* teams */
-  var hit = {};
-  ix.teams.forEach(function(tm){
-    var ok = new RegExp('\\b' + tm.abbr + '\\b').test(raw) || (LOWER_OK.test(tm.abbr) && new RegExp('\\b' + tm.abbr.toLowerCase() + '\\b').test(t));
-    if (!ok) Object.keys(NICK).forEach(function(k){ if (NICK[k] === tm.abbr && new RegExp('\\b' + k + '\\b').test(t)) ok = true; });
-    if (!ok) tm.name.toLowerCase().split(/\s+/).forEach(function(w){ if (w.length >= 5 && !CITY_STOP[w] && new RegExp('\\b' + w + '\\b').test(t)) ok = true; });
-    if (ok && !hit[tm.abbr]){ hit[tm.abbr] = 1; o.teams.push(tm.abbr); if (o.gids.indexOf(tm.gid) < 0) o.gids.push(tm.gid); }
-  });
-  /* players */
-  var lastCount = {};
-  ix.players.forEach(function(p){ var w = lastName(p.name); lastCount[w] = (lastCount[w] || 0) + 1; });
-  ix.players.forEach(function(p){
-    var full = p.name.toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim(), ln = lastName(p.name);
-    if (t.indexOf(' ' + full + ' ') >= 0 || (ln.length >= 4 && lastCount[ln] === 1 && new RegExp('\\b' + ln + '(\'?s)?\\b').test(t))){ if (o.pids.indexOf(p.pid) < 0) o.pids.push(p.pid); }
-  });
+  findTeams(t, raw, ix).forEach(function(tm){ if (o.notTeams.indexOf(tm.abbr) >= 0) return; if (o.teams.indexOf(tm.abbr) < 0) o.teams.push(tm.abbr); if (o.gids.indexOf(tm.gid) < 0) o.gids.push(tm.gid); });
+  ix.miss = [];
+  findPlayers(t, raw, ix).forEach(function(pid){ if (o.notPids.indexOf(pid) < 0 && o.pids.indexOf(pid) < 0) o.pids.push(pid); });
+  o.missNames = ix.miss.slice(); delete ix.miss;
+  /* "him", "that game": whoever we were just talking about */
+  if (!o.pids.length && o.pron === 'player' && ACE.ctx && ACE.ctx.player) o.pids = [ACE.ctx.player];
+  if (!o.gids.length && o.pron === 'game' && ACE.ctx && ACE.ctx.game) o.gids = [ACE.ctx.game];
   o.low = t;
   return o;
 }
 function lastName(n){
-  var w = String(n).toLowerCase().replace(/[^a-z0-9 ]/g, ' ').split(/\s+/).filter(Boolean);
+  var w = nameKey(n).split(/\s+/).filter(Boolean);
   while (w.length > 1 && /^(jr|sr|ii|iii|iv|v)$/.test(w[w.length - 1])) w.pop();
   return w[w.length - 1] || '';
 }
+function phiN(x){ var t = 1 / (1 + .2316419 * Math.abs(x)), d = .3989423 * Math.exp(-x * x / 2), p = d * t * (.3193815 + t * (-.3565638 + t * (1.781478 + t * (-1.821256 + t * 1.330274)))); return x > 0 ? 1 - p : p; }
+function playerOf(pid){ var ix = aceIndex(); return ix.players.filter(function(p){ return p.pid === String(pid); })[0] || null; }
+function rowOf(p){ var g = gameById(p.game_id); return g ? (g.prop_rows || []).filter(function(r){ return String(r.pid) === String(p.pid) && r.stat === p.stat; })[0] || null : null; }
+function seasonPts(g, pid){ var b = (g.player_board || []).filter(function(x){ return String(x.pid) === String(pid); })[0], lg = (g.plogs || {})[pid]; return b && b.proj && b.proj.points ? b.proj.points[1] : lg && lg.avg ? lg.avg.pts : null; }
+function legTeam(p){ if (p.type === 'prop') return teamOf(p); if (p.type === 'total') return null; return p.side === 'home' ? p.home : p.away; }
+function isDog(p){ if (p.type === 'moneyline') return p.odds > 0; if (p.type === 'spread') return p.line > 0; return false; }
+function tipWindow(){
+  var ts = (S.latest.games || []).map(function(g){ return Date.parse(g.utc); }).filter(isFinite).sort(function(a, b){ return a - b; });
+  return ts.length ? {first:ts[0], last:ts[ts.length - 1]} : null;
+}
+function siteKeys(){
+  /* the legs the Parlays tab and the card lead with, so Ace can say when it lands on the same ones, and steer away when asked */
+  var k = {}; try { orderLegs(legPool()).legs.slice(0, 5).forEach(function(p){ k[legKey(p)] = 1; }); } catch(e){}
+  return k;
+}
+
+/* ---- game bets the card did not take, read the same way the engine reads them, so Ace can talk about any spread, total or moneyline ---- */
+function gameLeans(g){
+  var m = g.market, f = g.final, P = S.latest.params || {};
+  if (!m || !f || g.state !== 'pre') return [];
+  var sdM = P.sd_margin || 12, sdT = P.sd_total || 17.5, lam = (P.calibration || {}).game, fr = m.fair || {}, shop = m.shop || {}, out = [];
+  if (lam == null) lam = 1;
+  function cal(p, odds, fair){ var q = fair != null ? fair : impl(odds); return Math.max(.01, Math.min(.99, q + lam * (p - q))); }
+  function add(type, side, label, line, odds, p, fair, book){
+    if (odds == null) return;
+    var est = cal(p, odds, fair), imp = impl(odds);
+    out.push({type:type, side:side, label:label, line:line, odds:odds, est:Math.round(est * 1000) / 1000, implied:Math.round(imp * 1000) / 1000, edge:Math.round((est - imp) * 1000) / 1000,
+      kind:'priced', conf:'Low', units:0, book:shop[book] || null, game_id:g.id, away:g.away.abbr, home:g.home.abbr, lean:true, date:S.latest.for_date, utc:g.utc,
+      flag:'Lean: the model\'s read of this market. It did not make the logged pick list, so it is not tracked on the Tracker.', reason:''});
+  }
+  if (m.spread_home != null){
+    var L = m.spread_home, ph = phiN((f.margin + L) / sdM);
+    add('spread', 'home', g.home.abbr + ' ' + sg(L), L, m.spread_odds_home, ph, fr.home_cover, 'spread_home');
+    add('spread', 'away', g.away.abbr + ' ' + sg(-L), -L, m.spread_odds_away, 1 - ph, fr.home_cover != null ? 1 - fr.home_cover : null, 'spread_away');
+  }
+  if (m.total != null && f.total != null){
+    var po = 1 - phiN((m.total - f.total) / sdT);
+    add('total', 'over', 'Over ' + m.total, m.total, m.over_odds, po, fr.over, 'over');
+    add('total', 'under', 'Under ' + m.total, m.total, m.under_odds, 1 - po, fr.over != null ? 1 - fr.over : null, 'under');
+  }
+  if (m.ml_home != null && m.ml_away != null){
+    var pw = phiN(f.margin / sdM);
+    add('moneyline', 'home', g.home.abbr + ' ML', null, m.ml_home, pw, fr.home_win, 'ml_home');
+    add('moneyline', 'away', g.away.abbr + ' ML', null, m.ml_away, 1 - pw, fr.home_win != null ? 1 - fr.home_win : null, 'ml_away');
+  }
+  return out;
+}
 
 /* ---- picking legs and building tickets ---- */
-function aceScore(p, style){
-  var w = CW[p.conf] || .4, g = (p.sig && p.sig.w) || 0;
-  if (style === 'safe') return p.est - (p.flag && !p.lean ? .06 : 0) - (p.conf === 'Low' ? .03 : 0) + .02 * g;
-  if (style === 'value') return p.edge + .004 * g;
-  if (style === 'long') return p.edge * w + (p.odds > 0 ? .03 : 0) + .004 * g;
-  return p.edge * w + .004 * g;
+function hitRate(p){ var m = /^(\d+)\/(\d+)$/.exec(String(p.hit_l10 || '')); return m && +m[2] >= 3 ? +m[1] / +m[2] : null; }
+function aceScore(p, style, o){
+  var w = CW[p.conf] || .4, g = (p.sig && p.sig.w) || 0, s;
+  if (style === 'safe') s = p.est - (p.flag && !p.lean ? .06 : 0) - (p.conf === 'Low' ? .03 : 0) + .02 * g;
+  else if (style === 'value') s = p.edge + .004 * g;
+  else if (style === 'long') s = p.edge * w + (p.odds > 0 ? .03 : 0) + .004 * g;
+  else s = p.edge * w + .004 * g;
+  if (p.lean && style !== 'value') s -= .006;
+  if (o && o.hot){ var h = hitRate(p); s += h != null ? .12 * (h - .5) : -.02; }
+  if (o && o.matchup && p.type === 'prop'){ var r = rowOf(p), pf = r && r.pf != null ? r.pf : 1; s += .6 * (p.side === 'under' ? 1 - pf : pf - 1); }
+  return s;
 }
 function aceCands(o, pool){
-  var rk = {Low:1, Medium:2, High:3}, minC = o.minConf ? rk[o.minConf] : 0;
+  var rk = {Low:1, Medium:2, High:3}, minC = o.minConf ? rk[o.minConf] : 0, tw = o.when ? tipWindow() : null, site = o.offCard ? siteKeys() : null;
   var allow;
   if (o.types.length) allow = o.types.slice();
-  else if (o.props === false) allow = ['spread', 'moneyline', 'total'];
-  else if (o.props === true || o.stats.length || o.pids.length) allow = ['prop'];
+  else if (o.props === false || o.dog || o.fav) allow = ['spread', 'moneyline', 'total'];
+  else if (o.props === true || o.stats.length || o.pids.length || o.tier || o.lineMin != null || o.lineMax != null) allow = ['prop'];
   else allow = ['spread', 'moneyline', 'total', 'prop'];
   if ((o.props === true || o.stats.length || o.pids.length) && allow.indexOf('prop') < 0) allow.push('prop');
+  if (o.props === false) allow = allow.filter(function(x){ return x !== 'prop'; });
+  allow = allow.filter(function(x){ return (o.notTypes || []).indexOf(x) < 0; });
+  if ((o.dog || o.fav) && !o.types.length) allow = allow.filter(function(x){ return x !== 'total'; });
   var list = pool.filter(function(p){
     if (started(p) || !(p.edge > 0) || allow.indexOf(p.type) < 0) return false;
     if (o.stats.length && p.type === 'prop' && o.stats.indexOf(p.stat) < 0) return false;
+    if ((o.notStats || []).length && p.type === 'prop' && o.notStats.indexOf(p.stat) >= 0) return false;
     if (o.side && (p.type === 'prop' || p.type === 'total') && p.side !== o.side) return false;
     if (minC && (rk[p.conf] || 1) < minC) return false;
     if (o.gids.length && o.gids.indexOf(p.game_id) < 0) return false;
     if (o.pids.length && !(p.type === 'prop' && o.pids.indexOf(String(p.pid)) >= 0)) return false;
+    if ((o.notPids || []).length && p.type === 'prop' && o.notPids.indexOf(String(p.pid)) >= 0) return false;
+    if ((o.notTeams || []).length){ var lt = legTeam(p); if (lt ? o.notTeams.indexOf(lt) >= 0 : (o.notTeams.indexOf(p.away) >= 0 || o.notTeams.indexOf(p.home) >= 0)) return false; }
+    if (o.teams.length && o.teams.length < 2 * o.gids.length && p.type !== 'total'){ var t2 = legTeam(p); if (t2 && o.teams.indexOf(t2) < 0) return false; }
     if (o.sigOnly && !(p.sig && p.sig.tier)) return false;
+    if (o.noLean && p.lean) return false;
     if (o.exclude[legKey(p)]) return false;
+    if (o.oddsMin != null && p.odds < o.oddsMin) return false;
+    if (o.oddsMax != null && p.odds > o.oddsMax) return false;
+    if (o.dog && (p.type === 'spread' || p.type === 'moneyline') && !isDog(p)) return false;
+    if (o.fav && (p.type === 'spread' || p.type === 'moneyline') && isDog(p)) return false;
+    if (o.venue){ var vt = legTeam(p); if (!vt || vt !== (o.venue === 'home' ? p.home : p.away)) return false; }
+    if (tw && tw.last - tw.first >= 45 * 6e4){ var ut = Date.parse(p.utc || (gameById(p.game_id) || {}).utc); if (isFinite(ut) && (o.when === 'early' ? ut > tw.first + 45 * 6e4 : ut < tw.last - 45 * 6e4)) return false; }
+    if (site && (!p.lean || site[legKey(p)])) return false;
+    if (o.tier && p.type === 'prop'){ var sp = seasonPts(gameById(p.game_id) || {}, p.pid); if (sp == null || (o.tier === 'star' ? sp < 19 : sp >= 13)) return false; }
+    if (o.lineMin != null && p.type === 'prop' && !(p.line >= o.lineMin)) return false;
+    if (o.lineMax != null && p.type === 'prop' && !(p.line <= o.lineMax)) return false;
     return true;
   });
   var style = o.style || 'bal';
   if (style === 'safe'){ var s55 = list.filter(function(p){ return p.est >= .55; }); if (s55.length >= 2) list = s55; }
-  return list.sort(function(a, b){ return aceScore(b, style) - aceScore(a, style); });
+  return list.sort(function(a, b){ return aceScore(b, style, o) - aceScore(a, style, o); });
 }
 function aceObj(t, o){
   if (o.target) return -Math.abs(Math.log(t.D / dec(o.target))) * 2 + t.evc + .3 * t.P;
@@ -3031,15 +3258,11 @@ function aceObj(t, o){
 }
 function mkey(p){ return p.game_id + '|' + (p.type === 'prop' ? p.pid + '|' + p.stat : p.type); }
 function aceBest(cands, n, o){
-  var top = cands.slice(0, 15), must = o.must || [], need = Math.max(0, n - must.length), best = null, cnt = 0;
+  var top = cands.slice(0, o.random ? 24 : 16), must = o.must || [], need = Math.max(0, n - must.length), all = [], cnt = 0;
   var ug = {}, uk = {}; must.forEach(function(p){ ug[p.game_id] = 1; uk[mkey(p)] = 1; });
   top = top.filter(function(p){ return !uk[mkey(p)]; });
   (function rec(start, cur, g2, k2){
-    if (cur.length === need){
-      var t = mkTicket(must.concat(cur)), v = aceObj(t, o);
-      if (!best || v > best.v) best = {v:v, t:t};
-      cnt++; return;
-    }
+    if (cur.length === need){ var t = mkTicket(must.concat(cur)); all.push({v:aceObj(t, o), t:t}); cnt++; return; }
     for (var i = start; i < top.length && cnt < 20000; i++){
       var p = top[i];
       if (k2[mkey(p)] || (!o.sgp && g2[p.game_id])) continue;
@@ -3047,7 +3270,23 @@ function aceBest(cands, n, o){
       rec(i + 1, cur.concat([p]), g3, k3);
     }
   })(0, [], ug, uk);
-  return best && best.t;
+  if (!all.length) return null;
+  all.sort(function(a, b){ return b.v - a.v; });
+  var best = all[0], seen = ACE.seen || {};
+  if (o.random){
+    /* surprise me: a random ticket among the good ones, never one the numbers dislike */
+    var pool = all.filter(function(x){ return x.t.evc > 0; }).slice(0, 30); if (!pool.length) pool = all.slice(0, 5);
+    return pool[Math.floor(Math.random() * pool.length)].t;
+  }
+  /* asked again and again, Ace leans toward combos it has not shown yet, as long as they are nearly as good */
+  if (!o.repeat) return best.t;
+  var tol = Math.abs(best.v) * .06 + 1e-4, pick = best, ps = 1e9;
+  all.slice(0, 40).forEach(function(x){
+    if (x.v < best.v - tol) return;
+    var sc = x.t.legs.reduce(function(s, p){ return s + (seen[legKey(p)] || 0); }, 0);
+    if (sc < ps){ ps = sc; pick = x; }
+  });
+  return pick.t;
 }
 function aceMaxLegs(cands, o){
   if (o.sgp) return Math.min(6, cands.length + (o.must ? o.must.length : 0));
@@ -3074,33 +3313,149 @@ function legWhy(p){
   var bits = [];
   if (p.sig && p.sig.items && p.sig.items.length){ var it = p.sig.items.slice().sort(function(a, b){ return b.w - a.w; })[0]; bits.push(it.t); }
   if (p.reason && p.reason.length < 140 && !/^note p\d+$/.test(p.reason)) bits.push(p.reason);
+  if (p.type === 'prop'){ var r = rowOf(p); if (r && r.rm_note && bits.join(' ').indexOf(r.rm_note) < 0) bits.push(r.rm_note); }
   bits.push('the model has it at ' + pct(p.est) + ' against a price that implies ' + pct(p.implied) + ' (edge ' + fe(p.edge) + ' points)');
   return bits.join('; ') + '.';
 }
-function money(w, t){ var x = w * t.profit; return '$' + (x >= 100 ? Math.round(x) : x.toFixed(2).replace(/\.00$/, '')); }
+function winAmt(w, t){ var x = w * t.profit; return '$' + (x >= 100 ? Math.round(x).toLocaleString('en-US') : x.toFixed(2).replace(/\.00$/, '')); }
+function aceAsked(o){
+  var a = [];
+  if (o.teams.length) a.push(o.teams.join('/'));
+  if (o.pids.length){ var ix = aceIndex(); a.push(o.pids.map(function(pid){ var p = ix.players.filter(function(x){ return x.pid === pid; })[0]; return p ? p.name : pid; }).join(', ')); }
+  if (o.stats.length) a.push(o.stats.map(function(s){ return LBL[s] || s; }).join('/'));
+  if (o.types.length) a.push(o.types.map(function(x){ return x === 'moneyline' ? 'moneylines' : x + 's'; }).join('/'));
+  if (o.props === true && !o.stats.length && !o.pids.length) a.push('props');
+  if (o.props === false) a.push('no props');
+  if (o.side) a.push(o.side + 's');
+  if (o.oddsMin != null || o.oddsMax != null) a.push(o.oddsMin === 100 && o.oddsMax == null ? 'plus money' : 'odds ' + (o.oddsMin != null ? fo(o.oddsMin) : 'any') + (o.oddsMax != null ? ' to ' + fo(o.oddsMax) : ' or better'));
+  if (o.dog) a.push('underdogs'); if (o.fav) a.push('favorites');
+  if (o.venue) a.push(o.venue + ' teams');
+  if (o.when) a.push(o.when + ' games');
+  if (o.tier) a.push(o.tier === 'star' ? 'stars' : 'role players');
+  if (o.lineMin != null) a.push('lines ' + o.lineMin + '+');
+  if (o.lineMax != null) a.push('lines up to ' + o.lineMax);
+  if (o.sigOnly) a.push('standout patterns');
+  if (o.hot) a.push('hot hit rates');
+  if (o.matchup) a.push('best matchups');
+  if (o.offCard) a.push('off the card');
+  if (o.minConf) a.push(o.minConf === 'High' ? 'High confidence' : 'Medium+ confidence');
+  if (o.random) a.push('random');
+  var no = [];
+  if ((o.notTeams || []).length) no.push(o.notTeams.join('/'));
+  if ((o.notPids || []).length){ var ix2 = aceIndex(); no.push(o.notPids.map(function(pid){ var p = ix2.players.filter(function(x){ return x.pid === pid; })[0]; return p ? lastName(p.name).replace(/^./, function(c){ return c.toUpperCase(); }) : pid; }).join(', ')); }
+  if ((o.notStats || []).length) no.push(o.notStats.map(function(s){ return LBL[s] || s; }).join('/'));
+  if ((o.notTypes || []).length) no.push(o.notTypes.join('/'));
+  if (no.length) a.push('no ' + no.join(', '));
+  return a;
+}
 function ticketWords(t, o){
-  var n = t.n, w = parseFloat(lsGet('eplocks_wager', '10')) || 10, wager = o.stake || w;
+  var n = t.n, w = parseFloat(lsGet('eplocks_wager', '10')) || 10, pu = planUnitNow(), su = suggestU(t), wager = o.stake || (pu && su ? stakeRound(pu * su) : w);
   var how = o.target ? 'a payout near ' + fo(o.target) : ({safe:'the best chance of cashing', value:'the biggest edge over the price', long:'a bigger payout while the numbers stay positive'}[o.style] || 'the best mix of chance and edge');
-  var s = (n === 1 ? 'Here\'s a single' : 'Here\'s a ' + n + '-leg parlay') + ' built for ' + how + '. The model gives it about ' + pct(t.P) + ' to hit and it pays ' + fo(t.odds) + ', so $' + wager + ' wins ' + money(wager, t) + '.';
+  var s = (n === 1 ? 'Here\'s a single' : 'Here\'s a ' + n + '-leg parlay') + ' built for ' + how + '. The model gives it about ' + pct(t.P) + ' to hit and it pays ' + fo(t.odds) + ', so $' + String(wager).replace(/\.0+$/, '') + ' wins ' + winAmt(wager, t) + (pu && !o.stake && su ? ' (' + su + ' unit' + (su === 1 ? '' : 's') + ' on your plan)' : '') + '.';
+  if (n > 1){ var lk = 0; for (var i = 0; i < t.legs.length; i++) for (var j = i + 1; j < t.legs.length; j++) lk = Math.max(lk, Math.abs(legRho(t.legs[i], t.legs[j]))); if (lk >= .1) s += ' Some legs move together, and the hit chance already accounts for that.'; }
   var top = t.legs.slice().sort(function(a, b){ return ((b.sig && b.sig.score) || 0) - ((a.sig && a.sig.score) || 0); })[0];
   if (top && top.sig && top.sig.tier) s += ' Strongest pattern: ' + top.label + ' (' + top.sig.tier + ' signal).';
   var weak = t.legs.slice().sort(function(a, b){ return a.est - b.est; })[0];
   if (n > 1 && weak) s += ' Shakiest leg: ' + weak.label + ' at ' + pct(weak.est) + '.';
   var fl = t.legs.filter(function(p){ return p.flag && !p.lean; })[0];
   if (fl) s += ' Note on ' + fl.label + ': ' + fl.flag;
-  if (t.legs.some(function(p){ return p.lean; })) s += ' Some legs are leans, readings that did not make the logged pick list.';
+  if (t.legs.some(function(p){ return p.lean; })) s += ' Legs marked as leans are model reads that did not make the logged card.';
   if (t.evc <= 0) s += ' Heads up: if only half the edge is real, this one loses money over time, so it is a tiny-stake or pass.';
   else if (t.conf === 'Low') s += ' Confidence is Low (small samples this early), so keep the stake small.';
   if (o.sgp && new Set(t.legs.map(function(p){ return p.game_id; })).size < t.n) s += ' Same-game legs are linked, so a sportsbook may price this lower than my multiplied odds.';
   return s;
 }
+function boardChips(){
+  /* example questions built from tonight's real board, so the first tap already shows what Ace can do */
+  var out = ['Best 3-leg parlay', 'Safest play tonight'], pool = acePool().filter(function(p){ return !started(p); });
+  var pp = pool.filter(function(p){ return p.type === 'prop'; }).sort(function(a, b){ return b.edge - a.edge; })[0];
+  if (pp){ var ln = lastName(pp.player || ''); if (ln) out.push('Is ' + ln.replace(/^./, function(c){ return c.toUpperCase(); }) + ' ' + pp.side + ' ' + pp.line + ' good?'); }
+  var g = (S.latest.games || []).filter(function(x){ return x.state === 'pre'; })[0];
+  if (g){ var nm = String(g.home.name || g.home.abbr).split(' ').pop(); out.push(nm + ' props, no unders'); }
+  out.push('Plus-money 2-leg, off the card');
+  return out;
+}
 function chipsFor(kind){
+  if (kind === 'start' || kind === 'none'){ try { return boardChips(); } catch(e){} }
   return ({
-    ticket:['Make it safer', 'Bigger payout', 'Add a leg', 'Another one', 'Why these?'],
+    ticket:['Make it safer', 'Bigger payout', 'Add a leg', 'Another one', 'Why these?', 'Only props'],
     list:['Build a parlay from these', 'Safest play tonight', 'Strong signals'],
+    player:['Build a parlay with him', 'His other props', 'Safest play tonight'],
     start:['Best 3-leg parlay', 'Safest play tonight', 'Strong signals', 'Longshot +800', 'How are we doing?'],
     none:['Safest play tonight', 'Strong signals', 'Best 3-leg parlay']
   })[kind] || [];
+}
+
+/* ---- checking one exact bet: "Tatum over 26.5 points", "can Jokic get 12 rebounds", "Brunson o24.5 at -120" ---- */
+function statVals(g, pid, stat){
+  var lg = (g.plogs || {})[pid], ix = STAT_IX[stat]; if (!lg || !ix) return [];
+  return (lg.log || []).map(function(r){ return ix.reduce(function(s, i){ return s + (+r[i] || 0); }, 0); });
+}
+function aceEval(o, ix){
+  var pid = o.pids[0], pl = ix.players.filter(function(p){ return p.pid === pid; })[0];
+  if (!pl) return {text:'I did not find that player on tonight\'s slate.', chips:chipsFor('start')};
+  var g = gameById(pl.gid), rows = (g.prop_rows || []).filter(function(r){ return String(r.pid) === pid && r.model; });
+  var line = o.num, side = o.numSide || o.side || 'over', stat = o.stats[0];
+  if (!stat && line != null && rows.length){
+    /* no stat named: the posted line closest to the number, points on a tie */
+    stat = rows.slice().sort(function(a, b){ return Math.abs(a.line - line) / Math.max(1, a.line) - Math.abs(b.line - line) / Math.max(1, b.line) || (a.stat === 'points' ? -1 : 1); })[0].stat;
+  }
+  if (!stat && line == null && rows.length){ var br = rows.filter(function(r){ return !r.skipped; }).sort(function(a, b){ return bestSide(b).edge - bestSide(a).edge; })[0]; if (br){ stat = br.stat; if (!o.side && !o.numSide) side = bestSide(br).side; } }
+  stat = stat || 'points';
+  if (line == null){ var r0 = rows.filter(function(r){ return r.stat === stat; })[0]; if (r0) line = r0.line; }
+  ACE.ctx = ACE.ctx || {}; ACE.ctx.player = pid; ACE.ctx.game = g.id;
+  var nm = pl.name, opp = pl.team === g.home.abbr ? g.away.abbr : g.home.abbr, vals = statVals(g, pid, stat), r = rows.filter(function(x){ return x.stat === stat; })[0];
+  var bd = (g.player_board || []).filter(function(b){ return String(b.pid) === pid; })[0], lines = [], legs = [];
+  if (line == null) return acePlayers(o, ix);
+  var label = nm + ' ' + side + ' ' + line + ' ' + (LBL[stat] || stat);
+  if (bd && bd.inj) lines.push('Injury tag first: ' + nm + ' is listed ' + bd.inj + ' tonight. Nothing below matters if he sits.');
+  var est = null, how = '';
+  if (r && !r.skipped){
+    var m = r.model, sd = m.sd || Math.max(1.5, .35 * m.mean), over = side === 'over';
+    var posted = leanPick(g, r, side), pk = (S.latest.picks || []).filter(function(x){ return legKey(x) === legKey(posted); })[0];
+    if (Math.abs(line - r.line) < .01){
+      var use = pk || posted; est = use.est;
+      lines.push(label + ' at ' + fo(use.odds) + (use.book ? ' (' + use.book + ')' : '') + ': the model gives it ' + pct(use.est) + ' against ' + pct(use.implied) + ' implied, an edge of ' + fe(use.edge) + ' points.' + (pk ? ' It is on today\'s card.' : use.edge > 0 ? ' It did not make the card (thin edge or low confidence), so treat it as a lean.' : ' I would pass at this price.'));
+      if (use.edge > 0) legs.push(use);
+      else { var other = leanPick(g, r, over ? 'under' : 'over'); if (other.edge > 0){ lines.push('The other side reads better: ' + other.label + ' at ' + fo(other.odds) + ', ' + pct(other.est) + ' vs ' + pct(other.implied) + ' implied.'); legs.push(other); } }
+    } else {
+      /* a line the books are not hanging: move the model's chance along its own spread of outcomes */
+      var shift = function(L){ var z = (L + (L % 1 ? 0 : .5) - m.mean) / sd; return over ? 1 - phiN(z) : phiN(z - (L % 1 ? 0 : 1 / sd)); };
+      var now = shift(line), atPost = shift(r.line);
+      est = Math.max(.02, Math.min(.98, posted.est + (now - atPost)));
+      how = ' (a rough read: the books post ' + r.line + ', so I moved the model\'s chance along its range of outcomes)';
+      lines.push(label + ': about ' + pct(est) + ' by the model' + how + '. That is worth about ' + fo(amer(1 / est)) + ' as a fair price, so ' + (est > .5 ? 'anything better than ' + fo(amer(1 / est)) + ' is value.' : 'it only makes sense at ' + fo(amer(1 / est)) + ' or longer.'));
+      var post = pk || posted;
+      lines.push('Posted line for comparison: ' + post.label + ' at ' + fo(post.odds) + ', ' + pct(post.est) + ' vs ' + pct(post.implied) + ' implied (edge ' + fe(post.edge) + ').');
+      if (post.edge > 0) legs.push(post);
+    }
+    if (o.numOdds != null && est != null){ var ed = est - impl(o.numOdds); lines.push('At ' + fo(o.numOdds) + ' that is an edge of ' + fe(ed) + ' points: ' + (ed >= .03 ? 'worth a look.' : ed > 0 ? 'thin, a small stake at most.' : 'a pass.')); }
+    lines.push('Model projection ' + m.mean + ' ' + (LBL[stat] || stat) + ' (season ' + m.season + ', last 5 ' + m.l5 + '), ' + (m.min_l5 ? m.min_l5 + ' minutes lately' : '') + (r.rm_note ? '; ' + r.rm_note : '') + (m.adv_note ? '; ' + m.adv_note : '') + '.');
+  } else if (r && r.skipped){
+    lines.push('There is a line on ' + nm + ' ' + (LBL[stat] || stat) + ' tonight, but the model ruled it out (injury tag or the analysis flagged a problem), so I would not touch it.');
+  } else {
+    var pj = bd && bd.proj && bd.proj[stat], mean = pj ? pj[0] : vals.length ? vals.reduce(function(a, b){ return a + b; }, 0) / vals.length : null;
+    if (mean == null) return {text:'I have no line and no game log for ' + nm + ' ' + (LBL[stat] || stat) + ' tonight, so there is nothing honest to say about ' + line + '.', chips:chipsFor('start')};
+    var sd2 = vals.length >= 5 ? Math.sqrt(vals.reduce(function(s, v){ return s + (v - mean) * (v - mean); }, 0) / (vals.length - 1)) : Math.max(1.2, .38 * mean + 1);
+    var z2 = (line + (line % 1 ? 0 : .5) - mean) / sd2, raw = side === 'over' ? 1 - phiN(z2) : phiN(z2);
+    est = .5 + .6 * (raw - .5);
+    lines.push('No book has a line on ' + nm + ' ' + (LBL[stat] || stat) + ' tonight, so this is a raw read with no market to check against. Projection ' + Math.round(mean * 10) / 10 + '; ' + label + ' comes out around ' + pct(est) + ', worth about ' + fo(amer(1 / est)) + '. Shrunk hard toward a coin flip because nothing priced backs it up.');
+  }
+  if (vals.length){
+    var hit = vals.filter(function(v){ return side === 'over' ? v > line : v < line; }).length, last = vals.slice(-8);
+    lines.push('Last ' + last.length + ' games: ' + last.join(', ') + '. ' + (side === 'over' ? 'Over' : 'Under') + ' ' + line + ' in ' + hit + ' of ' + vals.length + ' this season' + (vals.length < 8 ? ' (small sample)' : '') + '.');
+  }
+  lines.push(nm + ' plays ' + (pl.team === g.home.abbr ? 'vs ' : 'at ') + opp + (g.tip ? ' · ' + g.tip : '') + '.');
+  var eq = JSON.parse(JSON.stringify(o)); eq.pids = [pid]; eq.stats = [stat]; eq.num = line; eq.numSide = side;
+  return {text:lines.join('\n'), legs:legs, chips:['Build a parlay with him', 'His other props', side === 'over' ? 'What about the under?' : 'What about the over?'], ctx:{player:pid, game:g.id, evalQ:eq, kind:'eval'}};
+}
+function aceStake(o){
+  var pu = planUnitNow(), prev = ACE.ctx && ACE.ctx.last;
+  if (!pu) return {text:'Bet sizes work in units: 1 unit is a fixed slice of your bankroll, usually 1 to 2%. The card stakes each pick 0.5 to 2 units by edge and confidence, and parlays at most 1 unit. Set your bankroll on the Plan tab and I will turn every pick into a dollar amount, with a daily limit so a bad night stays small.', chips:['Open the plan', 'Safest play tonight', 'What is a unit?']};
+  var pl = planGet(), bk = planBank(pl), cap = planCap(pl, bk.now, pu);
+  var s = 'Your plan: bankroll ' + money(bk.now) + ', 1 unit = ' + money(pu) + ' (' + unitTxt(pl) + '). Card picks are 0.5 to 2 units, so ' + money(stakeRound(pu * .5)) + ' to ' + money(stakeRound(pu * 2)) + ' each, and no more than ' + money(cap) + ' in a day.';
+  if (prev && prev.t){ s += suggestU(prev.t) ? ' For the ' + (prev.t.n === 1 ? 'single' : prev.t.n + '-leg parlay') + ' I just built: ' + suggestU(prev.t) + 'u, ' + money(stakeRound(pu * suggestU(prev.t))) + '.' : ' The ticket I just built does not hold up if only half the edge is real, so the plan says pass on it.'; }
+  return {text:s, chips:['Open the plan', 'Safest play tonight', 'Best 3-leg parlay']};
 }
 
 /* ---- the built-in brain ---- */
@@ -3111,13 +3466,68 @@ function glossHit(low){
     return new RegExp('^(?:(?:what(?:\'?s| is| are| does)?|whats)\\s+(?:an?\\s+|the\\s+)?' + key + '(?:\\s+mean|\\s+work)?|(?:explain|define)\\s+(?:an?\\s+|the\\s+)?' + key + '|' + key + '\\s+(?:means?|meaning))$').test(s);
   })[0];
 }
+var FOLLOW_RX = /^(now|then|ok so|okay so|and|also|but|make it|make that|change|swap|replace|only|just|instead|same but|same thing|with|without|no|add|remove|drop|more|less|fewer|switch|except)\b/;
+function hasFilters(o){ return !!(o.gids.length || o.pids.length || o.stats.length || o.types.length || o.props != null || o.side || o.target || o.oddsMin != null || o.oddsMax != null || o.dog || o.fav || o.venue || o.when || o.offCard || o.sigOnly || o.minConf || o.tier || o.hot || o.matchup || o.random || o.sgp || (o.notTeams || []).length || (o.notPids || []).length || (o.notStats || []).length || (o.notTypes || []).length); }
+/* a follow-up ("only props", "without Tatum", "make it 4 legs", "add a Celtics leg") changes the last ticket instead of starting over */
+function aceFollow(prev, o, low, ix){
+  var q2 = JSON.parse(JSON.stringify(prev.o)), b = blankQ(); for (var k in b) if (!(k in q2)) q2[k] = b[k];
+  q2.exclude = q2.exclude || {}; q2.must = null; q2.random = o.random;
+  var tag = 'tweak';
+  ['stats', 'types', 'gids', 'teams'].forEach(function(k){ if (o[k].length) q2[k] = o[k].slice(); });
+  ['notTeams', 'notPids', 'notStats', 'notTypes'].forEach(function(k){ (o[k] || []).forEach(function(x){ if (q2[k].indexOf(x) < 0) q2[k].push(x); }); });
+  ['side', 'minConf', 'when', 'venue', 'tier', 'oddsMin', 'oddsMax'].forEach(function(k){ if (o[k] != null) q2[k] = o[k]; });
+  ['dog', 'fav', 'offCard', 'sigOnly', 'hot', 'matchup', 'sgp'].forEach(function(k){ if (o[k]) q2[k] = true; });
+  if (o.props != null) q2.props = o.props;
+  if (o.target) q2.target = o.target; else if (o.n != null || o.style) q2.target = null;
+  if (o.safer) q2.style = 'safe'; else if (o.bigger) q2.style = 'long'; else if (o.style) q2.style = o.style;
+  if (o.n != null) q2.n = o.n; else if (o.add) q2.n = Math.min(6, prev.t.n + 1); else if (o.fewer) q2.n = Math.max(1, prev.t.n - 1); else if (!q2.target) q2.n = prev.t.n;
+  if (o.props === true && !o.types.length) q2.types = [];
+  if (o.types.length) q2.props = null;
+  if (o.again){ tag = 'again'; prev.t.legs.forEach(function(p){ q2.exclude[legKey(p)] = 1; }); }
+  var onlySize = !o.again && !o.style && !o.safer && !o.bigger && !hasFilters(o);
+  if (onlySize && q2.n > prev.t.n){ q2.must = prev.t.legs.slice(); return aceBuild(q2, ix, 'add'); }
+  if (onlySize && q2.n < prev.t.n){
+    var keep = prev.t.legs.slice().sort(function(a, b){ return b.est - a.est; }).slice(0, q2.n);
+    var t3 = mkTicket(prev.t.legs.filter(function(p){ return keep.indexOf(p) >= 0; })), o3 = q2; o3.must = null;
+    return {tickets:[{t:t3, o:o3, title:null}], text:'Dropped the shakiest leg' + (prev.t.n - q2.n > 1 ? 's' : '') + '. ' + ticketWords(t3, o3), chips:chipsFor('ticket'), ctx:{t:t3, o:o3, kind:'ticket'}};
+  }
+  var keepRest = function(drop){ q2.must = prev.t.legs.filter(function(p, i){ return i !== drop; }); };
+  /* "add Tatum" / "add a Celtics leg": keep every leg, add one that fits */
+  if (/^(with|and|also|plus)\b/.test(low) && (o.pids.length || o.gids.length)) o.addWord = true;
+  if (o.addWord && (o.pids.length || o.gids.length || o.stats.length || o.types.length || o.add)){
+    tag = 'add'; q2.must = prev.t.legs.slice(); q2.n = Math.min(6, prev.t.n + Math.max(1, o.pids.length)); q2.pids = o.pids.slice();
+    if (o.gids.length && prev.t.legs.some(function(p){ return o.gids.indexOf(p.game_id) >= 0; })) q2.sgp = true;
+    var res = aceBuild(q2, ix, tag);
+    /* the team or player asked for was for the new leg only; later tweaks work on the whole board again */
+    if (res.ctx && res.ctx.o){ var ro = JSON.parse(JSON.stringify(res.ctx.o)); ro.gids = (prev.o.gids || []).slice(); ro.teams = (prev.o.teams || []).slice(); ro.pids = []; ro.stats = (prev.o.stats || []).slice(); ro.types = (prev.o.types || []).slice(); ro.sgp = !!prev.o.sgp; ro.must = null; res.ctx.o = ro; }
+    return res;
+  }
+  /* "without Tatum", "swap the second leg", "replace the Celtics leg" */
+  var hitPrev = -1;
+  prev.t.legs.forEach(function(p, i){
+    if (p.type === 'prop' && (o.notPids || []).indexOf(String(p.pid)) >= 0) hitPrev = i;
+    var lt = legTeam(p); if ((o.notTeams || []).length && (lt ? o.notTeams.indexOf(lt) >= 0 : o.notTeams.indexOf(p.home) >= 0 || o.notTeams.indexOf(p.away) >= 0)) hitPrev = i;
+  });
+  if (o.swap || hitPrev >= 0){
+    tag = 'swap';
+    var drop = hitPrev >= 0 ? hitPrev : null, m = /\bleg (\d)\b|\b(first|second|third|fourth|fifth|last|weakest|worst|shakiest)\b/.exec(low);
+    if (drop == null && m){ var ord = {first:0, second:1, third:2, fourth:3, fifth:4}; drop = m[1] ? parseInt(m[1], 10) - 1 : m[2] === 'last' ? prev.t.legs.length - 1 : ord[m[2]] != null ? ord[m[2]] : null; }
+    if (drop == null) prev.t.legs.forEach(function(p, i){ var ln = lastName(p.player || ''); if ((ln.length >= 3 && new RegExp('\\b' + ln + '\\b').test(low)) || (p.type !== 'prop' && (new RegExp('\\b' + p.away.toLowerCase() + '\\b').test(low) || new RegExp('\\b' + p.home.toLowerCase() + '\\b').test(low)))) drop = i; });
+    if (drop == null || !prev.t.legs[drop]) drop = prev.t.legs.map(function(p, i){ return [p.est, i]; }).sort(function(a, b){ return a[0] - b[0]; })[0][1];
+    q2.exclude[legKey(prev.t.legs[drop])] = 1;
+    if (!o.stats.length && !o.types.length && o.props == null && !o.side) keepRest(drop);
+    q2.n = prev.t.n;
+  }
+  return aceBuild(q2, ix, tag);
+}
+if (/[?&]acedebug\b/.test(location.search)) window.__ace = {parse:function(q){ return aceParse(q, aceIndex()); }, ctx:function(){ return ACE.ctx; }};
 function aceLocal(q, o, ix){
   var L = S.latest, low = o.low.trim();
   if (!L) return {text:'The slate has not loaded yet. Give it a second and ask again.'};
   if (RG_RX.test(low))
     return {text:'Hold up. If this money matters for bills, or you are trying to win back a loss, the right bet is no bet tonight. No model beats variance on a short run, and I would rather you keep the money. If gambling is getting hard to control, free confidential help is open all day in the US at 1-800-GAMBLER. If you still want to look at the board for fun, I can show small, sensible plays.', chips:['Safest play tonight', 'How are we doing?']};
-  if (/^(hi|hey|yo|sup|hello|howdy|help|what can you do|how do(es)? (this|it) work|who are you|what are you)\b/.test(low) && low.split(' ').length < 9)
-    return {text:'I\'m Ace, your betting buddy. I read tonight\'s whole board (every pick, prop, signal and injury note) and build plays around what you ask for. Try "safest 2-leg parlay", "best prop on the Rockets", "longshot +800", "a 3-leg using only strong signals", or just tell me a player. I show the model\'s chance and the price for every leg, because the numbers matter more than my opinion, and none of it is a guarantee.', chips:chipsFor('start')};
+  if (/^(hi|hey|yo|sup|hello|howdy|help|what can you do|how do(es)? (this|it|you) work|who are you|what are you|what can i ask|examples?)\b/.test(low) && low.split(' ').length < 9)
+    return {text:'I\'m Ace. I read tonight\'s whole board, every pick, prop, spread, total and injury note, and build exactly what you ask for. Be as specific as you like:\n• "3-leg parlay, Celtics props only, no unders"\n• "plus-money 2-leg, nothing from the Knicks game"\n• "is Brunson over 26.5 points good?" or "can Jokic get 12 rebounds?"\n• "best rebounds props on the late games"\n• "safest single, high confidence only"\n• "underdog moneylines", "sleepers off the card", "surprise me +600"\n• then tweak it: "without Tatum", "make it 4 legs", "add a Lakers leg", "only overs"\nEvery leg shows the model\'s chance and the price. None of it is a guarantee.', chips:chipsFor('start')};
   if (/^(thanks|thank you|thx|ty|cool|nice|great|awesome|perfect|got it|ok|okay)\b/.test(low) && low.split(' ').length < 6)
     return {text:pick_(['Anytime. Keep stakes small and have fun with it.', 'You got it. Want another angle on tonight\'s board?', 'Glad to help. Check injuries again right before tip.']), chips:chipsFor(ACE.ctx && ACE.ctx.last ? 'ticket' : 'start')};
   var gk = glossHit(low);
@@ -3125,78 +3535,84 @@ function aceLocal(q, o, ix){
   if (/\block\b/.test(low) && /\b(any|is there|are there|sure|guarantee\w*|certain)\b/.test(low)) return {text:GLOSS.lock, chips:['Safest play tonight', 'Strong signals']};
   if (/\b(record|track record|how (are|have) (we|you|the picks?)|how'?s? (the )?(site|model|bot)|win rate|roi|are (you|the picks) (any good|good|legit|hitting)|is this legit)\b/.test(low) && !o.parlay) return aceRecord();
   if (/\b(review|check|rate|grade|look at)\b.*\b(slip|ticket)\b|\bmy slip\b|\bmy ticket\b/.test(low)) return aceReview(o);
-  if (/^(why|explain|reason|how come|justify|break (it )?down)\b|\bwhy these\b|\bwhy (did|do) you\b/.test(low) && ACE.ctx && ACE.ctx.last && !o.pids.length && !o.gids.length) return aceWhy(ACE.ctx.last);
-  if (/\b(what games|which games|tonight'?s? (games|slate)|the slate|who'?s playing|games (today|tonight)|schedule)\b/.test(low)) return aceSlate();
-  if (/\b(injur\w*|who'?s out|questionable|doubtful)\b/.test(low) && !o.parlay) return aceInjuries(o);
-  /* "Safest play tonight", "best prop on the Rockets": one bet */
-  var plural = /\b(plays|picks|bets|props|legs|options|ideas)\b/.test(low);
-  if (o.n == null && !o.parlay && !o.multi && !plural && /\b(play|pick|bet|prop|lock|leg|one)\b/.test(low)) o.single = true;
-  /* a tweak of the last ticket */
+  if (/\bhow much (should|do|to|would|can)\b.*\b(bet|wager|stake|put|risk)\b|\b(unit size|bet size|bet sizing|stake size|how big|my bankroll|my unit)\b/.test(low)) return aceStake(o);
   var prev = ACE.ctx && ACE.ctx.last;
-  var follow = prev && !o.pids.length && !o.gids.length && !o.stats.length && !o.types.length && o.props == null && !o.target && !o.single &&
-    (o.safer || o.bigger || o.add || o.fewer || o.again || o.swap || (o.style && !o.parlay && o.n == null));
-  if (follow){
-    var q2 = JSON.parse(JSON.stringify(prev.o)); q2.exclude = q2.exclude || {}; q2.must = null; q2.target = null;
-    if (o.safer) q2.style = 'safe'; else if (o.bigger) q2.style = 'long'; else if (o.style) q2.style = o.style;
-    if (o.n != null) q2.n = o.n; else if (o.add) q2.n = Math.min(6, prev.t.n + 1); else if (o.fewer) q2.n = Math.max(1, prev.t.n - 1); else q2.n = prev.t.n;
-    var tag = 'tweak';
-    if (o.again){ tag = 'again'; prev.t.legs.forEach(function(p){ q2.exclude[legKey(p)] = 1; }); }
-    if (o.swap){
-      tag = 'swap';
-      var drop = null, m = /\bleg (\d)\b|\b(first|second|third|fourth|fifth|last)\b/.exec(low);
-      if (m){ var ord = {first:0, second:1, third:2, fourth:3, fifth:4}; drop = m[1] ? parseInt(m[1], 10) - 1 : (m[2] === 'last' ? prev.t.legs.length - 1 : ord[m[2]]); }
-      else prev.t.legs.forEach(function(p, i){ var ln = lastName(p.player || ''); if ((ln.length >= 4 && low.indexOf(ln) >= 0) || (p.type !== 'prop' && (new RegExp('\\b' + p.away.toLowerCase() + '\\b').test(low) || new RegExp('\\b' + p.home.toLowerCase() + '\\b').test(low)))) drop = i; });
-      if (drop == null || !prev.t.legs[drop]) drop = prev.t.legs.map(function(p, i){ return [p.est, i]; }).sort(function(a, b){ return a[0] - b[0]; })[0][1];
-      q2.exclude[legKey(prev.t.legs[drop])] = 1;
-      q2.must = prev.t.legs.filter(function(p, i){ return i !== drop; });
-      q2.n = prev.t.n;
-    }
-    return aceBuild(q2, ix, tag);
+  if (/^(why|explain|reason|how come|justify|break (it )?down)\b|\bwhy these\b|\bwhy (did|do) you\b/.test(low) && prev && !o.pids.length && !o.gids.length) return aceWhy(prev);
+  if (/\b(what games|which games|tonight'?s? (games|slate)|the slate|who'?s playing|games (today|tonight)|schedule)\b/.test(low)) return aceSlate();
+  if (/\b(injur\w*|who'?s out|questionable|doubtful|ruled out|is \w+ playing)\b/.test(low) && !o.parlay && o.num == null) return aceInjuries(o);
+  /* "can Jokic get 12 rebounds" when Jokic is not playing tonight */
+  var notHere = function(w){ return {text:'I don\'t see "' + w + '" in tonight\'s games. I can only price players who play tonight (' + S.latest.games.map(function(g){ return g.away.abbr + '-' + g.home.abbr; }).join(', ') + '). Check the spelling, or ask about someone on those teams.', chips:chipsFor('start')}; };
+  var NOT_NAME = /^(he|it|this|that|there|the|they|we|you|i|anyone|anybody|someone|everyone|nobody|any|anything|something|best|top|good|safe|safest|which|what|who|some|more|other|another|late|early|home|road|star|stars|role|cheap|these|those|same|game|games|team|teams|his|their|my|your|all|every|each|one|two|three|four|five|first|last|next|over|under|plus|both|either|someone)$/;
+  if (!o.pids.length && (o.missNames || []).length) return notHere(o.missNames[0]);
+  if (!o.pids.length && !o.gids.length && !o.teams.length){
+    var nm_ = /\b(?:can|will|does|should|would|could)\s+([a-z][a-z'.-]{2,})\s+(?:get|score|have|grab|hit|go|drop|put|record|make|reach)\b/.exec(low) || /^(?:is\s+)?([a-z][a-z'.-]{3,})(?:'?s)?\s+(?:over|under|o\d|u\d)\s?\d/.exec(low);
+    if (nm_ && !COMMON_SET[nm_[1]] && !NICK[nm_[1]] && !NOT_NAME.test(nm_[1])) return notHere(nm_[1]);
   }
-  var wantsBuild = o.parlay || o.single || o.style || o.target || o.stats.length || o.types.length || o.props != null || o.side;
-  if (o.pids.length && !o.parlay && !o.single && !o.style && !o.target && !o.multi) return acePlayers(o, ix);
+  /* one exact bet: a player and a number ("Tatum over 26.5", "can Jokic get 12 rebounds"), or "the other side" of the last one */
+  if (/^(what|how) about the (over|under)\b/.test(low) && ACE.ctx && ACE.ctx.kind === 'eval' && ACE.ctx.evalQ){ var eq = JSON.parse(JSON.stringify(ACE.ctx.evalQ)); eq.numSide = eq.side = /over/.test(low) ? 'over' : 'under'; return aceEval(eq, ix); }
+  if (o.pids.length && o.num != null && !o.parlay) return aceEval(o, ix);
+  if (o.pids.length === 1 && !o.parlay && o.count == null && /\b(good bet|good|worth it|like (it|that|him)|should i|smash|hammer|tail|bet on|take)\b/.test(low)) return aceEval(o, ix);
+  if (!o.pids.length && o.num != null && (o.stats.length || o.props)){ if (o.numSide === 'under') o.lineMax = o.num; else o.lineMin = o.num; o.side = o.side || o.numSide; o.props = true; }
+  if (/\b(other props|his props|all (his|of his) (props|lines)|his lines)\b/.test(low) && ACE.ctx && ACE.ctx.player){ o.pids = [ACE.ctx.player]; o.stats = []; return acePlayers(o, ix); }
+  /* "who wins Knicks Celtics", "Celtics spread": that game's markets */
+  if (o.gids.length && !o.parlay && !o.single && o.count == null && !o.pids.length && (o.types.length || /\b(who wins|winner|who covers|the spread|the total|pick (the|this|that) game|what do you (like|think) (in|about|of))\b/.test(low))) return aceGame(o);
+  /* a follow-up to the last ticket */
+  var plural = /\b(plays|picks|bets|props|legs|options|ideas)\b/.test(low);
+  var tweak = o.safer || o.bigger || o.add || o.fewer || o.again || o.swap || (o.notPids || []).length || (o.notTeams || []).length;
+  var shortMsg = low.split(' ').length <= 8;
+  var fresh = /\b(build|make|give|get|show|find) me\b|\bnew (parlay|ticket)\b/.test(low) || (o.parlay && o.n != null && !FOLLOW_RX.test(low)) || (o.pron === 'player' && o.parlay);
+  if (prev && !fresh && !o.single && o.count == null && (FOLLOW_RX.test(low) || (shortMsg && tweak) || (shortMsg && /\b(only|instead|too|as well)\b/.test(low) && hasFilters(o)) || (o.style && !o.parlay && o.n == null && shortMsg && !hasFilters(o))))
+    return aceFollow(prev, o, low, ix);
+  if (o.n == null && !o.parlay && !o.multi && !plural && o.count == null && /\b(play|pick|bet|prop|lock|leg|one)\b/.test(low)) o.single = true;
+  var wantsBuild = o.parlay || o.single || o.style || o.target || o.stats.length || o.types.length || o.props != null || o.side || o.count != null || hasFilters(o);
+  if (o.pids.length && !o.parlay && !o.single && !o.style && !o.target && !o.multi && o.count == null) return acePlayers(o, ix);
   if (o.gids.length && !wantsBuild && !o.sigOnly) return aceGame(o);
-  if (o.sigOnly && !o.parlay && !o.single && !o.style) return aceSignals(o);
-  var buildy = wantsBuild || o.pids.length || o.gids.length || plural || /\b(bet|bets|pick|picks|play|plays|lock|prop|props|odds|payout|best|top|recommend|suggest|give me|build|make me|got any|what do you like|what'?s good|who do you like|favorite|tonight|should i)\b/.test(low);
-  if (!buildy) return {text:pick_(['I did not catch a bet in that. Try "safest 2-leg parlay", "best prop on a team", or a player\'s name.', 'Not sure what you want me to build there. Ask me for a parlay, a single, a player, or a team and I will work from tonight\'s board.']), chips:chipsFor('start')};
-  if (o.n == null && !o.parlay && !o.multi && !o.target && o.style !== 'long'){
-    if (plural) return aceTop(o);
-    o.n = 1;
-  }
+  if (o.sigOnly && !o.parlay && !o.single && !o.style && o.count == null && !hasFilters(Object.assign({}, o, {sigOnly:false}))) return aceSignals(o);
+  var buildy = wantsBuild || o.pids.length || o.gids.length || plural || /\b(bet|bets|pick|picks|play|plays|lock|prop|props|odds|payout|best|top|recommend|suggest|give me|build|make me|got any|what do you like|what'?s good|who do you like|favorite|tonight|should i|anything|something)\b/.test(low);
+  if (!buildy && !o.pids.length && !o.gids.length){ var bw = low.replace(/[?!.]+$/, ''); if (/^[a-z'.-]{4,}( [a-z'.-]{3,})?$/.test(bw) && bw.split(' ').every(function(w){ return !COMMON_SET[w] && !NOT_NAME.test(w) && !NICK[w]; })) return notHere(bw); }
+  if (!buildy) return {text:pick_(['I did not catch a bet in that. Name a player, a team, a stat, a number of legs or a price, like "Celtics props, overs only" or "is Tatum over 26.5 good?".', 'Not sure what you want me to build there. Tell me a player, a team, a stat or a payout, and I will work from tonight\'s board. Type "help" for examples.']), chips:chipsFor('start')};
+  if (o.count != null || (o.n == null && !o.parlay && !o.multi && !o.target && o.style !== 'long' && (plural || (o.offCard && !o.single)))) return aceTop(o);
+  if (o.n == null && !o.parlay && !o.multi && !o.target && o.style !== 'long') o.n = 1;
   if (o.parlay && o.n == null && !o.multi && !o.style && !o.target) o.n = 3;
   return aceBuild(o, ix, null);
 }
 function aceTop(o){
-  var pool = acePool(), seen = {}, list = aceCands(o, pool).filter(function(p){ if (seen[p.game_id]) return false; seen[p.game_id] = 1; return true; }).slice(0, 4);
-  if (!list.length) return {text:'Nothing on tonight\'s board fits that with a positive edge. I would rather say that than force a bet.', chips:chipsFor('none')};
-  return {text:'The numbers like these the most right now (one per game, best first). Tap a card to see why, or ask me to build a ticket from them:', legs:list, chips:['Build a parlay from these', 'Safest play tonight', 'Strong signals'], ctx:{listLegs:list}};
+  var pool = acePool(), seen = {}, n = o.count || 4, oneGame = o.gids.length === 1 || o.pids.length;
+  var list = aceCands(o, pool).filter(function(p){ var k = oneGame ? mkey(p) : p.game_id; if (seen[k]) return false; seen[k] = 1; return true; });
+  if (list.length < n && !oneGame){ var have = {}; list.forEach(function(p){ have[legKey(p)] = 1; }); aceCands(o, pool).forEach(function(p){ if (list.length < n && !have[legKey(p)] && !list.some(function(x){ return mkey(x) === mkey(p); })){ list.push(p); have[legKey(p)] = 1; } }); }
+  list = list.slice(0, n);
+  var asked = aceAsked(o);
+  if (!list.length) return {text:'Nothing on tonight\'s board with a positive edge fits that' + (asked.length ? ' (' + asked.join(', ') + ')' : '') + '. I would rather say that than force a bet.', chips:chipsFor('none')};
+  var by = o.hot ? 'best recent hit rate' : o.matchup ? 'best matchup' : o.style === 'safe' ? 'most likely to hit' : o.style === 'value' ? 'biggest edge' : 'best mix of edge and confidence';
+  return {text:(list.length < n ? 'Only ' + list.length + ' fit' : 'Top ' + list.length) + (asked.length ? ' for ' + asked.join(', ') : '') + ', sorted by ' + by + (oneGame ? '' : ', one per game where possible') + '. Tap a card for the full breakdown, or ask me to build a ticket from them:', legs:list, chips:['Build a parlay from these', 'Safest play tonight', 'Something off the card'], ctx:{listLegs:list}};
 }
 function aceBuild(o, ix, tag){
   var pool = acePool(), note = '';
-  if (o.gids.length === 1 && (o.n || 0) > 1) o.sgp = true;
-  if (o.pids.length && (o.parlay || o.single) && !o.must){
-    var must = [], miss = [];
+  if (o.gids.length === 1 && (o.n || 0) > 1 && !(o.must && o.must.length)) o.sgp = true;
+  if (o.pids.length && (o.parlay || o.single || tag === 'add')){
+    var must = (o.must || []).slice(), miss = [];
     o.pids.forEach(function(pid){
-      var c = pool.filter(function(p){ return p.type === 'prop' && String(p.pid) === pid && p.edge > 0 && !started(p) && (!o.stats.length || o.stats.indexOf(p.stat) >= 0); }).sort(function(a, b){ return aceScore(b, o.style || 'bal') - aceScore(a, o.style || 'bal'); })[0];
+      if (must.some(function(p){ return p.type === 'prop' && String(p.pid) === pid; })) return;
+      var c = pool.filter(function(p){ return p.type === 'prop' && String(p.pid) === pid && p.edge > 0 && !started(p) && (!o.stats.length || o.stats.indexOf(p.stat) >= 0) && (!o.side || p.side === o.side); }).sort(function(a, b){ return aceScore(b, o.style || 'bal', o) - aceScore(a, o.style || 'bal', o); })[0];
       if (c) must.push(c); else { var pl = ix.players.filter(function(x){ return x.pid === pid; })[0]; if (pl) miss.push(pl.name); }
     });
+    if (must.some(function(p, i){ return must.some(function(q, j){ return j !== i && q.game_id === p.game_id; }); })) o.sgp = true;
     o = JSON.parse(JSON.stringify(o)); o.pids = []; o.must = must;
-    if (miss.length) note = 'The model does not see an edge on ' + miss.join(' or ') + ' tonight, so I left ' + (miss.length > 1 ? 'them' : 'him') + ' out. ';
+    if (tag === 'add'){ o.gids = []; o.teams = []; o.stats = []; }
+    if (miss.length) note = 'The model does not see an edge on ' + miss.join(' or ') + (o.stats.length ? ' ' + o.stats.map(function(s){ return LBL[s]; }).join('/') : '') + ' tonight, so I left ' + (miss.length > 1 ? 'them' : 'him') + ' out. ';
+    if (o.n != null && o.n < must.length) o.n = must.length;
   }
-  var cands = aceCands(o, pool), asked = [];
-  if (o.teams.length) asked.push(o.teams.join('/'));
-  if (o.stats.length) asked.push(o.stats.map(function(s){ return LBL[s]; }).join('/'));
-  if (o.side) asked.push(o.side + 's');
-  if (o.sigOnly) asked.push('strong patterns');
+  var cands = aceCands(o, pool), asked = aceAsked(o);
   if (!cands.length && !(o.must && o.must.length)){
     var why = !pool.length ? 'There are no priced bets on the board right now.' : 'Nothing on tonight\'s board with a positive edge fits that' + (asked.length ? ' (' + asked.join(', ') + ')' : '') + ', or those games have started.';
-    var near = aceCands({types:[], stats:[], gids:[], pids:[], props:null, exclude:{}, side:null, minConf:null, sigOnly:false}, pool).slice(0, 3);
+    var relax = JSON.parse(JSON.stringify(o)); ['oddsMin', 'oddsMax', 'side', 'minConf', 'when', 'venue', 'tier'].forEach(function(k){ relax[k] = null; }); relax.sigOnly = relax.offCard = relax.hot = relax.dog = relax.fav = false;
+    var near = aceCands(relax, pool).slice(0, 3); if (!near.length) near = aceCands(blankQ(), pool).slice(0, 3);
     return {text:note + why + ' I would rather say "no" than force a bet.' + (near.length ? ' The closest things I have are below.' : ''), legs:near, chips:chipsFor('none')};
   }
   var variants = [];
   if (o.multi && o.n == null && !o.style && !o.target){
-    [['safe', 'Safer'], ['bal', 'Balanced'], ['long', 'Bigger payout']].forEach(function(v){
-      var o2 = JSON.parse(JSON.stringify(o)); o2.style = v[0]; o2.n = {safe:2, bal:3, long:4}[v[0]];
+    [['safe', 'Safer'], ['bal', 'Balanced'], ['long', 'Bigger payout'], ['off', 'Off the card']].forEach(function(v){
+      var o2 = JSON.parse(JSON.stringify(o)); o2.style = v[0] === 'off' ? 'bal' : v[0]; o2.n = {safe:2, bal:3, long:4, off:3}[v[0]]; if (v[0] === 'off') o2.offCard = true;
       var t = aceTicket(aceCands(o2, pool), o2); if (t) variants.push({t:t, o:o2, title:v[1]});
     });
     var seen = {}; variants = variants.filter(function(v){ var k = v.t.legs.map(legKey).sort().join(); if (seen[k]) return false; seen[k] = 1; return true; });
@@ -3205,18 +3621,27 @@ function aceBuild(o, ix, tag){
     if (t1) variants.push({t:t1, o:o, title:null});
   }
   if (!variants.length) return {text:note + 'I could not put together a ticket that fits that. Try fewer filters or a different number of legs.', chips:chipsFor('none')};
-  var first = variants[0], text;
-  if (variants.length > 1) text = 'Here are ' + variants.length + ' ways to play tonight\'s board, from safest to biggest payout. Each is one leg per game, positive edge only.';
+  var first = variants[0], text, chips = chipsFor('ticket').slice();
+  ACE.seen = ACE.seen || {}; variants.forEach(function(v){ v.t.legs.forEach(function(p){ ACE.seen[legKey(p)] = (ACE.seen[legKey(p)] || 0) + 1; }); });
+  if (variants.length > 1) text = 'Here are ' + variants.length + ' ways to play ' + (asked.length ? asked.join(', ') : 'tonight\'s board') + ', from safest to biggest payout, plus one built only from legs that are not on the card.';
   else {
     text = ticketWords(first.t, first.o);
-    if (o.n && first.t.n < o.n) text = 'Only ' + first.t.n + ' qualifying ' + (first.t.n === 1 ? 'leg fits' : 'legs fit') + ' on different games, so I built ' + (first.t.n === 1 ? 'a single' : 'a ' + first.t.n + '-legger') + ' instead of ' + o.n + '. ' + text;
-    if (tag === 'again') text = 'Fresh take. ' + text; else if (tag === 'swap') text = 'Swapped it out. ' + text;
+    var sameGame = new Set(first.t.legs.map(function(p){ return p.game_id; })).size < first.t.n;
+    if (o.n && first.t.n < o.n) text = 'Only ' + first.t.n + ' qualifying ' + (first.t.n === 1 ? 'leg fits' : 'legs fit') + (o.sgp || sameGame ? '' : ' on different games') + ', so I built ' + (first.t.n === 1 ? 'a single' : 'a ' + first.t.n + '-legger') + ' instead of ' + o.n + '. ' + text;
+    if (tag === 'again') text = 'Fresh take. ' + text; else if (tag === 'swap') text = 'Swapped it out. ' + text; else if (tag === 'add') text = 'Added it. ' + text;
+    if (asked.length) text = 'Filters: ' + asked.join(', ') + '.\n' + text;
+    if (!o.offCard && first.t.n > 1){
+      var sk = siteKeys(), same = first.t.legs.filter(function(p){ return sk[legKey(p)]; }).length;
+      if (same === first.t.n){ text += '\nThese are the same top legs the Parlays tab leads with, because they are the best numbers tonight. Want different ones? Ask for "off the card" or add filters.'; chips = ['Something off the card', 'Make it safer', 'Bigger payout', 'Only props']; }
+    }
   }
-  return {tickets:variants, text:note + text, chips:chipsFor('ticket'), ctx:{t:first.t, o:first.o}};
+  return {tickets:variants, text:note + text, chips:chips, ctx:{t:first.t, o:first.o, kind:'ticket'}};
 }
 function aceWhy(prev){
   var lines = prev.t.legs.map(function(p, i){ return (i + 1) + '. ' + p.label + ' (' + fo(p.odds) + '): ' + legWhy(p); });
-  return {text:'Here\'s why each leg is in:\n' + lines.join('\n') + '\n\nThese are model estimates. Check the injury report and the line again before you bet.', chips:chipsFor('ticket')};
+  var fit = '';
+  try { if (prev.t.n > 1){ var tf = ticketFit(prev.t.legs); if (tf.lines.length) fit = '\n\nHow they fit together:\n' + tf.lines.slice(0, 4).map(function(l){ return '• ' + l.t; }).join('\n') + (tf.warns.length ? '\n' + tf.warns.join(' ') : ''); } } catch(e){}
+  return {text:'Here\'s why each leg is in:\n' + lines.join('\n') + fit + '\n\nThese are model estimates. Check the injury report and the line again before you bet.', chips:chipsFor('ticket')};
 }
 function aceRecord(){
   var st = stats(S.history), dec_ = st.w + st.l;
@@ -3235,71 +3660,63 @@ function aceInjuries(o){
   var L = S.latest, rows = [];
   L.games.forEach(function(g){
     if (o.gids.length && o.gids.indexOf(g.id) < 0) return;
-    (g.player_board || []).forEach(function(b){ if (b.inj) rows.push('• ' + b.name + ' (' + b.team + '): ' + b.inj); });
+    (g.player_board || []).forEach(function(b){ if (b.inj && (!o.pids.length || o.pids.indexOf(String(b.pid)) >= 0)) rows.push('• ' + b.name + ' (' + b.team + '): ' + b.inj); });
   });
+  if (o.pids.length && !rows.length) return {text:'No injury tag on ' + o.pids.map(function(pid){ var p = playerOf(pid); return p ? p.name : pid; }).join(' or ') + ' right now. The report updates through the day, so check again near tip.', chips:chipsFor('start')};
   return {text:rows.length ? 'Players with an injury tag on tonight\'s board:\n' + rows.slice(0, 14).join('\n') + (rows.length > 14 ? '\n…and ' + (rows.length - 14) + ' more.' : '') + '\nStatuses change right up to tip, so check again before betting. Props on tagged players are skipped.' : 'No injury tags on tonight\'s board that I can see' + (o.gids.length ? ' for that game' : '') + '. The report updates through the day, so check again near tip.', chips:chipsFor('start')};
 }
 function aceSignals(o){
-  var all = sigBoard().filter(function(x){ return !started(x.p) && (!o.gids.length || o.gids.indexOf(x.g.id) >= 0); }).slice(0, 5);
+  var all = sigBoard().filter(function(x){ return !started(x.p) && (!o.gids.length || o.gids.indexOf(x.g.id) >= 0); }).slice(0, o.count || 5);
   if (!all.length) return {text:'No standout patterns on tonight\'s board yet. Signals need priced props and enough games behind each player, which takes a few weeks to build up.', chips:chipsFor('start')};
   return {text:'These stand out the most right now (several patterns lining up on the same bet). A pattern is not a promise, so check the numbers on each:', legs:all.map(function(x){ return x.p; }), chips:['Build a parlay from these', 'Safest play tonight', 'Best 3-leg parlay'], ctx:{listLegs:all.map(function(x){ return x.p; })}};
 }
 function acePlayers(o, ix){
-  var L = S.latest, legs = [], lines = [];
+  var legs = [], lines = [], last = null;
   o.pids.slice(0, 3).forEach(function(pid){
     var pl = ix.players.filter(function(p){ return p.pid === pid; })[0]; if (!pl) return;
-    var g = gameById(pl.gid), mine = (g.prop_rows || []).filter(function(r){ return String(r.pid) === pid && r.model && (!o.stats.length || o.stats.indexOf(r.stat) >= 0); });
+    last = pid;
+    var g = gameById(pl.gid), opp = pl.team === g.home.abbr ? g.away.abbr : g.home.abbr, mine = (g.prop_rows || []).filter(function(r){ return String(r.pid) === pid && r.model && (!o.stats.length || o.stats.indexOf(r.stat) >= 0); });
     var rows = mine.filter(function(r){ return !r.skipped; });
     var bd = (g.player_board || []).filter(function(b){ return String(b.pid) === pid; })[0];
-    if (bd && bd.inj) lines.push(pl.name + ' is tagged ' + bd.inj + ' tonight, so check his status before anything else.');
-    if (!rows.length && mine.length){
-      lines.push('I have a line for ' + pl.name + ' but the model ruled it out tonight (injury tag or the analysis flagged a problem), so there is no play there.');
-      return;
-    }
+    lines.push(pl.name + ' (' + pl.team + (pl.team === g.home.abbr ? ' vs ' : ' at ') + opp + (g.tip ? ', ' + g.tip : '') + ')' + (bd && bd.min ? ' · about ' + bd.min + ' minutes' : '') + (bd && bd.inj ? ' · tagged ' + bd.inj : ''));
+    if (!rows.length && mine.length){ lines.push('  The model ruled out his lines tonight (injury tag or a problem flagged), so there is no play.'); return; }
     if (!rows.length){
       var pj = bd && bd.proj;
-      lines.push('I have no posted line for ' + pl.name + ' tonight' + (pj && pj.points ? ', so there is nothing to price. Model projection: ' + pj.points[0] + ' pts, ' + pj.rebounds[0] + ' reb, ' + pj.assists[0] + ' ast (season pts ' + pj.points[1] + ', last 5 ' + pj.points[2] + ').' : '.') + ' Add his line to props.txt and I can price it.');
+      lines.push('  No posted line tonight' + (pj && pj.points ? '. Projection: ' + pj.points[0] + ' pts, ' + pj.rebounds[0] + ' reb, ' + pj.assists[0] + ' ast (season pts ' + pj.points[1] + ', last 5 ' + pj.points[2] + '). Ask me about a number, like "' + lastName(pl.name) + ' over ' + Math.round(pj.points[0]) + '.5 points", for a raw read.' : '.'));
       return;
     }
-    rows.forEach(function(r){
-      var b = bestSide(r), p = leanPick(g, r, b.side), pk = (S.latest.picks || []).filter(function(x){ return legKey(x) === legKey(p); })[0] || p;
-      legs.push(pk);
-      lines.push(pk.label + ': ' + (pk.edge > 0 ? 'the model likes it, ' + pct(pk.est) + ' vs ' + pct(pk.implied) + ' implied (edge ' + fe(pk.edge) + ' points).' : 'no edge here, the better side is only ' + pct(pk.est) + ' against ' + pct(pk.implied) + ' implied (' + fe(pk.edge) + ' points). I would pass.'));
+    rows.sort(function(a, b){ return bestSide(b).edge - bestSide(a).edge; }).forEach(function(r){
+      var side = o.side || bestSide(r).side, p = leanPick(g, r, side), pk = (S.latest.picks || []).filter(function(x){ return legKey(x) === legKey(p); })[0] || p;
+      var v = statVals(g, pid, r.stat).slice(-5), hit = v.filter(function(x){ return side === 'over' ? x > r.line : x < r.line; }).length;
+      if (pk.edge > 0) legs.push(pk);
+      lines.push('  ' + pk.label + ' ' + fo(pk.odds) + ': ' + pct(pk.est) + ' vs ' + pct(pk.implied) + ' implied, edge ' + fe(pk.edge) + (pk === p ? '' : ' · on the card') + (v.length ? ' · last ' + v.length + ': ' + v.join(', ') + ' (' + hit + '/' + v.length + ')' : '') + (pk.edge > 0 ? '' : ' · pass'));
     });
   });
   if (!lines.length) return {text:'I did not find that player on tonight\'s slate.', chips:chipsFor('start')};
-  return {text:lines.join('\n') + (legs.length ? '\nTap a card for his last 10 games and the full breakdown.' : ''), legs:legs, chips:['Build a parlay from these', 'Safest play tonight', 'Strong signals']};
+  var res = {text:lines.join('\n') + (legs.length ? '\nTap a card for his last 10 games and the full breakdown, or ask about a different number.' : ''), legs:legs, chips:o.pids.length === 1 ? chipsFor('player') : ['Build a parlay from these', 'Safest play tonight', 'Strong signals'], ctx:{listLegs:legs, kind:'player'}};
+  if (last){ res.ctx.player = last; var pl2 = playerOf(last); if (pl2) res.ctx.game = pl2.gid; }
+  return res;
 }
 function aceGame(o){
-  var L = S.latest, g = gameById(o.gids[0]); if (!g) return {text:'I could not find that game.', chips:chipsFor('start')};
-  var pool = acePool().filter(function(p){ return p.game_id === g.id && !started(p); }).sort(function(a, b){ return aceScore(b, 'bal') - aceScore(a, 'bal'); }).slice(0, 4);
+  var g = gameById(o.gids[0]); if (!g) return {text:'I could not find that game.', chips:chipsFor('start')};
+  var all = acePool().filter(function(p){ return p.game_id === g.id && !started(p); });
+  var want = o.types.length ? all.filter(function(p){ return o.types.indexOf(p.type) >= 0; }) : all;
+  var pool = want.sort(function(a, b){ return aceScore(b, o.style || 'bal', o) - aceScore(a, o.style || 'bal', o); }).slice(0, o.count || 4);
   var m = g.market, bits = [g.away.abbr + ' @ ' + g.home.abbr + (g.tip ? ' · ' + g.tip : '')];
-  if (m && m.spread_home != null) bits.push(g.home.abbr + ' ' + sg(m.spread_home) + ', total ' + m.total);
-  if (g.final) bits.push('model: ' + g.home.abbr + ' ' + sg(-g.final.margin) + ', total ' + g.final.total + ', ' + g.home.abbr + ' win chance ' + pct(g.final.home_win));
-  var t = bits.join(' · ') + (g.analysis && g.analysis.lean ? '\nLean: ' + g.analysis.lean : '');
-  if (!pool.length) t += '\nNo bet in this game clears the edge bar right now.';
-  return {text:t, legs:pool, chips:['Open that game', 'Safest play tonight', 'Strong signals'], ctx:{openGame:g.id}};
-}
-function aceReview(){
-  var legs = SLIP.legs;
-  if (!legs.length) return {text:'Your slip is empty. Tap "+ Slip" on any card, or ask me to build something and add it from here.', chips:chipsFor('start')};
-  var t = mkTicket(legs), weak = legs.slice().sort(function(a, b){ return a.est - b.est; })[0], strong = legs.slice().sort(function(a, b){ return b.edge - a.edge; })[0];
-  var s = 'Your ' + (legs.length === 1 ? 'single' : legs.length + '-leg slip') + ' pays ' + fo(t.odds) + ' and the model gives it about ' + pct(t.P) + '. Best edge: ' + strong.label + ' (' + fe(strong.edge) + ' points). ';
-  if (legs.length > 1){
-    var rest = mkTicket(legs.filter(function(p){ return p !== weak; }));
-    s += 'Weakest link: ' + weak.label + ' at ' + pct(weak.est) + '. Without it you would have ' + fo(rest.odds) + ' and about ' + pct(rest.P) + '. ';
-  }
-  var gm = {}; legs.forEach(function(p){ gm[p.game_id] = (gm[p.game_id] || 0) + 1; });
-  if (Object.keys(gm).some(function(k){ return gm[k] > 1; })) s += 'You have more than one leg in the same game, which are linked, so the multiplied odds are rough. ';
-  if (legs.some(started)) s += 'At least one game has started, so prices have moved. ';
-  if (legs.some(function(p){ return p.conf === 'Low'; })) s += 'Low-confidence legs mean thin samples, so keep the stake small. ';
-  s += t.evc > 0 ? 'If only half the edge is real this still has a small positive expectation.' : 'If only half the edge is real this loses money over time, so I would trim it or pass.';
-  return {text:s, chips:legs.length > 1 ? ['Swap the weakest leg', 'Make it safer', 'Strong signals'] : chipsFor('start'), ctx:{last:{t:t, o:{n:t.n, style:null, exclude:{}, types:[], stats:[], gids:[], pids:[], props:null, sgp:Object.keys(gm).length < legs.length}}}};
+  if (m && m.spread_home != null) bits.push('line ' + g.home.abbr + ' ' + sg(m.spread_home) + ', total ' + m.total + (m.ml_home != null ? ', ' + g.home.abbr + ' ' + fo(m.ml_home) + ' / ' + g.away.abbr + ' ' + fo(m.ml_away) : ''));
+  if (g.final) bits.push('model: ' + (g.final.margin >= 0 ? g.home.abbr + ' by ' + Math.abs(g.final.margin).toFixed(1) : g.away.abbr + ' by ' + Math.abs(g.final.margin).toFixed(1)) + ', total ' + g.final.total + ', ' + g.home.abbr + ' win chance ' + pct(g.final.home_win));
+  var t = bits.join('\n') + (g.analysis && g.analysis.lean ? '\nLean: ' + g.analysis.lean : '');
+  var side = g.side && g.side.lines && g.side.lines.length ? '\nWho is missing: ' + g.side.lines.slice(0, 2).join('; ') : '';
+  t += side;
+  if (!pool.length) t += '\nNo ' + (o.types.length ? o.types.join('/') + ' ' : '') + 'bet in this game clears the edge bar right now. The model and the market roughly agree.';
+  else t += '\nBest reads in this game:';
+  ACE.ctx = ACE.ctx || {}; ACE.ctx.game = g.id;
+  return {text:t, legs:pool, chips:['Open that game', 'Same game parlay', 'Props in that game'], ctx:{openGame:g.id, game:g.id, listLegs:pool}};
 }
 
 /* ---- Claude mode: your own key, called straight from this browser ---- */
 function aceBoard(){
-  var L = S.latest, pool = acePool().filter(function(p){ return !started(p); }).sort(function(a, b){ return aceScore(b, 'bal') - aceScore(a, 'bal'); }).slice(0, 70);
+  var L = S.latest, pool = acePool().filter(function(p){ return !started(p); }).sort(function(a, b){ return aceScore(b, 'bal') - aceScore(a, 'bal'); }).slice(0, 90);
   var st = stats(S.history);
   return {date:L.for_date, record:{w:st.w, l:st.l, units:Math.round(st.net * 100) / 100},
     games:L.games.map(function(g){ var m = g.market || {}; return {g:g.away.abbr + '@' + g.home.abbr, tip:g.tip, state:g.state, spread:m.spread_home != null ? g.home.abbr + ' ' + m.spread_home : null, total:m.total, lean:g.analysis && g.analysis.lean ? String(g.analysis.lean).slice(0, 180) : undefined}; }),
@@ -3350,7 +3767,7 @@ function aceTicketCard(v){
   var card = el('article', {class:'acet'},
     el('div', {class:'t-head'}, el('div', {}, el('h3', {text:(v.title ? v.title + ': ' : '') + (t.n === 1 ? 'Single' : t.n + '-leg parlay')}), el('p', {class:'small mut', text:'Confidence ' + t.conf + ' · hits about ' + pct(t.P)})), el('div', {class:'t-odds', text:fo(t.odds)})),
     el('div', {class:'legs'}, t.legs.map(function(p){ return legRow(p, false, false); })),
-    ticketNums(t),
+    ticketNums(t), t.n > 1 ? fitBlock(t) : null,
     el('div', {class:'row'}, el('button', {type:'button', class:'btn go', text:'Add all to slip', onclick:function(){ slipSet(t.legs); toast(t.n + ' leg' + (t.n === 1 ? '' : 's') + ' on your slip', {label:'View slip', fn:function(){ go('slip'); }}); }}), copyBtn(ticketText(t, t.n === 1 ? 'Single' : t.n + '-leg parlay'))));
   return card;
 }
@@ -3366,12 +3783,13 @@ function aceShow(res){
   (res.tickets || []).forEach(function(v){ extra.append(aceTicketCard(v)); });
   if (res.legs && res.legs.length) extra.append(aceLegList(res.legs));
   if (extra.children.length) ACE.log.append(extra);
+  ACE.ctx = ACE.ctx || {};
   if (res.ctx){
-    ACE.ctx = ACE.ctx || {};
-    if (res.ctx.t) ACE.ctx.last = res.ctx; else if (res.ctx.last) ACE.ctx.last = res.ctx.last;
-    if ('listLegs' in res.ctx) ACE.ctx.listLegs = res.ctx.listLegs;
-    if ('openGame' in res.ctx) ACE.ctx.openGame = res.ctx.openGame;
-  }
+    if (res.ctx.t) ACE.ctx.last = {t:res.ctx.t, o:res.ctx.o}; else if (res.ctx.last) ACE.ctx.last = res.ctx.last;
+    ['listLegs', 'openGame', 'player', 'game', 'evalQ'].forEach(function(k){ if (k in res.ctx) ACE.ctx[k] = res.ctx[k]; });
+    ACE.ctx.kind = res.ctx.kind || (res.ctx.t ? 'ticket' : null);
+    if (res.ctx.t && !res.ctx.player){ var pp = res.ctx.t.legs.filter(function(x){ return x.type === 'prop'; }); if (pp.length === 1) ACE.ctx.player = String(pp[0].pid); }
+  } else ACE.ctx.kind = null;
   aceChips(res.chips && res.chips.length ? res.chips : chipsFor('start'));
   aceScroll();
 }
@@ -3391,6 +3809,7 @@ function aceSend(text){
   ACE.log.append(wait); aceScroll();
   ACE.busy = true; ACE.node.classList.add('busy');
   var ix = aceIndex(), o = aceParse(text, ix), started_ = Date.now();
+  ACE.asked = ACE.asked || {}; var qk = o.low.trim(); ACE.asked[qk] = (ACE.asked[qk] || 0) + 1; o.repeat = ACE.asked[qk] > 1;
   function finish(res){
     var d = Math.max(0, (REDUCE ? 0 : 520) - (Date.now() - started_));
     setTimeout(function(){
@@ -3403,7 +3822,8 @@ function aceSend(text){
   }
   /* shortcuts that open things instead of talking */
   var low = text.toLowerCase();
-  if (/^open that game$/.test(low) && ACE.ctx && ACE.ctx.openGame){ wait.remove(); ACE.busy = false; ACE.node.classList.remove('busy'); openGame(ACE.ctx.openGame); return; }
+  if (/^open that game$/.test(low) && ACE.ctx && (ACE.ctx.openGame || ACE.ctx.game)){ wait.remove(); ACE.busy = false; ACE.node.classList.remove('busy'); openGame(ACE.ctx.openGame || ACE.ctx.game); return; }
+  if (/^open (the|my) plan$/.test(low)){ wait.remove(); ACE.busy = false; ACE.node.classList.remove('busy'); closeSheet(true); try { history.replaceState(null, '', '#plan'); } catch(e){} showTab('plan'); return; }
   if (/^build a parlay from these$/.test(low) && ACE.ctx && ACE.ctx.listLegs && ACE.ctx.listLegs.length){
     var legs = ACE.ctx.listLegs.filter(function(p){ return !started(p); }), seen = {}; legs = legs.filter(function(p){ if (seen[p.game_id]) return false; seen[p.game_id] = 1; return true; }).slice(0, 4);
     if (legs.length > 1){ var t = mkTicket(legs), o2 = {n:t.n, style:null, exclude:{}, types:[], stats:[], gids:[], pids:[], props:null}; finish({text:ticketWords(t, o2), tickets:[{t:t, o:o2}], chips:chipsFor('ticket'), ctx:{t:t, o:o2}}); return; }
@@ -3433,7 +3853,7 @@ function aceSettings(){
 function aceHead(){ var s = ACE.node && ACE.node.querySelector('#aceMode'); if (s) s.textContent = aceKey() ? 'Claude mode' : 'Built-in brain'; }
 function aceNode(){
   if (ACE.node) { aceHead(); return ACE.node; }
-  var inp = el('input', {type:'text', id:'aceIn', autocomplete:'off', maxlength:'400', placeholder:'Ask for a parlay, a player, a team…', 'aria-label':'Message Ace'});
+  var inp = el('input', {type:'text', id:'aceIn', autocomplete:'off', maxlength:'400', placeholder:'e.g. 3-leg, Celtics props, no unders', 'aria-label':'Message Ace'});
   var form = el('form', {class:'ace-form'}, inp, el('button', {type:'submit', class:'send', 'aria-label':'Send', text:'➤'}));
   form.onsubmit = function(e){ e.preventDefault(); aceSend(inp.value); };
   var log = el('div', {class:'ace-log', role:'log', 'aria-live':'polite'}), chips = el('div', {class:'ace-chips'}), set = el('div', {class:'ace-set', hidden:true});
@@ -3442,7 +3862,7 @@ function aceNode(){
   var node = el('div', {class:'acewin'}, top, set, log, chips, form, el('p', {class:'ace-foot', text:'Estimates from the model, not guarantees. 21+ and where legal. 1-800-GAMBLER.'}));
   ACE.node = node; ACE.log = log; ACE.input = inp; ACE.chips = chips; ACE.set = set;
   var L = S.latest, n = L ? acePool().filter(function(p){ return !started(p); }).length : 0, ns = L ? sigBoard().filter(function(x){ return !started(x.p); }).length : 0;
-  log.append(bubble('bot', para(L ? 'Hey, I\'m Ace. I\'ve read tonight\'s whole board: ' + L.games.length + ' game' + (L.games.length === 1 ? '' : 's') + ', ' + n + ' priced bet' + (n === 1 ? '' : 's') + (ns ? ', ' + ns + ' with a standout pattern' : '') + '. Tell me what you\'re looking for, like "safest 2-leg parlay" or "best prop on the Rockets", and I\'ll build it with the real numbers.' : 'Hey, I\'m Ace. The slate has not loaded yet.')));
+  log.append(bubble('bot', para(L ? 'Hey, I\'m Ace. I\'ve read tonight\'s whole board: ' + L.games.length + ' game' + (L.games.length === 1 ? '' : 's') + ', ' + n + ' priced bet' + (n === 1 ? '' : 's') + (ns ? ', ' + ns + ' with a standout pattern' : '') + '. Be as specific as you want: a player and a number ("is Tatum over 26.5 good?"), a team, a stat, overs or unders, plus-money legs, how many legs, a payout, or what to leave out ("no Lakers"). Then tweak it: "without him", "make it 4 legs", "only props". Type help for more.' : 'Hey, I\'m Ace. The slate has not loaded yet.')));
   aceChips(chipsFor('start')); aceHead();
   return node;
 }
@@ -3634,10 +4054,28 @@ function renderMyBets(root){
 }
 /* ---- betting plan: bankroll, unit size, daily cap, today's exact bets, and how well the plan is being followed (all in this browser only) ---- */
 function planGet(){
-  var d = {bank:0, unitPct:1, capPct:8, parlayPct:15, minConf:'Low', start:'', startBank:0};
+  var d = {bank:0, unitPct:1, unitMode:'pct', unitUsd:0, capU:6, parlayPct:15, minConf:'Low', start:'', startBank:0};
   try { var o = JSON.parse(lsGet('eplocks_plan_v1', '{}')); for (var k in o) d[k] = o[k]; } catch(e){}
+  /* older saves could hold numbers as text; the option buttons compare exact values */
+  ['bank', 'unitPct', 'unitUsd', 'capU', 'parlayPct', 'startBank'].forEach(function(k){ var v = parseFloat(d[k]); d[k] = isFinite(v) && v >= 0 ? v : 0; });
+  if (!d.unitPct) d.unitPct = 1;
+  if ([4, 6, 10].indexOf(d.capU) < 0) d.capU = 6;
+  delete d.capPct;
+  if (d.unitMode !== 'usd' || !(d.unitUsd > 0)) d.unitMode = 'pct';
   return d;
 }
+/* 1 unit in dollars: a share of the bankroll as it stands, or a fixed amount the person chose */
+function planUnit(pl, bankNow){ return pl.unitMode === 'usd' && pl.unitUsd > 0 ? pl.unitUsd : bankNow * pl.unitPct / 100; }
+/* the most risked in a day, in units, so it moves with the unit; never more than 15% of the bankroll */
+var CAP_MAX = .15;
+function planCap(pl, bankNow, unit){ return Math.min(pl.capU * unit, bankNow * CAP_MAX); }
+function unitTxt(pl){ return pl.unitMode === 'usd' ? money(pl.unitUsd) + ' fixed' : pl.unitPct + '% of bankroll'; }
+/* stakes a sportsbook will take: nearest 50 cents under $20, whole dollars above, never below 50 cents */
+function stakeRound(x){ return x < 20 ? Math.max(.5, Math.round(x * 2) / 2) : Math.round(x); }
+/* the plan's unit right now, for the slip and Ace (null when no plan is set) */
+/* units to stake on a ticket: a single card pick keeps its own size, a parlay uses the ticket's quarter-Kelly stake */
+function suggestU(t){ return t.n === 1 && t.legs[0].units > 0 ? t.legs[0].units : t.stake; }
+function planUnitNow(){ var pl = planGet(); if (!pl.bank) return null; return planUnit(pl, planBank(pl).now); }
 function planSet(o){ lsSet('eplocks_plan_v1', JSON.stringify(o)); }
 function money(x){ var a = Math.abs(x); return (x < 0 ? '-$' : '$') + (a >= 100 ? Math.round(a).toLocaleString('en-US') : a.toFixed(2).replace(/\.00$/, '')); }
 function planBank(pl){
@@ -3653,49 +4091,92 @@ function renderPlan(){
   root.append(el('div', {class:'hero clean'}, el('div', {}, el('h1', {text:'Your plan'}),
     el('p', {class:'hero-sum', text:'What to bet today and how much, from your bankroll. Saved on this device only.'}))));
   /* settings */
-  var bankIn = el('input', {type:'number', inputmode:'decimal', min:'0', step:'10', value:pl.bank ? String(pl.bank) : '', placeholder:'e.g. 500', 'aria-label':'Bankroll in dollars'});
-  function seg(label, key, opts){
+  var draft = S.planDraft || {};
+  var bankIn = el('input', {type:'number', inputmode:'decimal', min:'0', step:'any', value:draft.bank != null ? draft.bank : pl.bank ? String(pl.bank) : '', placeholder:'e.g. 500', 'aria-label':'Bankroll in dollars'});
+  var usdIn = el('input', {type:'number', inputmode:'decimal', min:'0', step:'any', value:draft.usd != null ? draft.usd : pl.unitUsd ? String(pl.unitUsd) : '', placeholder:'e.g. 10', 'aria-label':'One unit in dollars'});
+  var prev = el('p', {class:'small unit-prev', 'aria-live':'polite'});
+  function keepDraft(){ S.planDraft = {bank:bankIn.value, usd:usdIn.value}; S.planOpen = true; }
+  /* option taps save at once, but never wipe what is typed and never close the panel */
+  function seg(label, key, opts, extra){
     return el('div', {class:'row'}, el('b', {text:label}), el('div', {class:'seg', role:'group', 'aria-label':label}, opts.map(function(o){
-      return el('button', {type:'button', 'aria-pressed':String(pl[key] === o[0]), text:o[1], onclick:function(){ pl[key] = o[0]; planSet(pl); renderPlan(); }});
-    })));
+      var on = key === 'unit' ? (o[0] === 'usd' ? pl.unitMode === 'usd' || !!S.planUsdAsk : pl.unitMode !== 'usd' && !S.planUsdAsk && pl.unitPct === o[0]) : pl[key] === o[0];
+      return el('button', {type:'button', 'aria-pressed':String(on), text:o[1], onclick:function(){
+        keepDraft();
+        if (key === 'unit'){
+          if (o[0] === 'usd'){ pl.unitMode = 'usd'; var u = parseFloat(usdIn.value); if (u > 0) pl.unitUsd = Math.round(u * 100) / 100; else { pl.unitMode = 'pct'; S.planUsdAsk = true; } }
+          else { pl.unitMode = 'pct'; pl.unitPct = o[0]; S.planUsdAsk = false; }
+        } else pl[key] = o[0];
+        planSet(pl); renderPlan();
+        var f = key === 'unit' && o[0] === 'usd' ? $('#plan input[aria-label="One unit in dollars"]') : null; if (f && !(pl.unitMode === 'usd')) f.focus();
+      }});
+    })), extra || null);
   }
-  var save = el('button', {type:'button', class:'btn go', text:pl.bank ? 'Update bankroll' : 'Start my plan'});
+  function preview(){
+    var b = parseFloat(bankIn.value), u = parseFloat(usdIn.value), usd = pl.unitMode === 'usd' || S.planUsdAsk;
+    if (usd && !(u > 0)){ prev.textContent = 'Type how many dollars 1 unit is, then tap Save.'; return; }
+    if (!usd && !(b > 0)){ prev.textContent = 'Type your bankroll to see what 1 unit is.'; return; }
+    var unit = usd ? u : b * pl.unitPct / 100;
+    var txt = '1 unit = ' + money(unit) + '. Picks are staked 0.5 to 2 units, so about ' + money(stakeRound(unit * .5)) + ' to ' + money(stakeRound(unit * 2)) + ' each.';
+    if (b > 0) txt += ' Daily limit at ' + pl.capU + ' units: ' + money(Math.min(pl.capU * unit, b * CAP_MAX)) + (pl.capU * unit > b * CAP_MAX ? ' (held to ' + Math.round(CAP_MAX * 100) + '% of the bankroll)' : '') + '.';
+    if (b > 0 && usd && unit > b * .05) txt += ' That is ' + Math.round(100 * unit / b) + '% of your bankroll per unit, which is a lot; 1 to 2% is the usual range.';
+    if (unit < 2) txt += ' Under $2 a unit, stakes round to the nearest 50 cents, so the sizing gets coarse.';
+    prev.textContent = txt;
+  }
+  bankIn.oninput = function(){ keepDraft(); preview(); };
+  usdIn.oninput = function(){ keepDraft(); preview(); };
+  var save = el('button', {type:'button', class:'btn go', text:pl.bank ? 'Save changes' : 'Start my plan'});
   save.onclick = function(){
     var v = parseFloat(bankIn.value);
-    if (!(v > 0)){ toast('Enter your bankroll in dollars first.'); return; }
+    if (!(v > 0)){ toast('Enter your bankroll in dollars first.'); bankIn.focus(); return; }
     if (v > 10000000){ toast('That bankroll is too large for the plan. Enter up to $10,000,000.'); return; }
-    pl.bank = Math.round(v * 100) / 100; pl.startBank = pl.bank; pl.start = L.for_date; planSet(pl); toast('Plan saved'); renderPlan();
+    if (pl.unitMode === 'usd' || S.planUsdAsk){
+      var u = parseFloat(usdIn.value);
+      if (!(u > 0)){ toast('Enter how many dollars 1 unit is, or pick a % option.'); usdIn.focus(); return; }
+      if (u > v){ toast('1 unit cannot be more than the whole bankroll.'); usdIn.focus(); return; }
+      pl.unitMode = 'usd'; pl.unitUsd = Math.round(u * 100) / 100;
+    }
+    var nb = Math.round(v * 100) / 100, restart = !pl.bank || nb !== pl.bank;
+    pl.bank = nb; if (restart){ pl.startBank = nb; pl.start = L.for_date; }
+    planSet(pl); S.planDraft = null; S.planOpen = false; S.planUsdAsk = false;
+    toast(restart ? 'Plan saved. Tracking starts from today.' : 'Plan saved'); renderPlan();
   };
-  root.append(el('details', {class:'opts', open:pl.bank ? null : true}, el('summary', {}, el('span', {text:'Bankroll and rules'}), el('span', {class:'mut', text:pl.bank ? money(pl.bank) + ', 1 unit = ' + pl.unitPct + '%' : 'not set'})),
+  var showUsd = pl.unitMode === 'usd' || S.planUsdAsk;
+  var opts = el('details', {class:'opts', open:!pl.bank || S.planOpen ? true : null}, el('summary', {}, el('span', {text:'Bankroll and unit size'}), el('span', {class:'mut', text:pl.bank ? money(pl.bank) + ' · 1 unit = ' + unitTxt(pl) : 'not set'})),
     el('div', {class:'ctl'},
       el('label', {class:'wg'}, el('span', {text:'Bankroll $'}), bankIn),
-      seg('1 unit is', 'unitPct', [[1, '1% (careful)'], [2, '2% (standard)']]),
-      seg('Most risked per day', 'capPct', [[5, '5%'], [8, '8%'], [12, '12%']]),
+      seg('1 unit is', 'unit', [[1, '1%'], [2, '2%'], [3, '3%'], ['usd', 'Fixed $']]),
+      showUsd ? el('label', {class:'wg'}, el('span', {text:'1 unit $'}), usdIn) : null,
+      prev,
+      seg('Most risked per day', 'capU', [[4, '4 units'], [6, '6 units'], [10, '10 units']]),
       seg('Share for parlays', 'parlayPct', [[0, 'None'], [10, '10%'], [15, '15%']]),
       seg('Bet picks rated', 'minConf', [['Low', 'Any'], ['Medium', 'Medium +'], ['High', 'High only']]),
-      el('div', {class:'row'}, save))));
+      el('div', {class:'row'}, save, pl.bank ? el('span', {class:'small mut', text:'Changing the bankroll restarts tracking from today.'}) : null)));
+  opts.addEventListener('toggle', function(){ S.planOpen = opts.open; });
+  root.append(opts);
+  preview();
   if (!pl.bank){
     root.append(el('div', {class:'empty'}, el('b', {text:'Set your bankroll to start'}), 'Use money you can afford to lose completely. The plan sizes every bet from it, caps how much you risk in a day and keeps parlays to a small slice.'));
     return;
   }
-  var bk = planBank(pl), unit = bk.now * pl.unitPct / 100, cap = bk.now * pl.capPct / 100, pBudget = cap * pl.parlayPct / 100, sBudget = cap - pBudget;
+  var bk = planBank(pl), unit = planUnit(pl, bk.now), cap = planCap(pl, bk.now, unit), pBudget = cap * pl.parlayPct / 100, sBudget = cap - pBudget;
   root.append(el('div', {class:'tiles'},
     tileEl('Bankroll now', money(bk.now), 'Your starting bankroll plus results from My bets since the plan started.'),
-    tileEl('1 unit', money(unit), pl.unitPct + '% of the bankroll. Stakes are 0.5, 1 or 2 units by confidence.'),
-    tileEl('Daily limit', money(cap), pl.capPct + '% of the bankroll, singles and parlays together.'),
+    tileEl('1 unit', money(unit), (pl.unitMode === 'usd' ? 'A fixed amount you chose.' : pl.unitPct + '% of the bankroll, so it grows and shrinks with it.') + ' Picks are staked 0.5 to 2 units by edge and confidence.'),
+    tileEl('Daily limit', money(cap), (cap < pl.capU * unit - .005 ? 'Held to ' + Math.round(CAP_MAX * 100) + '% of the bankroll, the most the plan risks in a day.' : pl.capU + ' units.') + ' Singles and parlays together.'),
     tileEl('Since start', (bk.net >= 0 ? '+' : '') + money(bk.net), 'Profit or loss from the bets you marked "I bet this" since ' + dayLabel(pl.start) + '.')));
-  /* today's singles, scaled to the limit */
+  /* today's singles: full size in rank order until the day's limit is used; the rest are skipped, not shrunk */
   var rk = {Low:1, Medium:2, High:3}, minR = rk[pl.minConf] || 1;
   var singles = L.picks.filter(function(p){ return !started(p) && p.kind === 'priced' && (rk[p.conf] || 1) >= minR; })
     .sort(function(a, b){ var x = rankKey(a), y = rankKey(b); return y[0] - x[0] || y[1] - x[1]; });
-  var want = singles.reduce(function(s, p){ return s + p.units * unit; }, 0), scale = want > sBudget && want > 0 ? sBudget / want : 1;
-  var rows = singles.map(function(p){ var st = Math.max(1, Math.round(p.units * unit * scale)); return {p:p, st:st}; });
-  var used = rows.reduce(function(s, r){ return s + r.st; }, 0);
+  var rows = [], skipped = [], used = 0;
+  singles.forEach(function(p){ var st = stakeRound(p.units * unit); if (used + st <= sBudget + .005){ rows.push({p:p, st:st}); used += st; } else skipped.push(p); });
   root.append(el('h2', {text:'Today\'s bets'}));
   if (!rows.length) root.append(el('div', {class:'empty'}, el('b', {text:'Nothing to bet right now'}), pl.minConf === 'Low' ? 'No priced pick is open. Check back after the afternoon run.' : 'No open pick meets your confidence setting today. Passing is part of the plan.'));
   else {
-    root.append(table(['Bet', 'Odds', 'Book', 'Stake'], rows.map(function(r){ return [r.p.label, fo(r.p.odds), r.p.book || 'best price', money(r.st)]; }), 1, function(i){ var p = rows[i].p; return gameById(p.game_id) ? function(){ openLegOf(p); } : null; }));
-    if (scale < 1) root.append(el('p', {class:'small mut', text:'Stakes are scaled down so singles stay within ' + money(sBudget) + ' today.'}));
+    if (rows.length) root.append(table(['Bet', 'Odds', 'Units', 'Stake'], rows.map(function(r){ return [r.p.label + (r.p.book ? ' · ' + r.p.book : ''), fo(r.p.odds), r.p.units + 'u', money(r.st)]; }), 1, function(i){ var p = rows[i].p; return gameById(p.game_id) ? function(){ openLegOf(p); } : null; }));
+    else root.append(el('div', {class:'empty'}, el('b', {text:'Your limit is smaller than one bet'}), 'Today\'s singles budget is ' + money(sBudget) + ', less than the smallest stake. Raise the daily limit or the unit, or sit this one out.'));
+    if (skipped.length) root.append(el('details', {class:'help'}, el('summary', {text:skipped.length + ' more pick' + (skipped.length === 1 ? '' : 's') + ' skipped to stay within ' + money(sBudget) + ' for singles'}),
+      el('p', {class:'small mut', text:'The plan bets the strongest picks at full size instead of shrinking every stake. Skipped: ' + skipped.map(function(p){ return p.label; }).join(', ') + '. A higher daily limit covers more of the card.'})));
   }
   /* the parlay slice: the builder's Ultimate ticket with its default settings */
   if (pl.parlayPct){
@@ -3707,7 +4188,7 @@ function renderPlan(){
     var u = ts.slice().sort(function(a, b){ return b.g - a.g || a.n - b.n; })[0];
     root.append(el('h2', {text:'Parlay slice'}));
     if (u && u.stake){
-      var pst = Math.max(1, Math.round(Math.min(pBudget, u.stake * unit)));
+      var pst = stakeRound(Math.min(pBudget, u.stake * unit));
       root.append(el('div', {class:'note'}, el('b', {text:u.n + '-leg parlay ' + fo(u.odds) + ' for ' + money(pst)}),
         el('ul', {class:'fit-why'}, u.legs.map(function(p){ return el('li', {text:p.label + ' ' + fo(p.odds)}); })),
         el('p', {class:'small mut', text:'Hits about ' + pct(u.P) + '. Wins ' + money(pst * (u.D - 1)) + '. Kept to ' + pl.parlayPct + '% of your daily limit because every extra leg adds the book\'s margin.'})));
@@ -3726,7 +4207,7 @@ function renderPlan(){
   var wk = myBetsLoad().filter(function(b){ var d = new Date(b.date + 'T12:00:00'); return (Date.now() - d) / 864e5 <= 7; });
   var wkNet = 0, wkW = 0, wkL = 0; wk.forEach(function(b){ var r = gradeMine(b); if (r.res === 'W'){ wkW++; wkNet += r.profit; } else if (r.res === 'L'){ wkL++; wkNet += r.profit; } });
   if (wk.length) root.append(el('p', {class:'small', text:'Last 7 days: ' + wkW + '-' + wkL + ', ' + (wkNet >= 0 ? '+' : '') + money(wkNet) + '.'}));
-  root.append(help(['The rules: bet only from a bankroll you can afford to lose; 1 unit stays at ' + pl.unitPct + '% of it; never go past the daily limit; singles first, parlays only as a small slice; take the best price on offer; mark every bet with "I bet this" so the plan can see it.',
+  root.append(help(['The rules: bet only from a bankroll you can afford to lose; 1 unit stays at ' + unitTxt(pl) + '; never go past the daily limit; singles first, parlays only as a small slice; take the best price on offer; mark every bet with "I bet this" so the plan can see it.',
     'Do not chase losses with bigger bets, and do not raise stakes after a hot week. The unit grows or shrinks with the bankroll on its own.',
     'Judge the plan over hundreds of bets, not days. If the Tracker shows the bot is not beating the closing line after about 300 picks, stop and rethink before betting more.'], 'The rules'));
 }
@@ -3850,7 +4331,7 @@ function renderMethod(){
       li('Auditor.', 'Every morning it reviews every graded pick by market, confidence, signal and edge size, against the break-even of the prices taken and the closing line. Claude writes up to five short lessons that the bot reads before analyzing each game. A market that clearly loses over 50+ picks gets lower confidence and half the stake until it recovers.'),
       li('Prop model check.', 'Two full seasons are replayed game by game: before each game the prop model predicts every rotation player from his earlier games only, and the box score shows whether its chances held up. Several ways of reading a game log are compared on games the comparison never fit on, and the best one is used. Each stat\'s centre and range are then corrected, because stats like points and threes are skewed: a few big nights pull the average up, so he clears his average less than half the time. A correction is only kept if it helps on unseen games.'),
       li('How parlay legs fit.', 'How bets move together was measured on two seasons: a player\'s points rise with the game total (correlation about +0.16), a player and his team\'s margin move together a little (+0.10), teammates\' points barely move together (+0.01). Every ticket\'s chance uses these instead of simply multiplying, and every ticket explains why each leg is on it and how the legs relate. Legs from different games are independent.'),
-      li('Your plan.', 'The Plan tab turns the card into dollar amounts from your bankroll: 1 unit is 1 or 2% of it, a daily limit caps the total, and parlays are kept to a small slice. It checks what you actually placed against the plan.'),
+      li('Your plan.', 'The Plan tab turns the card into dollar amounts from your bankroll: 1 unit is 1 to 3% of it (or a fixed dollar amount you choose), a daily limit of 4 to 10 units caps the total (never more than 15% of the bankroll), and parlays are kept to a small slice. When the card asks for more than the limit, the strongest picks are bet at full size and the rest are skipped. It checks what you actually placed against the plan.'),
       li('Parlay tracker.', 'Every day the builder\'s tickets are logged before tip-off and graded leg by leg from the box scores, so the parlay record is as honest as the singles. Results feed the auditor too.'),
       li('Posting and locking.', 'Picks are posted once a day from 3 PM Central (or about three hours before an early tip) and then stay on the card at the line and price they were posted, so what you see in the afternoon is what gets graded. Before that the card is an early look. A posted pick only comes off if the player is ruled out, and it is then voided in the record, never deleted.'),
       li('Situations.', 'Win and loss streaks, coming off a loss, tanking late in the season and tight playoff races are measured for teams; for each player, how he plays after a team loss, as a clear underdog, on a back-to-back and against a team that beat his team last time. Each one is only used if it proves itself on two replayed seasons, and a player\'s own split is pulled hard toward his normal numbers while he has few such games.'),
