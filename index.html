@@ -854,8 +854,10 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
   .tscroll td:first-child{white-space:normal;min-width:140px;max-width:220px}
 }
 @media (max-width:380px){
-  .bet-top{grid-template-columns:auto minmax(0,1fr) auto}
+  .bet-top,.bet-top.r{grid-template-columns:auto minmax(0,1fr) auto}
+  .bet-top:not(.r){grid-template-columns:minmax(0,1fr) auto}
   .bet-top>.av,.bet-top>.avs{display:none}
+  .bet-edge b{font-size:24px}
 }
 @media (prefers-reduced-motion:reduce){
   .meter .fill,.sync[data-age="fresh"]::before{animation:none}
@@ -964,6 +966,108 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
 #plan .wg input{max-width:180px}
 #plan .note ul{margin:6px 0}
 /* ===== end v12 part 11 ===== */
+/* ===== v12 part 12: small phones (must come after every .bet-top rule) ===== */
+@media (max-width:380px){
+  .bet-top,.bet-top.r{grid-template-columns:auto minmax(0,1fr) auto}
+  .bet-top:not(.r){grid-template-columns:minmax(0,1fr) auto}
+  .bet-top>.av,.bet-top>.avs{display:none}
+}
+/* ===== end v12 part 12 ===== */
+/* ===== v13 arena: simpler navigation, and the feel of walking into the arena =====
+   One opening moment (the lock clicks shut and a light sweeps the scoreboard), a slow arena light behind everything,
+   cards that answer your finger, and a small celebration when picks win. Reduced motion turns all of it off. */
+
+/* the arena light: two soft spotlights drifting very slowly behind the content */
+body::after{content:"";position:fixed;inset:-20%;z-index:-1;pointer-events:none;opacity:.55;
+  background:
+    radial-gradient(38% 28% at 22% 18%,color-mix(in srgb,var(--acc) 10%,transparent),transparent 70%),
+    radial-gradient(34% 26% at 82% 8%,color-mix(in srgb,var(--blue) 9%,transparent),transparent 70%);
+  animation:arena 38s ease-in-out infinite alternate;will-change:transform}
+@keyframes arena{from{transform:translate3d(-3%,0,0) scale(1)}to{transform:translate3d(3%,4%,0) scale(1.08)}}
+main.in,.hdr{position:relative;z-index:1}
+
+/* opening moment, once per visit */
+html.boot .brand .mark .sh{animation:shackle .55s cubic-bezier(.3,1.6,.5,1) .15s both}
+@keyframes shackle{from{transform:translateY(-6px)}60%{transform:translateY(1px)}to{transform:none}}
+html.boot .brand .mark{animation:lockpop .5s ease .62s both}
+@keyframes lockpop{50%{filter:drop-shadow(0 0 10px var(--hdr-acc))}}
+.hero.clean{overflow:hidden}
+.hero.clean::after{content:"";position:absolute;inset:0;pointer-events:none;
+  background:linear-gradient(105deg,transparent 35%,rgba(255,255,255,.09) 48%,rgba(47,230,160,.12) 52%,transparent 65%);transform:translateX(-120%)}
+html.boot .hero.clean::after{animation:sweep 1.25s cubic-bezier(.2,.7,.2,1) .35s both}
+@keyframes sweep{to{transform:translateX(120%)}}
+html.boot .hero.clean h1{animation:riseIn .6s cubic-bezier(.2,.8,.2,1) .2s both}
+html.boot .topplay{animation:riseIn .6s cubic-bezier(.2,.8,.2,1) .45s both}
+@keyframes riseIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+
+/* changing tabs: content settles in, nothing else moves */
+section.enter{animation:tabIn2 .28s cubic-bezier(.2,.8,.2,1) both}
+@keyframes tabIn2{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+
+/* cards answer your finger: a spotlight follows the pointer on desktop, a press on phones */
+.bet,.game,.ticket,.ult,.more-it{position:relative}
+@media (hover:hover){
+  .bet::after,.game::after,.ticket::after,.more-it::after{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;opacity:0;transition:opacity .25s ease;
+    background:radial-gradient(260px circle at var(--mx,50%) var(--my,50%),color-mix(in srgb,var(--acc) 12%,transparent),transparent 60%)}
+  .bet:hover::after,.game:hover::after,.ticket:hover::after,.more-it:hover::after{opacity:1}
+}
+.bet.clk-card,.game.clk-card,.more-it,.gp{transition:transform .12s ease,border-color .2s ease,box-shadow .2s ease;-webkit-tap-highlight-color:transparent}
+.bet.clk-card:active,.game.clk-card:active,.more-it:active,.gp:active{transform:scale(.985)}
+.slipbtn.on{animation:slipOn .35s cubic-bezier(.3,1.6,.5,1)}
+@keyframes slipOn{50%{transform:scale(1.12)}}
+
+/* the edge is the hero of every pick: it counts in, and strong ones breathe */
+.bet-edge b{display:inline-block}
+.bet.c-High .bet-edge b,.bet.sig-Strong .bet-edge b{animation:breathe 3.2s ease-in-out infinite}
+@keyframes breathe{50%{text-shadow:0 0 22px color-mix(in srgb,var(--acc) 70%,transparent)}}
+
+/* live games feel live */
+.game.is-live{border-color:color-mix(in srgb,var(--bad) 55%,var(--line))}
+.game.is-live::before{animation:liveBar 1.6s ease-in-out infinite}
+@keyframes liveBar{50%{opacity:.55}}
+
+/* win moment */
+#fx{position:fixed;inset:0;pointer-events:none;z-index:80}
+.win-flash{position:fixed;left:50%;top:18%;transform:translateX(-50%);z-index:81;pointer-events:none;
+  font:900 clamp(34px,9vw,56px)/1 var(--f-disp);color:var(--acc);letter-spacing:.02em;text-shadow:0 0 30px color-mix(in srgb,var(--acc) 60%,transparent);
+  animation:winIn 1.9s cubic-bezier(.2,.8,.2,1) both}
+@keyframes winIn{0%{opacity:0;transform:translate(-50%,10px) scale(.9)}15%{opacity:1;transform:translate(-50%,0) scale(1)}80%{opacity:1}100%{opacity:0;transform:translate(-50%,-8px)}}
+
+/* the simpler Today page and the More menu */
+.card-h{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:var(--s2);scroll-margin-top:96px}
+.card-h h2{margin:0}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chipf{appearance:none;cursor:pointer;min-height:36px;padding:6px 12px;border-radius:999px;border:1px solid var(--line);background:transparent;color:var(--mut);font:600 13.5px var(--f-body)}
+.chipf[aria-pressed="true"]{background:color-mix(in srgb,var(--acc) 16%,transparent);border-color:color-mix(in srgb,var(--acc) 60%,transparent);color:var(--acc)}
+.card-note{margin:0}
+.bet-state{margin:0;font-size:var(--t-small);color:var(--mut);border-left:2px solid var(--line);padding-left:8px}
+.more-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--s3)}
+.more-it{appearance:none;cursor:pointer;text-align:left;display:grid;gap:4px;align-content:start;min-height:96px;padding:var(--s4);border-radius:var(--r2);border:1px solid var(--line);background:var(--surface);color:var(--fg)}
+.more-it b{font:800 20px/1.1 var(--f-disp);letter-spacing:.02em}
+.more-it span{font-size:var(--t-small);color:var(--mut)}
+.more-it .count{position:absolute;top:12px;right:12px;font-style:normal}
+.more-it:hover{border-color:color-mix(in srgb,var(--acc) 55%,var(--line))}
+@media (max-width:360px){.more-grid{grid-template-columns:1fr}}
+@media (max-width:640px){.tabs button{flex:1 1 0;padding:16px 4px 14px;font-size:15px}.tabs{overflow:hidden}}
+
+@media (prefers-reduced-motion:reduce){
+  body::after,html.boot *,section.enter,.bet-edge b,.game.is-live::before,.slipbtn.on,.win-flash{animation:none!important}
+  .hero.clean::after{display:none}
+  .bet.clk-card:active,.game.clk-card:active,.more-it:active,.gp:active{transform:none}
+}
+/* ===== end v13 arena ===== */
+/* ===== v13b hero numbers ===== */
+.hstats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1px;margin-top:var(--s3);background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.1);border-radius:var(--r1);overflow:hidden}
+.hs{display:grid;gap:2px;padding:10px 12px;background:rgba(4,12,25,.55)}
+.hs b{font:900 28px/1 var(--f-disp);color:var(--hdr-fg);font-variant-numeric:tabular-nums;white-space:nowrap}
+@media (max-width:360px){.hs b{font-size:22px}.hs{padding:9px 8px}}
+.hs span{font-size:12px;color:var(--hdr-mut)}
+.hs i{font:500 11.5px var(--f-mono);font-style:normal;color:var(--hdr-acc)}
+html.boot .hstats{animation:riseIn .6s cubic-bezier(.2,.8,.2,1) .45s both}
+/* glows are for the dark arena; on a light page they only blur the numbers */
+:root[data-theme="light"] .bet-edge b,:root[data-theme="light"] .nums b.pos{text-shadow:none!important;animation:none!important}
+@media (prefers-color-scheme:light){:root:not([data-theme="dark"]) .bet-edge b,:root:not([data-theme="dark"]) .nums b.pos{text-shadow:none!important;animation:none!important}}
+/* ===== end v13b ===== */
 </style>
 </head>
 <body>
@@ -983,16 +1087,11 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
         </button></div>
     </div>
     <nav class="tabs" role="tablist" aria-label="Sections">
-      <button role="tab" data-tab="slate" aria-selected="true">Slate</button>
-      <button role="tab" data-tab="signals" class="star" aria-selected="false">Signals<span class="count" id="cnt-sig"></span></button>
-      <button role="tab" data-tab="picks" aria-selected="false">Picks<span class="count" id="cnt-picks"></span></button>
-      <button role="tab" data-tab="parlays" class="star" aria-selected="false">Parlays</button>
+      <button role="tab" data-tab="slate" aria-selected="true">Today<span class="count" id="cnt-picks"></span></button>
+      <button role="tab" data-tab="parlays" aria-selected="false">Parlays</button>
       <button role="tab" data-tab="plan" aria-selected="false">Plan</button>
-      <button role="tab" data-tab="players" aria-selected="false">Players</button>
-      <button role="tab" data-tab="props" aria-selected="false">Props<span class="count" id="cnt-props"></span></button>
       <button role="tab" data-tab="track" aria-selected="false">Tracker</button>
-      <button role="tab" data-tab="method" aria-selected="false">Method</button>
-      <button role="tab" data-tab="status" aria-selected="false">Status</button>
+      <button role="tab" data-tab="more" aria-selected="false">More</button>
       <i class="ind" aria-hidden="true"></i>
     </nav>
   </div>
@@ -1008,6 +1107,7 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
   <section id="track" class="narrow" role="tabpanel" hidden></section>
   <section id="method" class="narrow" role="tabpanel" hidden></section>
   <section id="status" class="narrow" role="tabpanel" hidden></section>
+  <section id="more" class="narrow" role="tabpanel" hidden></section>
   <p class="legal">Estimates, not guarantees. Check lines and injuries before you bet. Bet only where it is legal and only what you can afford to lose. Problem gambling help in the US: 1-800-GAMBLER.</p>
   <p class="legal">Scores, box scores and injury reports from ESPN public data; prop prices from your props.txt or The Odds API; analysis by Claude. Independent project, not affiliated with the NBA, ESPN or any sportsbook. <span id="ver"></span></p>
 </main>
@@ -1177,11 +1277,15 @@ function betCard(p, idx, opts){
       p.sig && p.sig.tier ? tierEl(p.sig, true) : null),
     opts.patterns && p.sig ? sigLines(p.sig, 2) : null,
     opts.reason && p.reason ? el('p', {class:'bet-reason', text:p.reason}) : null,
+    p.early ? el('p', {class:'bet-state', text:'Early look, not posted yet'}) : null,
+    p.now && p.now.gone ? el('p', {class:'bet-state', text:'Posted ' + postedAt(p) + '. At the current line the edge is gone; it stays on the card as posted.'}) : null,
+    p.now && !p.now.gone && p.now.odds != null ? el('p', {class:'bet-state', text:'Posted ' + postedAt(p) + ' at ' + (p.line != null && p.type !== 'moneyline' ? p.line + ' ' : '') + fo(p.odds) + '. Now ' + (p.now.line != null && p.type !== 'moneyline' ? p.now.line + ' ' : '') + fo(p.now.odds) + (p.now.edge != null ? ', edge ' + fe(p.now.edge) : '') + '.'}) : null,
     p.flag ? el('p', {class:'bet-flag', text:p.flag.length > 140 ? p.flag.slice(0, 137) + '…' : p.flag}) : null,
     el('div', {class:'bet-act'}, slipBtn(p), g ? el('span', {class:'bet-more', text:'Details'}) : null));
   if (g) art.addEventListener('click', function(e){ if (e.target.closest('button,a,[data-tip]')) return; openLegOf(p); });
   return art;
 }
+function postedAt(p){ try { return p.posted ? new Date(p.posted).toLocaleTimeString([], {hour:'numeric', minute:'2-digit'}) : 'earlier'; } catch(e){ return 'earlier'; } }
 function sigLines(sig, max){
   var items = (sig.items || []).slice().sort(function(a, b){ return b.w - a.w; });
   var shown = items.slice(0, max || 2);
@@ -1366,11 +1470,12 @@ function renderSlate(){
   root.append(el('div', {class:'hero clean'},
     el('h1', {text:dayLabel(L.for_date)}),
     el('p', {class:'hero-sum', text:L.games.length + (L.games.length === 1 ? ' game, ' : ' games, ') + L.picks.length + (L.picks.length === 1 ? ' pick' : ' picks') + (nh ? ', ' + nh + ' high confidence' : '') + '. Updated ' + ago(L.generated_at) + '.'}),
-    top ? el('div', {class:'topplay'}, el('span', {class:'tp-k', text:'Top play today'}), betCard(top, 0, {})) : null));
+    heroStats()));
   if (stale) root.append(el('div', {class:'note warn', text:'This data is more than a day old. The daily run may have failed; open the Status tab.'}));
   var eg = L.status && L.status.sources && L.status.sources.espn_games;
   if (eg && !eg.ok) root.append(el('div', {class:'note warn', text:'Game data could not be loaded in the last run (' + eg.msg + '). Open the Status tab.'}));
   else if (!L.games.length) root.append(el('div', {class:'note', text:'No NBA games are scheduled for this date.'}));
+  renderCard(root);
   root.append(el('h2', {class:'sec', text:'Games'}));
   root.append(el('div', {class:'strip', id:'liveStrip', hidden:true, 'aria-live':'polite', 'aria-label':'Live scores'}));
   var grid = el('div', {class:'cards'}); L.games.forEach(function(g, i){ grid.append(gameCard(g, i)); }); root.append(grid);
@@ -1397,6 +1502,7 @@ function applyLive(){
   document.querySelectorAll('[data-live]').forEach(function(n){
     var d = LV.map[n.getAttribute('data-live')];
     if (d) fillLive(n, d); else n.hidden = true;
+    var gc = n.closest && n.closest('.game'); if (gc) gc.classList.toggle('is-live', !!(d && d.state === 'in'));
   });
   var st = $('#liveStrip');
   if (st){
@@ -1448,6 +1554,44 @@ function startLive(){ liveTick(); document.addEventListener('visibilitychange', 
 
 /* ---- picks ---- */
 function pickCard(p, idx){ return betCard(p, idx, {rank:true}); }
+function heroStats(){
+  var st = stats(S.history || []), dec = st.w + st.l;
+  var cl = (S.history || []).filter(function(h){ return h.clv != null; }), beat = cl.filter(function(h){ return h.clv > 0; }).length;
+  function it(k, v, sub){ return el('div', {class:'hs'}, el('b', {class:'cnt-up', text:v}), el('span', {text:k}), sub ? el('i', {text:sub}) : null); }
+  return el('div', {class:'hstats'},
+    it('on today\'s card', String((S.latest.picks || []).length)),
+    it('record', dec ? st.w + '-' + st.l : '0-0', dec ? (st.net >= 0 ? '+' : '') + st.net.toFixed(1) + 'u' : 'starting'),
+    it('beat the close', cl.length ? Math.round(100 * beat / cl.length) + '%' : 'n/a', cl.length ? beat + ' of ' + cl.length : 'needs picks'));
+}
+function renderCard(root){
+  var L = S.latest, all = L.picks.slice().sort(function(a, b){ var x = rankKey(a), y = rankKey(b); return y[0] - x[0] || y[1] - x[1]; });
+  var early = all.some(function(p){ return p.early; });
+  var f = S.cardF || 'all';
+  var list = all.filter(function(p){ return f === 'all' || (f === 'props' && p.type === 'prop') || (f === 'games' && p.type !== 'prop') || (f === 'strong' && p.sig && (p.sig.tier === 'Strong' || p.sig.tier === 'Solid')); });
+  var head = el('div', {class:'card-h', id:'todayCard'}, el('h2', {class:'sec', text:early ? 'Early look' : 'Today\'s card'}),
+    el('div', {class:'chips', role:'group', 'aria-label':'Filter the card'}, [['all', 'All'], ['props', 'Props'], ['games', 'Games'], ['strong', 'Strong patterns']].map(function(o){
+      return el('button', {type:'button', class:'chipf', 'aria-pressed':String(f === o[0]), text:o[1], onclick:function(){ S.cardF = o[0]; renderSlate(); var c = $('#todayCard'); if (c) c.scrollIntoView({block:'start'}); }});
+    })));
+  root.append(head);
+  if (early) root.append(el('p', {class:'small mut card-note', text:'Picks are posted once a day from 3 PM Central, when lines and injury news have settled. Until then this is a look at where the numbers stand, and it can still change.'}));
+  else if (all.length) root.append(el('p', {class:'small mut card-note', text:'Posted picks stay on the card at the price they were posted. A pick only comes off if the player is ruled out, and it is then voided in the record, never deleted.'}));
+  if (!list.length) root.append(el('div', {class:'empty'}, el('b', {text:all.length ? 'Nothing matches' : 'No picks today'}), all.length ? 'Pick another filter.' : 'Nothing clears the bar today. Passing on a weak slate is part of winning.'));
+  else { var g = el('div', {class:'cards'}); list.forEach(function(p, i){ g.append(betCard(p, i, {rank:true})); }); root.append(g); }
+  var pulled = (S.history || []).filter(function(h){ return h.pulled && h.date === L.for_date; });
+  if (pulled.length) root.append(el('details', {class:'help'}, el('summary', {text:pulled.length + ' pulled before tip'}), el('ul', {class:'fit-why'}, pulled.map(function(h){ return el('li', {text:h.label + ': ' + String(h.final || '').replace('Pulled before tip: ', '')}); }))));
+}
+function renderMore(){
+  var root = $('#more'); root.textContent = '';
+  root.append(el('div', {class:'hero clean'}, el('div', {}, el('h1', {text:'More'}), el('p', {class:'hero-sum', text:'Everything else on the board, and how it works.'}))));
+  var items = [['signals', 'Smart Signals', 'Bets where several patterns line up', sigCount()], ['players', 'Players', 'Best players to bet by market', null],
+    ['props', 'Every prop', 'All priced props, best edge first', null], ['ace', 'Ask Ace', 'Your betting buddy builds and checks tickets', null],
+    ['method', 'How it works', 'The method, step by step', null], ['status', 'Status', 'What loaded on the last run', null]];
+  root.append(el('div', {class:'more-grid'}, items.map(function(it){
+    var bt = el('button', {type:'button', class:'more-it'}, el('b', {text:it[1]}), el('span', {text:it[2]}), it[3] ? el('i', {class:'count', text:String(it[3])}) : null);
+    bt.onclick = function(){ if (it[0] === 'ace') go('ace'); else showTab(it[0]); };
+    return bt;
+  })));
+}
 function renderPicks(){
   var root = $('#picks'); root.textContent = '';
   if (!S.latest){ return; }
@@ -2468,7 +2612,8 @@ function playerBody(g, pid, stat){
 })();
 
 /* ---- v8: storage, toasts, theme, number animation ---- */
-var TABS = ['slate', 'signals', 'picks', 'parlays', 'plan', 'players', 'props', 'track', 'method', 'status'];
+var TABS = ['slate', 'signals', 'picks', 'parlays', 'plan', 'players', 'props', 'track', 'method', 'status', 'more'];
+var NAV_OF = {signals:'more', players:'more', props:'more', method:'more', status:'more', picks:'slate'};
 var REDUCE = !!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
 function lsGet(k, d){ try { var v = localStorage.getItem(k); return v == null ? d : v; } catch(e){ return d; } }
 function lsSet(k, v){ try { if (v == null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch(e){} }
@@ -2481,7 +2626,7 @@ function toast(msg, act){
 }
 function animateNums(root){
   if (REDUCE || !root) return;
-  root.querySelectorAll('.tile b, .t-odds, .cnt-up').forEach(function(n){
+  root.querySelectorAll('.tile b, .t-odds, .cnt-up, .bet-edge b').forEach(function(n){
     if (n.children.length) return;
     var s = n.textContent, m = /^([+\-]?)(\d+(?:\.\d+)?)(%?)$/.exec(s.trim());
     if (!m) return;
@@ -2672,6 +2817,7 @@ function slipToggle(p){
   else {
     if (SLIP.legs.length >= 12){ toast('Your slip is full (12 legs).'); return; }
     SLIP.legs.push(JSON.parse(JSON.stringify(p)));
+    try { if (navigator.vibrate) navigator.vibrate(8); } catch(e){}
     toast('Added ' + p.label, {label:'View slip', fn:function(){ go('slip'); }});
   }
   slipSave(); slipUi(true);
@@ -3493,7 +3639,7 @@ function planGet(){
   return d;
 }
 function planSet(o){ lsSet('eplocks_plan_v1', JSON.stringify(o)); }
-function money(x){ return (x < 0 ? '-$' : '$') + Math.abs(x).toFixed(Math.abs(x) >= 100 ? 0 : 2).replace(/\.00$/, ''); }
+function money(x){ var a = Math.abs(x); return (x < 0 ? '-$' : '$') + (a >= 100 ? Math.round(a).toLocaleString('en-US') : a.toFixed(2).replace(/\.00$/, '')); }
 function planBank(pl){
   /* the bankroll you started the plan with, plus what My bets says you have won or lost since then */
   var net = 0;
@@ -3517,6 +3663,7 @@ function renderPlan(){
   save.onclick = function(){
     var v = parseFloat(bankIn.value);
     if (!(v > 0)){ toast('Enter your bankroll in dollars first.'); return; }
+    if (v > 10000000){ toast('That bankroll is too large for the plan. Enter up to $10,000,000.'); return; }
     pl.bank = Math.round(v * 100) / 100; pl.startBank = pl.bank; pl.start = L.for_date; planSet(pl); toast('Plan saved'); renderPlan();
   };
   root.append(el('details', {class:'opts', open:pl.bank ? null : true}, el('summary', {}, el('span', {text:'Bankroll and rules'}), el('span', {class:'mut', text:pl.bank ? money(pl.bank) + ', 1 unit = ' + pl.unitPct + '%' : 'not set'})),
@@ -3698,13 +3845,14 @@ function renderMethod(){
       li('Claude writes the analysis.', 'Claude reads the same numbers and writes the reasoning and risks. It may nudge a game number by at most 2 points (total 5) and a prop by at most 10%, and only for a reason stated in the data. It never sets probabilities, confidence or stakes.'),
       li('Claude\'s own read.', 'Besides writing the analysis, Claude is asked what it believes the realistic chance of each outcome is, counting what numbers cannot see (motivation, schedule spot, rotation habits, how a matchup tends to play). That probability is held within 12 points of the market\'s fair price, counts for a small share of the final chance (' + Math.round(((P.judgment && P.judgment.w != null) ? P.judgment.w : 0.1) * 100) + '%, never more than 4 points of movement), and can lower confidence or trim a stake when Claude flags a concern. It is a tracked estimate, scored against the model on every graded pick, and its weight rises or falls with its record. It is not inside information, and it cannot override the numbers.'),
       li('Safety brakes.', 'Players on the injury report get no prop pick. Unusually large edges are flagged and capped at Low. If a data source fails, the affected picks are capped at Low or skipped. The model also checks itself against graded results and shrinks its edges if they are not paying off (right now game picks count ' + (cal.game != null ? Math.round(cal.game * 100) : 100) + '% and props ' + (cal.prop != null ? Math.round(cal.prop * 100) : 70) + '% of the raw edge).'),
-      li('Confidence and stake.', 'Both come from fixed rules: sample size, edge size, injury and line coverage. Stakes are a quarter of the Kelly amount, capped at 0.5 units for Low, 1 for Medium and 2 for High. The day\'s card holds at most 25 picks, 4 props per game and 1 per player; edges too big to be real are held back.'))),
+      li('Confidence and stake.', 'Both come from fixed rules: sample size, edge size, injury and line coverage. Stakes are a quarter of the Kelly amount, capped at 0.5 units for Low, 1 for Medium and 2 for High. The day\'s card holds at most 15 picks, 3 props per game and 1 per player. A prop needs a 3-point edge and at least one pattern backing it; edges too big to be real are held back.'))),
     sec('How EpLocks learns from its own results', el('ul', {},
       li('Auditor.', 'Every morning it reviews every graded pick by market, confidence, signal and edge size, against the break-even of the prices taken and the closing line. Claude writes up to five short lessons that the bot reads before analyzing each game. A market that clearly loses over 50+ picks gets lower confidence and half the stake until it recovers.'),
       li('Prop model check.', 'Two full seasons are replayed game by game: before each game the prop model predicts every rotation player from his earlier games only, and the box score shows whether its chances held up. Several ways of reading a game log are compared on games the comparison never fit on, and the best one is used. Each stat\'s centre and range are then corrected, because stats like points and threes are skewed: a few big nights pull the average up, so he clears his average less than half the time. A correction is only kept if it helps on unseen games.'),
       li('How parlay legs fit.', 'How bets move together was measured on two seasons: a player\'s points rise with the game total (correlation about +0.16), a player and his team\'s margin move together a little (+0.10), teammates\' points barely move together (+0.01). Every ticket\'s chance uses these instead of simply multiplying, and every ticket explains why each leg is on it and how the legs relate. Legs from different games are independent.'),
       li('Your plan.', 'The Plan tab turns the card into dollar amounts from your bankroll: 1 unit is 1 or 2% of it, a daily limit caps the total, and parlays are kept to a small slice. It checks what you actually placed against the plan.'),
       li('Parlay tracker.', 'Every day the builder\'s tickets are logged before tip-off and graded leg by leg from the box scores, so the parlay record is as honest as the singles. Results feed the auditor too.'),
+      li('Posting and locking.', 'Picks are posted once a day from 3 PM Central (or about three hours before an early tip) and then stay on the card at the line and price they were posted, so what you see in the afternoon is what gets graded. Before that the card is an early look. A posted pick only comes off if the player is ruled out, and it is then voided in the record, never deleted.'),
       li('Situations.', 'Win and loss streaks, coming off a loss, tanking late in the season and tight playoff races are measured for teams; for each player, how he plays after a team loss, as a clear underdog, on a back-to-back and against a team that beat his team last time. Each one is only used if it proves itself on two replayed seasons, and a player\'s own split is pulled hard toward his normal numbers while he has few such games.'),
       li('Off the court.', 'ESPN headlines from the last three days are read each run and sorted into personal matters, suspensions, illness, discipline, trade talk, contract news and coaching changes, using only what was reported. These can only hold a pick back, never push one.'),
       li('Line movement.', 'The first line seen each day is saved. When the market moves toward a pick, that becomes a tracked signal, and the auditor rates whether it helps.'),
@@ -3771,9 +3919,9 @@ function renderStatus(){
 function renderCounts(){
   var L = S.latest; if (!L) return;
   var n = L.picks.filter(function(p){ return !S.hideLow || p.conf !== 'Low'; }).length;
-  $('#cnt-picks').textContent = n ? String(n) : '';
+  var cp = $('#cnt-picks'); if (cp) cp.textContent = n ? String(n) : '';
   var pc = 0; L.games.forEach(function(g){ pc += (g.prop_rows || []).length; });
-  $('#cnt-props').textContent = pc ? String(pc) : '';
+  var cr = $('#cnt-props'); if (cr) cr.textContent = pc ? String(pc) : '';
   $('#sync').textContent = 'Updated ' + ago(L.generated_at); syncAge(L.generated_at);
   var vr = $('#ver'); if (vr && L.engine) vr.textContent = 'Engine v' + L.engine + '.';
   var cs = $('#cnt-sig'), ns = sigCount(); if (cs) cs.textContent = ns ? String(ns) : '';
@@ -3783,16 +3931,19 @@ function moveInd(){
   ind.style.width = sel.offsetWidth + 'px'; ind.style.transform = 'translateX(' + sel.offsetLeft + 'px)';
 }
 function showTab(t){
+  if (t === 'picks'){ t = 'slate'; S.toCard = true; }
   S.tab = t;
+  var nav = NAV_OF[t] || t;
   TABS.forEach(function(x){
     $('#' + x).hidden = t !== x;
-    var b = $('.tabs [data-tab="' + x + '"]'); b.setAttribute('aria-selected', String(t === x));
+    var b = $('.tabs [data-tab="' + x + '"]'); if (b) b.setAttribute('aria-selected', String(nav === x));
   });
   moveInd();
-  ({slate:renderSlate, signals:renderSignals, picks:renderPicks, parlays:renderParlays, plan:renderPlan, players:renderPlayers, props:renderProps, track:renderTracker, method:renderMethod, status:renderStatus})[t]();
+  ({slate:renderSlate, more:renderMore, signals:renderSignals, picks:renderPicks, parlays:renderParlays, plan:renderPlan, players:renderPlayers, props:renderProps, track:renderTracker, method:renderMethod, status:renderStatus})[t]();
   var sec = $('#' + t); sec.classList.remove('enter'); void sec.offsetWidth; sec.classList.add('enter');
   mergeHelps(sec);
-  try { var tb = $('.tabs [data-tab="' + t + '"]'); if (tb && tb.scrollIntoView) tb.scrollIntoView({block:'nearest', inline:'center'}); } catch(e){}
+  if (S.toCard){ S.toCard = false; var ca = $('#todayCard'); if (ca) setTimeout(function(){ ca.scrollIntoView({block:'start', behavior:'smooth'}); }, 60); }
+  else try { window.scrollTo(0, 0); } catch(e){}
   if (t === 'track' || t === 'parlays' || t === 'slate') animateNums(sec);
   try { if (location.hash.slice(1) !== t) history.replaceState(null, '', '#' + t); } catch(e){}
   applyLive();
@@ -3800,6 +3951,40 @@ function showTab(t){
 document.querySelectorAll('.tabs button').forEach(function(b){ b.onclick = function(){ showTab(b.getAttribute('data-tab')); }; });
 window.addEventListener('resize', moveInd);
 initTheme(); slipLoad(); slipUi(false);
+/* the opening moment plays once per visit */
+try { if (!REDUCE && !sessionStorage.getItem('eplocks_boot')){ document.documentElement.classList.add('boot'); sessionStorage.setItem('eplocks_boot', '1'); setTimeout(function(){ document.documentElement.classList.remove('boot'); }, 2400); } } catch(e){}
+/* a soft spotlight follows the pointer over cards (mouse and trackpad only) */
+if (window.matchMedia && matchMedia('(hover:hover)').matches){
+  document.addEventListener('pointermove', function(e){
+    var c = e.target.closest && e.target.closest('.bet,.game,.ticket,.more-it'); if (!c) return;
+    var r = c.getBoundingClientRect(); c.style.setProperty('--mx', (e.clientX - r.left) + 'px'); c.style.setProperty('--my', (e.clientY - r.top) + 'px');
+  }, {passive:true});
+}
+/* last night's results get a moment the first time you open the site the next day */
+function celebrate(){
+  var L = S.latest, H = S.history || []; if (!L || REDUCE) return;
+  var days = H.filter(function(h){ return h.result === 'W' || h.result === 'L'; }).map(function(h){ return h.date; }).sort();
+  var d = days[days.length - 1]; if (!d || d >= L.for_date) return;
+  var key = 'eplocks_seen_' + d; if (lsGet(key, '')) return; lsSet(key, '1');
+  var day = H.filter(function(h){ return h.date === d; }), w = day.filter(function(h){ return h.result === 'W'; }).length, l = day.filter(function(h){ return h.result === 'L'; }).length;
+  var hit = (S.parlays || []).some(function(t){ return t.date === d && t.result === 'W'; });
+  if (!hit && w <= l) return;
+  var f = el('div', {class:'win-flash', text:hit ? 'Parlay hit' : 'Last night ' + w + '-' + l}); document.body.append(f); setTimeout(function(){ f.remove(); }, 2000);
+  confetti(hit ? 160 : 90);
+}
+function confetti(n){
+  var c = document.createElement('canvas'); c.id = 'fx'; document.body.append(c);
+  var dpr = Math.min(2, window.devicePixelRatio || 1), W = innerWidth, H = innerHeight; c.width = W * dpr; c.height = H * dpr; c.style.width = W + 'px'; c.style.height = H + 'px';
+  var x = c.getContext('2d'); x.scale(dpr, dpr);
+  var cols = ['#2FE6A0', '#FFC24B', '#6AA8FF', '#ECF2FB'], ps = [];
+  for (var i = 0; i < n; i++) ps.push({x:W / 2 + (Math.random() - .5) * W * .3, y:H * .25, vx:(Math.random() - .5) * 9, vy:-Math.random() * 9 - 3, s:4 + Math.random() * 5, r:Math.random() * 6, vr:(Math.random() - .5) * .3, c:cols[i % cols.length]});
+  var t0 = performance.now();
+  (function f(t){
+    var k = (t - t0) / 1800; x.clearRect(0, 0, W, H);
+    ps.forEach(function(p){ p.vy += .25; p.x += p.vx; p.y += p.vy; p.r += p.vr; x.save(); x.globalAlpha = Math.max(0, 1 - k); x.translate(p.x, p.y); x.rotate(p.r); x.fillStyle = p.c; x.fillRect(-p.s / 2, -p.s / 4, p.s, p.s / 2); x.restore(); });
+    if (k < 1) requestAnimationFrame(f); else c.remove();
+  })(t0);
+}
 (function(){
   var fa = $('#fabAce');
   if (!lsGet('eplocks_ace_seen', '')) fa.classList.add('pulse');
@@ -3813,7 +3998,7 @@ function getJson(url, fallback){
 }
 Promise.all([getJson('data/latest.json'), getJson('data/history.json', []), getJson('data/backtest.json', null), getJson('data/parlays.json', []), getJson('data/correlations.json', null)]).then(function(r){
   CORR = r[4] && r[4].corr ? r[4] : null;
-  S.latest = r[0]; S.history = Array.isArray(r[1]) ? r[1] : []; S.bt = r[2] && typeof r[2] === 'object' ? r[2] : null; S.parlays = Array.isArray(r[3]) ? r[3] : [];
+  S.latest = r[0]; S.history = Array.isArray(r[1]) ? r[1] : []; setTimeout(function(){ try { celebrate(); } catch(e){} }, 900); S.bt = r[2] && typeof r[2] === 'object' ? r[2] : null; S.parlays = Array.isArray(r[3]) ? r[3] : [];
   slipSync(); slipUi(false);
   renderCounts();
   var h = (location.hash || '').slice(1);

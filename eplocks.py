@@ -2835,8 +2835,9 @@ def audit_adjust(p):
 
 # ----------------------------------------------------------------------------- the daily card
 UNIT_CAP = {'High': 2.0, 'Medium': 1.0, 'Low': 0.5}            # the most a pick can risk at each confidence level
-MAX_DAILY_PICKS = int(os.environ.get('EPLOCKS_MAX_PICKS') or 25)
-MAX_PROPS_PER_GAME = int(os.environ.get('EPLOCKS_MAX_PROPS_PER_GAME') or 4)
+MAX_DAILY_PICKS = int(os.environ.get('EPLOCKS_MAX_PICKS') or 15)
+MAX_PROPS_PER_GAME = int(os.environ.get('EPLOCKS_MAX_PROPS_PER_GAME') or 3)
+PROP_MIN_EDGE = float(os.environ.get('EPLOCKS_PROP_MIN_EDGE') or 0.03)   # props need a 3-point edge to be a pick (games keep 2)
 MAX_PER_PLAYER = 1
 
 
@@ -2844,7 +2845,9 @@ def finalize_picks(all_picks, out_games):
     """Turns every bet that cleared the edge bar into the day's card: holds back edges too big to be real, sizes stakes
     by confidence, keeps the best few per game and per player, and caps the day. Returns the card, best first."""
     held = [p for p in all_picks if str(p.get('flag') or '').startswith('Unusually large edge')]
-    pool = [p for p in all_picks if p not in held]
+    # a prop has to clear the higher bar and have at least one pattern backing the model (picks with none went 1-6 early on)
+    thin = [p for p in all_picks if p['type'] == 'prop' and p not in held and ((p.get('edge') or 0) < PROP_MIN_EDGE or not p.get('sig'))]
+    pool = [p for p in all_picks if p not in held and p not in thin]
     for p in pool:
         p['units'] = min(p['units'], UNIT_CAP.get(p['conf'], 0.5))
     pool.sort(key=lambda p: rank_key(p), reverse=True)
@@ -2863,6 +2866,8 @@ def finalize_picks(all_picks, out_games):
         g['pick_objs'] = [p for p in g.get('pick_objs') or [] if id(p) in keep]
         g['picks'] = [p['id'] for p in g['pick_objs']]
     cut = len(pool) - len(card)
+    if thin:
+        note('Card: %d props left off because the edge was under %d points or no pattern backed it' % (len(thin), round(PROP_MIN_EDGE * 100)))
     if held or cut:
         note('Card: %d picks posted%s%s' % (len(card), '; %d held back because the edge looked too big to be real (usually a stale line or a role change)' % len(held) if held else '',
                                            '; %d more cleared the bar but missed the daily cap (%d a day, %d props a game, 1 per player)' % (cut, MAX_DAILY_PICKS, MAX_PROPS_PER_GAME) if cut else ''))
@@ -3716,7 +3721,7 @@ def send_alerts(prev, result):
     """First card of the day: a summary. Later runs: only picks that were not on the card before, with the news that caused them."""
     if not NTFY_TOPIC:
         return
-    picks = result.get('picks') or []
+    picks = [p for p in result.get('picks') or [] if not p.get('early')]      # alert on posted picks only
     reason = NEWS.get('reason')
     if prev.get('for_date') != result.get('for_date'):
         if not picks:
@@ -3724,7 +3729,7 @@ def send_alerts(prev, result):
         body = '\n'.join(alert_line(p) for p in picks[:5]) + ('\n+%d more on the site' % (len(picks) - 5) if len(picks) > 5 else '')
         ok = push_note("Today's EpLocks card: %d picks" % len(picks), body)
     else:
-        before = {(p.get('game_id'), p.get('label')) for p in prev.get('picks') or []}
+        before = {(p.get('game_id'), p.get('label')) for p in prev.get('picks') or [] if not p.get('early')}
         live = {g['id'] for g in result.get('games') or [] if g.get('state') == 'pre'}
         new = [p for p in picks if (p.get('game_id'), p.get('label')) not in before and p.get('game_id') in live]
         if new:
@@ -4099,6 +4104,121 @@ def load_replay():
     if REPLAY_FIX:
         src('prop_replay', True, 'prop ranges tuned from %s replayed predictions: %s' % (
             '{:,}'.format(sum(v['n'] for v in js['stats'].values())), ', '.join('%s x%.2f' % (STAT_NAMES.get(k, k).lower(), v['s']) for k, v in REPLAY_FIX.items())))
+
+
+# ----------------------------------------------------------------------------- posting and locking the card
+# The card used to be rebuilt from scratch on every run, so a pick seen at 10 AM could vanish by 5:30 PM. Now:
+#   * before POST_HOUR (Central) the card is an early look: shown, but not logged and not final;
+#   * from POST_HOUR on (or within POST_LEAD_H hours of a game's tip), a game's picks are posted: logged in the record and locked
+#     at the line and price they were posted at;
+#   * later runs keep every posted pick on the card, can add a new one (fresh injury news, a new edge), and only take one off when
+#     the player is ruled out or a serious off-court report lands. That pick is then voided as "pulled before tip", never deleted.
+POST_HOUR = int(os.environ.get('EPLOCKS_POST_HOUR') or 15)
+POST_LEAD_H = 3.0
+SNAP_KEYS = ('reason', 'book', 'mean', 'hit_l10', 'implied', 'flag', 'n_books', 'fair', 'jp', 'est_nj', 'player', 'stat', 'pid', 'sd')
+
+
+def pick_key(p):
+    return (p['game_id'], p['type'], p['side'], p.get('pid') or '', p.get('stat') or '')
+
+
+def game_postable(g, now):
+    if g.get('state') != 'pre':
+        return False
+    if now.astimezone(CT).hour >= POST_HOUR:
+        return True
+    t = parse_utc(g.get('utc'))
+    return bool(t and (t - now).total_seconds() / 3600.0 <= POST_LEAD_H)
+
+
+def history_row(p, started):
+    row = ({k: p[k] for k in ('id', 'date', 'game_id', 'away', 'home', 'type', 'side', 'label', 'line', 'odds', 'est', 'est_raw', 'edge', 'kind', 'conf', 'units') if k in p}
+           | {k: p[k] for k in ('fair', 'book', 'n_books', 'jp', 'est_nj', 'sd', 'utc', 'alt') if p.get(k) is not None}
+           | ({'player': p['player'], 'stat': p['stat'], 'pid': p['pid']} if p['type'] == 'prop' else {})
+           | ({'sig': [i['k'] for i in p['sig']['items']], 'sig_tier': p['sig']['tier']} if p.get('sig') else {})
+           | {'posted': started.strftime('%Y-%m-%dT%H:%M:%SZ'), 'v': ENGINE_VERSION})
+    row['snap'] = {k: p.get(k) for k in SNAP_KEYS if p.get(k) is not None}
+    if p.get('sig'):
+        row['snap']['sig'] = p['sig']
+    return row
+
+
+def lock_card(card, out_games, history, today, started):
+    """Merges this run's card with the picks already posted today. Returns (card to show, history)."""
+    day = today.isoformat()
+    gmap = {g['id']: g for g in out_games}
+    postable = {gid for gid, g in gmap.items() if game_postable(g, started)}
+    # players ruled out (or with a serious off-court report) since their pick was posted
+    pulled_why = {}
+    for g in out_games:
+        for r in g.get('prop_rows') or []:
+            nw = r.get('news') or {}
+            if is_blocked(r.get('injury')):
+                pulled_why[(g['id'], r['pid'])] = 'he is listed %s' % r['injury']
+            elif nw.get('severity') == 'high':
+                pulled_why[(g['id'], r['pid'])] = nw.get('summary') or 'serious off-court report'
+    cur = {pick_key(p): p for p in card}
+    shown, keys, per_game, per_player, n_pulled, n_kept = [], set(), {}, {}, 0, 0
+    for h in history:
+        if h.get('date') != day or h.get('result') or (gmap.get(h['game_id']) or {}).get('state') != 'pre':
+            continue
+        k = pick_key(h)
+        why = pulled_why.get((h['game_id'], h.get('pid'))) if h['type'] == 'prop' else None
+        if why and gmap[h['game_id']].get('state') == 'pre':
+            h['result'], h['profit'], h['final'], h['pulled'] = 'V', 0.0, 'Pulled before tip: ' + why, True
+            n_pulled += 1
+            continue
+        now = cur.get(k)
+        disp = dict(now) if now else dict(h.get('snap') or {}, **{x: h[x] for x in h if x not in ('snap', 'sig', 'sig_tier')})
+        for x in ('id', 'label', 'line', 'odds', 'est', 'est_raw', 'edge', 'kind', 'conf', 'units', 'posted'):
+            if x in h:
+                disp[x] = h[x]
+        if 'implied' not in disp and h.get('odds') is not None:
+            disp['implied'] = r3(impl(h['odds']))
+        if now and (now.get('line') != h.get('line') or now.get('odds') != h.get('odds')):
+            disp['now'] = {'line': now.get('line'), 'odds': now.get('odds'), 'edge': now.get('edge')}
+        if not now:
+            disp['now'] = {'gone': True}
+        disp['locked'] = True
+        shown.append(disp)
+        keys.add(k)
+        per_game[h['game_id']] = per_game.get(h['game_id'], 0) + (1 if h['type'] == 'prop' else 0)
+        if h.get('pid'):
+            per_player[h['pid']] = per_player.get(h['pid'], 0) + 1
+        n_kept += 1
+    added = []
+    for p in card:
+        k = pick_key(p)
+        if k in keys:
+            continue
+        if (gmap.get(p['game_id']) or {}).get('state') != 'pre':
+            shown.append(p)                          # a started game: its locked picks, as they were
+            continue
+        if p['game_id'] not in postable:
+            shown.append(dict(p, early=True))       # early look: shown, not logged yet
+            continue
+        if len(shown) >= MAX_DAILY_PICKS:
+            break
+        if p['type'] == 'prop':
+            if per_game.get(p['game_id'], 0) >= MAX_PROPS_PER_GAME or per_player.get(p.get('pid'), 0) >= MAX_PER_PLAYER:
+                continue
+            per_game[p['game_id']] = per_game.get(p['game_id'], 0) + 1
+            per_player[p.get('pid')] = per_player.get(p.get('pid'), 0) + 1
+        p['id'] = '%s-%s-%s' % (day, p['game_id'], hashlib.md5(repr(k).encode()).hexdigest()[:6])
+        added.append(p)
+        shown.append(p)
+        keys.add(k)
+        history.append(history_row(p, started))
+    early = sum(1 for p in shown if p.get('early'))
+    shown.sort(key=lambda p: rank_key(p), reverse=True)
+    for g in out_games:
+        if g.get('state') == 'pre':
+            g['pick_objs'] = [p for p in shown if p['game_id'] == g['id']]
+            g['picks'] = [p['id'] for p in g['pick_objs']]
+    msg = '%d posted earlier and kept, %d new%s%s' % (n_kept, len(added), ', %d pulled before tip (player ruled out)' % n_pulled if n_pulled else '',
+                                                  ', %d early-look picks (posted from %d:00 Central)' % (early, POST_HOUR) if early else '')
+    src('card', True, msg)
+    return shown, history
 
 
 # ----------------------------------------------------------------------------- main
@@ -4962,26 +5082,13 @@ def main(argv):
             pass
     all_picks = finalize_picks(all_picks, out_games)
 
-    # history: replace today's picks for games still 'pre', keep the rest
+    # the record: picks are posted once (from POST_HOUR, or close to tip) and then stay, see lock_card
     today_s = today.isoformat()
-    pre_ids = {g['id'] for g in out_games if g.get('state') == 'pre'}
-    old_by_id = {h['id']: h for h in history}
-    history = [h for h in history if not (h['date'] == today_s and h['game_id'] in pre_ids and not h.get('result'))]
-    have = {h['id'] for h in history}
-    for p in all_picks:
-        if p['id'] not in have and p['game_id'] in pre_ids:
-            row_ = ({k: p[k] for k in ('id', 'date', 'game_id', 'away', 'home', 'type', 'side', 'label', 'line', 'odds', 'est', 'est_raw', 'edge', 'kind', 'conf', 'units') if k in p}
-                    | {k: p[k] for k in ('fair', 'book', 'n_books', 'jp', 'est_nj', 'sd', 'utc', 'alt') if p.get(k) is not None}
-                           | ({'player': p['player'], 'stat': p['stat'], 'pid': p['pid']} if p['type'] == 'prop' else {})
-                           | ({'sig': [i['k'] for i in p['sig']['items']], 'sig_tier': p['sig']['tier']} if p.get('sig') else {})
-                    | {'posted': started.strftime('%Y-%m-%dT%H:%M:%SZ'), 'v': ENGINE_VERSION})
-            oh_ = old_by_id.get(p['id']) or {}
-            row_.update({k: oh_[k] for k in ('close', 'clv', 'clv_pts') if k in oh_})
-            history.append(row_)
+    all_picks, history = lock_card(all_picks, out_games, history, today, started)
     jsave(lines_path, lines_seen)
     jsave(hist_path, history)
     try:
-        update_parlays(all_picks, out_games, games, today, started.strftime('%Y-%m-%dT%H:%M:%SZ'))
+        update_parlays([p for p in all_picks if not p.get('early')], out_games, games, today, started.strftime('%Y-%m-%dT%H:%M:%SZ'))
     except Exception as e:  # noqa
         src('parlays', False, 'parlay tracker failed: %s' % str(e)[:120])
     jsave(acache_path, acache)
