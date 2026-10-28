@@ -5066,7 +5066,7 @@ def main(argv):
         build_judgment(history)
         src('judgment', True, ('Claude\'s own probability moves the model\'s by %.0f%% (at most %.0f points)%s' % (
             100 * JUDG['w'], 100 * JUDG_CAP, ('; so far Claude\'s probabilities score %s against the model\'s %s over %d graded picks (lower is better)' % (
-                JUDG['brier_j'], JUDG['brier_m'], JUDG['n'])) if JUDG['brier_j'] is not None else '; the weight adjusts itself after 40 graded picks')) if JUDG['w'] > 0 else 'switched off')
+                JUDG['brier_j'], JUDG['brier_m'], JUDG['n'])) if JUDG['brier_j'] is not None else '; from 40 graded picks the weight starts following the evidence, at full strength only after a few hundred')) if JUDG['w'] > 0 else 'switched off')
     except Exception as e:  # noqa
         src('judgment', False, 'failed: %s' % str(e)[:120])
 

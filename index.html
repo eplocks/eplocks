@@ -2284,7 +2284,7 @@ function trackExtras(root, H){
       tile('Graded picks', String(js.n), 'Settled picks that had a Claude probability logged.'),
       tile('Claude score', js.bj != null ? js.bj.toFixed(3) : 'n/a', 'Brier score of Claude\'s probability on those picks. Lower is better; 0.250 is a coin flip.'),
       tile('Model score', js.bm != null ? js.bm.toFixed(3) : 'n/a', 'Brier score of the model\'s probability on the same picks.')));
-    root.append(help(js.n < 40 ? 'The weight stays at its starting value until 40 graded picks exist. After that it moves up (to at most double) if Claude\'s probabilities are the sharper of the two, and down to zero if they are not.' : 'The weight follows these scores: it rises (to at most double) while Claude\'s read is sharper than the model\'s and falls toward zero if it is not.'));
+    root.append(help(js.n < 40 ? 'The weight stays at its starting value until 40 graded picks exist. After that it moves up (to at most double) if Claude\'s probabilities are the sharper of the two, and down toward zero if they are not, slowly at first: the score difference only counts at half strength after 200 picks, because over a few dozen it is mostly luck.' : 'The weight follows these scores: it rises (to at most double) while Claude\'s read is sharper than the model\'s and falls toward zero if it is not.'));
   }
   var bt = S.bt, bs = L.status && L.status.sources && L.status.sources.backtest;
   if (bt && bt.bets){
@@ -3163,6 +3163,15 @@ function lastName(n){
   return w[w.length - 1] || '';
 }
 function phiN(x){ var t = 1 / (1 + .2316419 * Math.abs(x)), d = .3989423 * Math.exp(-x * x / 2), p = d * t * (.3193815 + t * (-.3565638 + t * (1.781478 + t * (-1.821256 + t * 1.330274)))); return x > 0 ? 1 - p : p; }
+/* same count curve the engine uses for low-count stats (negative binomial, Poisson when the swing is no bigger than the average) */
+function countCdf(k, mu, v){
+  if (k < 0) return 0; mu = Math.max(mu, 1e-3);
+  var p, t, i;
+  if (v <= mu * 1.0001){ t = Math.exp(-mu); p = t; for (i = 1; i <= k; i++){ t *= mu / i; p += t; } return Math.min(1, p); }
+  var r = mu * mu / (v - mu), q = mu / (mu + r); t = Math.exp(r * Math.log(1 - q)); p = t;
+  for (i = 1; i <= k; i++){ t *= (r + i - 1) / i * q; p += t; }
+  return Math.min(1, p);
+}
 function playerOf(pid){ var ix = aceIndex(); return ix.players.filter(function(p){ return p.pid === String(pid); })[0] || null; }
 function rowOf(p){ var g = gameById(p.game_id); return g ? (g.prop_rows || []).filter(function(r){ return String(r.pid) === String(p.pid) && r.stat === p.stat; })[0] || null : null; }
 function seasonPts(g, pid){ var b = (g.player_board || []).filter(function(x){ return String(x.pid) === String(pid); })[0], lg = (g.plogs || {})[pid]; return b && b.proj && b.proj.points ? b.proj.points[1] : lg && lg.avg ? lg.avg.pts : null; }
@@ -3436,7 +3445,10 @@ function aceEval(o, ix){
       else { var other = leanPick(g, r, over ? 'under' : 'over'); if (other.edge > 0){ lines.push('The other side reads better: ' + other.label + ' at ' + fo(other.odds) + ', ' + pct(other.est) + ' vs ' + pct(other.implied) + ' implied.'); legs.push(other); } }
     } else {
       /* a line the books are not hanging: move the model's chance along its own spread of outcomes */
-      var shift = function(L){ var z = (L + (L % 1 ? 0 : .5) - m.mean) / sd; return over ? 1 - phiN(z) : phiN(z - (L % 1 ? 0 : 1 / sd)); };
+      var shift = function(L){
+        if (m.dist === 'count'){ var whole = !(L % 1), k = Math.floor(L); return over ? 1 - countCdf(k, m.mean, sd * sd) : countCdf(whole ? k - 1 : k, m.mean, sd * sd); }
+        var z = (L + (L % 1 ? 0 : .5) - m.mean) / sd; return over ? 1 - phiN(z) : phiN(z - (L % 1 ? 0 : 1 / sd));
+      };
       var now = shift(line), atPost = shift(r.line);
       est = Math.max(.02, Math.min(.98, posted.est + (now - atPost)));
       how = ' (a rough read: the books post ' + r.line + ', so I moved the model\'s chance along its range of outcomes)';
