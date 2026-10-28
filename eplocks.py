@@ -50,6 +50,7 @@ JUDG = {'w': W_JUDG, 'n': 0, 'brier_j': None, 'brier_m': None}
 BLEND_MAX = 0.5        # most weight the model's own number gets against the market's (last season's replay can lower it)
 CLOSE_WINDOW_MIN = int(os.environ.get('EPLOCKS_CLOSE_MINUTES') or 25)    # closing mode records a pick's closing line this many minutes before tip-off
 PROPS_FROM_HOUR = int(os.environ.get('EPLOCKS_PROPS_FROM_HOUR') or 15)   # props are bought only from this hour (Central) on: one fresh pull before tip-off, when lines and injuries have settled
+PROPS_LEAD_H = float(os.environ.get('EPLOCKS_PROPS_LEAD_HOURS') or 4.5)  # or once the day's first game is this close, so the afternoon run (3 PM, or 2 PM after the clocks change) always buys them
 PROPS_CLOSE_MIN_CREDITS = int(os.environ.get('EPLOCKS_PROPS_CLOSE_MIN_CREDITS') or 150)   # prop closing lines are only bought while this many credits remain
 PROPS_STALE_H = 8      # reused props older than this are dropped rather than priced
 PROPS_REUSE_MIN = int(os.environ.get('EPLOCKS_PROPS_REUSE_MINUTES') or 60)   # props pulled this recently are reused instead of paid for again
@@ -2065,6 +2066,10 @@ def fetch_odds_props(slate_events):
         if ev['state'] == 'pre':
             mine[(nick(ev['home']['name']), nick(ev['away']['name']))] = ev
     out, fails, per = [], 0, len(markets) * len(ODDS_REGIONS.split(','))
+    tips = [parse_utc(ev.get('utc')) for ev in mine.values()]
+    tips = [t for t in tips if t]
+    lead = (min(tips) - dt.datetime.now(dt.timezone.utc)).total_seconds() / 3600.0 if tips else 99
+    buy_ok = dt.datetime.now(CT).hour >= PROPS_FROM_HOUR or lead <= PROPS_LEAD_H
     # today's props are kept per game, so a run that cannot (or need not) spend credits reuses the last good lines instead of losing them
     cpath = os.path.join(DATA, 'props_auto.json')
     day = today_ct().isoformat()
@@ -2080,11 +2085,11 @@ def fetch_odds_props(slate_events):
         if ce and now - ce.get('t', 0) > PROPS_STALE_H * 3600:
             ce = None                       # too old: prices this stale would show edges that are no longer on offer
         fresh = ce and now - ce.get('t', 0) < PROPS_REUSE_MIN * 60
-        early = dt.datetime.now(CT).hour < PROPS_FROM_HOUR and not ce
+        early = not buy_ok and not ce
         if early:
             waited = True
             continue                        # too early to buy props: they are pulled once in the afternoon and reused after that
-        if ce and not fresh and dt.datetime.now(CT).hour >= PROPS_FROM_HOUR and ODDS['left'] is not None and ODDS['left'] < 400:
+        if ce and not fresh and buy_ok and ODDS['left'] is not None and ODDS['left'] < 400:
             fresh = True                    # on a small plan: keep the afternoon pull instead of buying the same props again
         if fresh or not odds_ok(per):
             if not fresh:

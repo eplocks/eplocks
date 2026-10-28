@@ -2,8 +2,11 @@ name: EpLocks daily run
 
 on:
   schedule:
-    # 15:00 UTC = 10:00 AM CDT and 22:30 UTC = 5:30 PM CDT (one hour earlier after Nov 1). Games tip off in the evening.
+    # 15:00 UTC = 10:00 AM CDT: early look. 20:00 UTC = 3:00 PM CDT: props are bought and the card is posted, with time to spare
+    # before 6 PM tips even when GitHub starts the run late. 22:30 UTC = 5:30 PM CDT: refresh (reuses the afternoon props on a small plan).
+    # All one hour earlier on the clock after Nov 1.
     - cron: "0 15 * * *"
+    - cron: "0 20 * * *"
     - cron: "30 22 * * *"
     # every 20 minutes from 4 PM to midnight Central: saves each pick's closing line just before tip-off and checks the injury report;
     # when a rotation player is newly ruled out (or back) it reruns the card and sends new picks to your phone
