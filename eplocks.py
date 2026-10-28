@@ -1609,6 +1609,55 @@ def pos_factor(pd, opp, pos, stat):
     return m, note
 
 
+DEF_STATS = ('pts', 'reb', 'ast', 'tpm')
+
+
+def defense_ranks(pd):
+    """Every team ranked by what it allows, overall and to guards, forwards and centers, from the same position-defense numbers the props use
+    (this season plus last season at half weight, pulled toward the league average until there are enough minutes).
+    ratio: allowed per minute against the league rate (1.08 = 8% more than average). per_game: that rate over a typical game's minutes at
+    the position. rank: 1 allows the least, 30 the most."""
+    if not pd:
+        return None
+    lg = pd['lg']
+    tot_min = sum(r[0] for r in lg.values()) or 1.0
+    teams = {}
+    for team, rows in pd['def'].items():
+        if len(team) > 4:
+            continue
+        t = {}
+        allrow = [0.0] * 5
+        for pos in ('G', 'F', 'C'):
+            row, lrow = rows.get(pos), lg.get(pos)
+            if not row or not lrow or lrow[0] <= 0 or row[0] <= 0:
+                continue
+            share = 240.0 * lrow[0] / tot_min
+            t[pos] = {}
+            for i, k in enumerate(DEF_STATS, start=1):
+                lrate = lrow[i] / lrow[0]
+                if lrate <= 0:
+                    continue
+                ratio = (row[i] + POS_K * lrate) / ((row[0] + POS_K) * lrate)
+                t[pos][k] = {'ratio': r3(ratio), 'per_game': r1(ratio * lrate * share)}
+            for i in range(5):
+                allrow[i] += row[i]
+        if not t:
+            continue
+        lall = [sum(r[i] for r in lg.values()) for i in range(5)]
+        t['all'] = {}
+        for i, k in enumerate(DEF_STATS, start=1):
+            lrate = lall[i] / lall[0]
+            ratio = (allrow[i] + 3 * POS_K * lrate) / ((allrow[0] + 3 * POS_K) * lrate) if allrow[0] > 0 else 1.0
+            t['all'][k] = {'ratio': r3(ratio), 'per_game': r1(ratio * lrate * 240.0)}
+        teams[team] = t
+    for pos in ('all', 'G', 'F', 'C'):
+        for k in DEF_STATS:
+            have = sorted((v[pos][k]['ratio'], tm) for tm, v in teams.items() if pos in v and k in v[pos])
+            for i, (_, tm) in enumerate(have, start=1):
+                teams[tm][pos][k]['rank'] = i
+    return {'teams': teams, 'n_teams': len(teams), 'games': pd['games'], 'prior': pd['prior']}
+
+
 def build_team_profiles(games):
     """How each team actually plays, measured from this season's box scores: rotation depth, how hard the starters are played,
     how soon they come out of blowouts, how stable the core is, shot choices and how the team fares on back-to-backs."""
@@ -4998,6 +5047,11 @@ def main(argv):
         src('position_defense', bool(pdef), ('defense by position from %d games%s' % (pdef['games'], ' plus last season' if pdef['prior'] else '')) if pdef else 'not enough games with positions yet')
     except Exception as e:  # noqa
         src('position_defense', False, 'failed: %s' % str(e)[:120])
+    def_ranks = None
+    try:
+        def_ranks = defense_ranks(pdef)
+    except Exception as e:  # noqa
+        note('Defense rankings skipped: %s' % str(e)[:120])
     try:
         profiles, prof_lg = build_team_profiles(games)
         src('team_profiles', bool(profiles), '%d teams profiled from this season\'s box scores' % len(profiles))
@@ -5414,7 +5468,7 @@ def main(argv):
         'odds': {'left': ODDS['left'], 'used': ODDS['used'], 'calls': ODDS['calls']},
         'status': {k: v for k, v in STATUS.items() if not k.startswith('_')}, 'games': out_games,
         'picks': [dict(p, label=p['label']) for p in all_picks], 'props_unmatched': unmatched[:60], 'props_not_playing': [dict(p) for p in not_playing][:60],
-        'props_lines': len(lines) + (len(auto) if auto else 0), 'audit': audit, 'replay': dict(REPLAY_SUM) or None}
+        'props_lines': len(lines) + (len(auto) if auto else 0), 'audit': audit, 'replay': dict(REPLAY_SUM) or None, 'defense': def_ranks}
     # drop heavy duplicates
     for g in result['games']:
         for t in ('away', 'home'):

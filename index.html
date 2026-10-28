@@ -1096,6 +1096,41 @@ html.boot .hstats{animation:riseIn .6s cubic-bezier(.2,.8,.2,1) .45s both}
 .receipt .ok{color:var(--acc);font-weight:700}
 .receipt .warn{color:var(--warn);font-weight:700}
 /* ===== end v14 ===== */
+
+/* ===== v15 player search and defense ranks ===== */
+.ps-box{display:block}
+.ps-box input{width:100%;min-height:48px;padding:10px 14px;border-radius:var(--r2);border:1px solid var(--line);background:var(--surface);color:var(--fg);font:500 16px var(--f-body)}
+.ps-box input:focus{outline:2px solid color-mix(in srgb,var(--acc) 60%,transparent);outline-offset:1px}
+.ps-list{display:grid;gap:6px}
+.ps-h{margin:var(--s3) 0 2px;font-size:var(--t-small);color:var(--mut);text-transform:uppercase;letter-spacing:.06em}
+.ps-row{appearance:none;cursor:pointer;display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:10px;align-items:center;text-align:left;width:100%;padding:10px 12px;border-radius:var(--r2);border:1px solid var(--line);background:var(--surface);color:var(--fg);min-height:56px}
+.ps-row:active{transform:scale(.99)}
+.ps-id{display:grid;gap:2px;min-width:0}
+.ps-id b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ps-take{font:700 12.5px var(--f-body);padding:4px 8px;border-radius:999px;border:1px solid var(--line);color:var(--mut);white-space:nowrap}
+.ps-take.good{color:var(--acc);border-color:color-mix(in srgb,var(--acc) 55%,var(--line));background:color-mix(in srgb,var(--acc) 10%,transparent)}
+.ps-take.mid{color:var(--warn);border-color:color-mix(in srgb,var(--warn) 50%,var(--line))}
+.ps-take.bad{color:var(--bad);border-color:color-mix(in srgb,var(--bad) 50%,var(--line))}
+.pt-list{display:grid;gap:6px}
+.pt-row{appearance:none;cursor:pointer;display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:8px;align-items:center;text-align:left;width:100%;padding:8px 10px;border-radius:var(--r1);border:1px solid var(--line);background:transparent;color:var(--fg)}
+.pt-row.on{border-color:color-mix(in srgb,var(--acc) 60%,var(--line));background:color-mix(in srgb,var(--acc) 7%,transparent)}
+.pt-st{display:grid;gap:1px;min-width:0}
+.pt-proj{color:var(--mut);white-space:nowrap}
+.note.read{line-height:1.5}
+.dt-team{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.deftab table{min-width:0;width:100%;table-layout:auto}
+.deftab td,.deftab th{padding-left:8px;padding-right:8px;white-space:nowrap}
+.deftab td:first-child,.deftab th:first-child,.deftab.tscroll td:first-child{width:1%;min-width:0;max-width:none;white-space:nowrap;padding-left:12px}
+.deftab .dt-team .logo,.deftab .dt-team img{width:18px;height:18px}
+@media (max-width:380px){.deftab td,.deftab th{padding-left:5px;padding-right:5px;font-size:13px}.deftab .dt-team img,.deftab .dt-team .logo{display:none}}
+@media (max-width:380px){.pt-proj{display:none}.ps-row{grid-template-columns:auto minmax(0,1fr)}.ps-row .ps-take{grid-column:2;justify-self:start}}
+@media (max-width:560px){#searchBtn{margin-left:auto}#themeBtn{margin-left:8px}}
+.bar-r #searchBtn{margin-right:6px}
+#searchBtn svg{display:block!important;width:18px;height:18px}
+@media (max-width:340px){.wm{font-size:20px!important;letter-spacing:.02em!important;gap:4px!important}.wm i{font-size:.7em}.bar{gap:6px}}
+@media (max-width:374px){.wm{font-size:24px;gap:5px}.brand .mark{width:22px;height:24px}#themeBtn{margin-left:6px}.ibtn{width:34px;height:34px}}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+/* ===== end v15 ===== */
 </style>
 </head>
 <body>
@@ -1108,6 +1143,9 @@ html.boot .hstats{animation:riseIn .6s cubic-bezier(.2,.8,.2,1) .45s both}
         <span class="wm">EPLOCKS<i>AI</i></span>
       </div>
       <div class="bar-r"><span class="sync" id="sync" aria-live="polite">Loading…</span>
+        <button type="button" class="ibtn" id="searchBtn" aria-label="Search players">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.6-3.6"/></svg>
+        </button>
         <button type="button" class="ibtn" id="themeBtn" data-mode="auto" aria-label="Change theme">
           <svg class="i-auto" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 3v18" /><path d="M12 3a9 9 0 0 1 0 18z" fill="currentColor"/></svg>
           <svg class="i-light" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
@@ -1136,6 +1174,7 @@ html.boot .hstats{animation:riseIn .6s cubic-bezier(.2,.8,.2,1) .45s both}
   <section id="method" class="narrow" role="tabpanel" hidden></section>
   <section id="status" class="narrow" role="tabpanel" hidden></section>
   <section id="more" class="narrow" role="tabpanel" hidden></section>
+  <section id="defense" role="tabpanel" hidden></section>
   <p class="legal">Estimates, not guarantees. Check lines and injuries before you bet. Bet only where it is legal and only what you can afford to lose. Problem gambling help in the US: 1-800-GAMBLER.</p>
   <p class="legal">Scores, box scores and injury reports from ESPN public data; prop prices from your props.txt or The Odds API; analysis by Claude. Independent project, not affiliated with the NBA, ESPN or any sportsbook. <span id="ver"></span></p>
 </main>
@@ -1608,15 +1647,46 @@ function renderCard(root){
   var pulled = (S.history || []).filter(function(h){ return h.pulled && h.date === L.for_date; });
   if (pulled.length) root.append(el('details', {class:'help'}, el('summary', {text:pulled.length + ' pulled before tip'}), el('ul', {class:'fit-why'}, pulled.map(function(h){ return el('li', {text:h.label + ': ' + String(h.final || '').replace('Pulled before tip: ', '')}); }))));
 }
+function renderDefense(){
+  var root = $('#defense'); root.textContent = '';
+  var L = S.latest, D = L && L.defense;
+  root.append(el('div', {class:'hero clean'}, el('div', {}, el('h1', {text:'Defense ranks'}), el('p', {class:'hero-sum', text:'What every team allows, by stat and position. 1st allows the least, ' + (D ? ord(D.n_teams) : '30th') + ' the most.'}))));
+  if (!D){ root.append(el('div', {class:'empty'}, el('b', {text:'Not built yet'}), 'The rankings appear after the next daily run.')); return; }
+  S.dStat = S.dStat || 'tpm'; S.dPos = S.dPos || 'all'; S.dSort = S.dSort || 'soft';
+  function seg(label, key, opts){
+    return el('div', {class:'row'}, el('b', {text:label}), el('div', {class:'seg', role:'group', 'aria-label':label}, opts.map(function(o){
+      return el('button', {type:'button', 'aria-pressed':String(S[key] === o[0]), text:o[1], onclick:function(){ S[key] = o[0]; renderDefense(); }});
+    })));
+  }
+  root.append(el('div', {class:'ctl'}, seg('Stat', 'dStat', [['pts', 'Points'], ['reb', 'Rebounds'], ['ast', 'Assists'], ['tpm', 'Threes']]),
+    seg('Against', 'dPos', [['all', 'Everyone'], ['G', 'Guards'], ['F', 'Forwards'], ['C', 'Centers']]),
+    seg('Order', 'dSort', [['soft', 'Allows most'], ['tough', 'Allows least']])));
+  var tonight = {};
+  L.games.forEach(function(g){ tonight[g.home.abbr] = 'vs ' + g.away.abbr; tonight[g.away.abbr] = 'at ' + g.home.abbr; });
+  var rows = Object.keys(D.teams).map(function(t){ return {t:t, c:defCell(t, S.dPos, S.dStat)}; }).filter(function(x){ return x.c && x.c.rank; });
+  rows.sort(function(a, b){ return S.dSort === 'soft' ? b.c.rank - a.c.rank : a.c.rank - b.c.rank; });
+  var what = DEF_N[S.dStat] + (S.dPos === 'all' ? '' : ' to ' + POS_N[S.dPos]);
+  root.append(el('p', {class:'small', text:'Ranked by ' + what + ' allowed. Teams playing tonight show their opponent: a high rank against an opponent\'s strength is a matchup the props already lean into (by at most 6%).'}));
+  var tb = table(['Rank', 'Team', 'Per game', 'vs avg'], rows.map(function(x){
+    var d = Math.round((x.c.ratio - 1) * 100);
+    return [ord(x.c.rank), el('span', {class:'dt-team'}, logoEl(x.t), el('b', {text:x.t}), tonight[x.t] ? el('span', {class:'small mut', text:' ' + tonight[x.t]}) : null), String(x.c.per_game), d === 0 ? 'even' : (d > 0 ? '+' : '') + d + '%'];
+  }), 2);
+  tb.classList.add('deftab');
+  root.append(tb);
+  var per = D.games ? Math.max(1, Math.round(2 * D.games / Math.max(D.n_teams, 1))) : 0;
+  root.append(help(['Built from every box score this season' + (D.prior ? ' plus last season at half weight' : '') + ', per minute against each position, and pulled toward the league average until a team has enough minutes. About ' + per + ' game' + (per === 1 ? '' : 's') + ' per team so far' + (D.prior && per < 20 ? ', so last season still carries most of the weight; it shifts toward this season every night' : '') + '.',
+    '"Per game" is what that rate comes to over a typical game\'s minutes at the position. Guards, forwards and centers follow ESPN\'s listed positions.'], 'How this is built'));
+}
 function renderMore(){
   var root = $('#more'); root.textContent = '';
   root.append(el('div', {class:'hero clean'}, el('div', {}, el('h1', {text:'More'}), el('p', {class:'hero-sum', text:'Everything else on the board, and how it works.'}))));
   var items = [['signals', 'Smart Signals', 'Bets where several patterns line up', sigCount()], ['players', 'Players', 'Best players to bet by market', null],
     ['props', 'Every prop', 'All priced props, best edge first', null], ['ace', 'Ask Ace', 'Your betting buddy builds and checks tickets', null],
+    ['search', 'Find a player', 'His props tonight and what the model thinks', null], ['defense', 'Defense ranks', 'Who allows the most, by stat and position', null],
     ['method', 'How it works', 'The method, step by step', null], ['status', 'Status', 'What loaded on the last run', null]];
   root.append(el('div', {class:'more-grid'}, items.map(function(it){
     var bt = el('button', {type:'button', class:'more-it'}, el('b', {text:it[1]}), el('span', {text:it[2]}), it[3] ? el('i', {class:'count', text:String(it[3])}) : null);
-    bt.onclick = function(){ if (it[0] === 'ace') go('ace'); else showTab(it[0]); };
+    bt.onclick = function(){ if (it[0] === 'ace' || it[0] === 'search') go(it[0]); else showTab(it[0]); };
     return bt;
   })));
 }
@@ -2110,7 +2180,7 @@ function openPlayer(gid, pid, stat){ go('player/' + gid + '/' + pid + (stat ? '/
 function routeHash(){
   var h = (location.hash || '').slice(1), p = h.split('/');
   SH.depth = (history.state && history.state.sh) || 0;
-  if (p[0] === 'ace' || p[0] === 'slip') showSheet({kind:p[0]});
+  if (p[0] === 'ace' || p[0] === 'slip' || p[0] === 'search') showSheet({kind:p[0]});
   else if (p[0] === 'game' && p[1]) showSheet({kind:'game', gid:p[1]});
   else if (p[0] === 'player' && p[1] && p[2]) showSheet({kind:'player', gid:p[1], pid:p[2], stat:p[3] || null});
   else closeSheet(true);
@@ -2131,7 +2201,7 @@ function showSheet(r){
   renderSheet(true);
   if (r.kind === 'ace') aceScroll();
   if (newGame) loadBox(); else if (withGame) schedule();
-  if (fresh) setTimeout(function(){ var c = $(r.kind === 'ace' ? '#aceIn' : '#shClose'); if (c) c.focus(); }, 30);
+  if (fresh) setTimeout(function(){ var c = $(r.kind === 'ace' ? '#aceIn' : r.kind === 'search' ? '#psIn' : '#shClose'); if (c) c.focus(); }, 30);
 }
 function closeSheet(silent){
   var sh = $('#sheet'); if (!sh) return;
@@ -2159,6 +2229,7 @@ function renderSheet(top){
   try {
     if (SH.kind === 'ace'){ content = aceNode(); title = 'Ace'; }
     else if (SH.kind === 'slip'){ content = slipBody(); title = 'Bet slip'; }
+    else if (SH.kind === 'search'){ content = searchBody(); title = 'Find a player'; }
     else if (SH.kind === 'player'){ var pb = playerBody(g, SH.pid, SH.stat); content = pb.node; title = pb.title; }
     else { content = gameBody(g); title = g.away.abbr + ' at ' + g.home.abbr; }
   } catch(e){
@@ -2514,6 +2585,121 @@ function breakdownList(g, r, pick){
   if (r.injury) L.push('Injury report: ' + r.injury + '. Players on the report get no pick.');
   return el('ol', {class:'why-list'}, L.map(function(x){ return el('li', {text:x}); }));
 }
+/* ---- defense rankings: what each team allows, overall and by position (from the same numbers the props use) ---- */
+var DEF_K = {points:['pts'], rebounds:['reb'], assists:['ast'], threes:['tpm'], pra:['pts', 'reb', 'ast'], pts_reb:['pts', 'reb'], pts_ast:['pts', 'ast'], reb_ast:['reb', 'ast']};
+var DEF_N = {pts:'points', reb:'rebounds', ast:'assists', tpm:'3-pointers'};
+var POS_N = {G:'guards', F:'forwards', C:'centers', all:'everyone'};
+function ord(n){ var s = ['th', 'st', 'nd', 'rd'], v = n % 100; return n + (s[(v - 20) % 10] || s[v] || s[0]); }
+function defCell(team, pos, k){ var D = S.latest && S.latest.defense; return D && D.teams[team] && D.teams[team][pos] && D.teams[team][pos][k] || null; }
+/* "DEN ranks 30th of 30 against assists to forwards (allows 16% more than average)" */
+function defLines(opp, pos, stat){
+  var D = S.latest && S.latest.defense, ks = DEF_K[stat], P = pos && D && D.teams[opp] && D.teams[opp][pos] ? pos : 'all';
+  if (!D || !ks || !D.teams[opp]) return [];
+  return ks.map(function(k){
+    var c = defCell(opp, P, k); if (!c || !c.rank) return null;
+    var d = Math.round((c.ratio - 1) * 100);
+    return {rank:c.rank, n:D.n_teams, k:k, pos:P, d:d, text:opp + ' ranks ' + ord(c.rank) + ' of ' + D.n_teams + ' against ' + DEF_N[k] + (P === 'all' ? '' : ' to ' + POS_N[P]) + ' (' + (d === 0 ? 'about average' : 'allows ' + Math.abs(d) + '% ' + (d > 0 ? 'more' : 'less') + ' than average') + ')'};
+  }).filter(Boolean);
+}
+function propTake(g, row){
+  var pk = (g.pick_objs || []).filter(function(p){ return p.pid === row.pid && p.stat === row.stat; })[0] || null;
+  if (pk) return {k:'On the card: ' + pk.side, cls:'good', side:pk.side, edge:pk.edge, pick:pk};
+  if (row.skipped) return {k:'Ruled out', cls:'bad', side:null, edge:null};
+  if (!row.model) return {k:'No read', cls:'', side:null, edge:null};
+  var b = bestSide(row);
+  if (b.edge >= .03) return {k:'Lean ' + b.side, cls:'mid', side:b.side, edge:b.edge};
+  if (b.edge >= .015) return {k:'Slight ' + b.side, cls:'mid', side:b.side, edge:b.edge};
+  return {k:'Pass', cls:'', side:b.side, edge:b.edge};
+}
+function propRead(g, row, pl){
+  var m = row.model, t = propTake(g, row), nm = (STAT[row.stat] || row.stat).toLowerCase(), out = [];
+  if (!m) return 'No model read for this line.';
+  var team = row.team || (pl && pl.team), opp = team === g.home.abbr ? g.away.abbr : g.home.abbr, pos = (pl && pl.pos) || null;
+  out.push('The model projects ' + m.mean + ' ' + nm + ' against a line of ' + row.line + ' (season ' + m.season + ', last 5 ' + m.l5 + (m.prior_mean != null ? ', last season ' + m.prior_mean : '') + ').');
+  if (m.n_l10) out.push('He has gone over ' + row.line + ' in ' + m.hit_l10 + ' of his last ' + m.n_l10 + (m.n_l10 < 8 ? ', a small sample' : '') + '.');
+  var dl = defLines(opp, pos, row.stat);
+  if (dl.length) out.push(dl.map(function(x){ return x.text; }).join('; ') + '.');
+  if (row.rm_note) out.push(row.rm_note.charAt(0).toUpperCase() + row.rm_note.slice(1) + '.');
+  if (m.min_l5 && m.min_avg && Math.abs(m.min_l5 - m.min_avg) >= 2) out.push('Minutes ' + (m.min_l5 > m.min_avg ? 'up' : 'down') + ' lately: ' + m.min_l5 + ' over the last 5 against ' + m.min_avg + '.');
+  if (row.injury) out.push('Listed ' + row.injury + ' on the injury report.');
+  var b = bestSide(row);
+  if (t.pick) out.push('Take: on today\'s card, ' + t.pick.label + ' at ' + fo(t.pick.odds) + ', ' + pct(t.pick.est) + ' against ' + pct(t.pick.implied) + ' implied (' + fe(t.pick.edge) + ').');
+  else if (row.skipped) out.push('Take: no bet. ' + (row.note || 'The analysis or the injury report ruled this one out.'));
+  else if (b.edge >= .015) out.push('Take: ' + (b.edge >= .03 ? 'leans ' : 'slight lean to the ') + b.side + ', ' + pct(b.p) + ' against ' + pct(impl(b.price)) + ' implied (' + fe(b.edge) + '). It is not on the card' + (b.edge >= .03 ? ' because the card caps picks per game and needs a pattern behind every prop' : ' because the edge is under 3 points') + ', so treat it as a lean.');
+  else out.push('Take: pass. The model and the price roughly agree (best side ' + b.side + ' at ' + fe(b.edge) + ').');
+  return out.join(' ');
+}
+
+/* ---- player search: every player on tonight's slate, by name, nickname, typo or team ---- */
+function psIndex(){
+  var L = S.latest; if (!L) return [];
+  if (S.psIx && S.psIx.at === L.generated_at) return S.psIx.list;
+  var out = [], seen = {};
+  L.games.forEach(function(g){
+    var byPid = {};
+    (g.prop_rows || []).forEach(function(r){ if (r.pid != null) (byPid[r.pid] = byPid[r.pid] || []).push(r); });
+    function add(pid, name, team){
+      pid = String(pid); if (!name || seen[pid + '|' + g.id]) return; seen[pid + '|' + g.id] = 1;
+      var rows = byPid[pid] || [], takes = rows.map(function(r){ return {r:r, t:propTake(g, r)}; });
+      var best = takes.filter(function(x){ return x.t.edge != null && x.t.cls !== 'bad'; }).sort(function(a, b){ return (b.t.pick ? 1 : 0) - (a.t.pick ? 1 : 0) || b.t.edge - a.t.edge; })[0] || null;
+      out.push({pid:pid, name:name, key:nameKey(name), team:team, g:g, rows:rows, best:best, pick:takes.some(function(x){ return x.t.pick; })});
+    }
+    Object.keys(byPid).forEach(function(pid){ var r = byPid[pid][0]; add(pid, r.player || r.name, r.team); });
+    (g.player_board || []).forEach(function(b){ add(b.pid, b.name, b.team); });
+    Object.keys(g.plogs || {}).forEach(function(pid){ add(pid, g.plogs[pid].name, g.plogs[pid].team); });
+  });
+  S.psIx = {at:L.generated_at, list:out};
+  return out;
+}
+function psFind(q){
+  var list = psIndex(), t = ' ' + nameKey(q) + ' ', words = t.trim().split(' ').filter(Boolean);
+  if (!words.length) return null;
+  var ix = aceIndex(), teams = findTeams(t, q, ix).map(function(x){ return x.abbr; });
+  var nickTo = Object.keys(PNICK).filter(function(k){ return new RegExp('\\b' + k + '\\b').test(t) || (k.length >= 3 && k.indexOf(words.join(' ')) === 0 && words.join(' ').length >= 3); }).map(function(k){ return PNICK[k]; });
+  return list.map(function(p){
+    var sc = 0, ln = lastName(p.name), parts = p.key.split(' ');
+    if (p.key === words.join(' ')) sc = 100;
+    else if (p.key.indexOf(words.join(' ')) === 0) sc = 90;
+    else if (words.every(function(w){ return parts.some(function(x){ return x.indexOf(w) === 0; }); })) sc = 80;
+    else if (nickTo.some(function(n){ return p.key === n || p.key.replace(/ (jr|sr|ii|iii|iv)$/, '') === n; })) sc = 85;
+    else if (words.length === 1 && words[0].length >= 4 && parts.some(function(x){ return x.length >= 4 && x[0] === words[0][0] && lev(x, words[0]) <= (x.length >= 8 ? 2 : 1); })) sc = 60;
+    else if (teams.indexOf(p.team) >= 0) sc = 40 + (p.rows.length ? 5 : 0);
+    else if (words.some(function(w){ return w.length >= 3 && p.key.indexOf(w) >= 0; })) sc = 30;
+    return {p:p, base:sc, sc:sc + (p.rows.length ? 2 : 0) + (p.pick ? 1 : 0)};
+  }).filter(function(x, i, a){ return x.base > 0; }).filter(function(x, i, a){ var top = Math.max.apply(null, a.map(function(y){ return y.base; })); return top < 60 || x.base >= 60; }).sort(function(a, b){ return b.sc - a.sc || b.p.rows.length - a.p.rows.length; }).map(function(x){ return x.p; });
+}
+function psRow(p){
+  var g = p.g, opp = p.team === g.home.abbr ? g.away.abbr : g.home.abbr, b = p.best;
+  var right = b && b.t.k !== 'Pass' ? el('span', {class:'ps-take ' + b.t.cls, text:b.t.k.replace('On the card: ', 'Card: ') + ' ' + b.r.line + ' ' + (SHORT[b.r.stat] || b.r.stat)}) : el('span', {class:'ps-take', text:p.rows.length ? 'No edge' : 'No line tonight'});
+  var bt = el('button', {type:'button', class:'ps-row'}, faceEl(p.pid, p.name), el('span', {class:'ps-id'}, el('b', {text:p.name}),
+    el('span', {class:'small mut', text:p.team + (p.team === g.home.abbr ? ' vs ' : ' at ') + opp + (g.tip ? ' · ' + g.tip : '') + ' · ' + (p.rows.length ? p.rows.length + ' prop' + (p.rows.length === 1 ? '' : 's') : 'no props')})), right);
+  bt.onclick = function(){ openPlayer(g.id, p.pid, b ? b.r.stat : null); };
+  return bt;
+}
+function searchBody(){
+  var inp = el('input', {type:'search', id:'psIn', autocomplete:'off', spellcheck:'false', enterkeyhint:'search', placeholder:'Player or team, e.g. Jokic, Wemby, Celtics', 'aria-label':'Search players', value:S.psQ || ''});
+  var res = el('div', {class:'ps-list', 'aria-live':'polite'});
+  function draw(){
+    var q = inp.value.trim(); S.psQ = q; res.textContent = '';
+    if (!S.latest){ res.append(el('p', {class:'small mut', text:'The slate has not loaded yet.'})); return; }
+    if (!q){
+      var all = psIndex(), card = all.filter(function(p){ return p.pick; }), lean = all.filter(function(p){ return !p.pick && p.best && p.best.t.edge >= .03; }).sort(function(a, b){ return b.best.t.edge - a.best.t.edge; }).slice(0, 8);
+      if (card.length){ res.append(el('h3', {class:'ps-h', text:'On today\'s card'})); card.forEach(function(p){ res.append(psRow(p)); }); }
+      if (lean.length){ res.append(el('h3', {class:'ps-h', text:'Biggest leans that missed the card'})); lean.forEach(function(p){ res.append(psRow(p)); }); }
+      if (!card.length && !lean.length) res.append(el('p', {class:'small mut', text:'Type a name to see his props tonight. Props are priced from about 3 PM Central.'}));
+      return;
+    }
+    var hits = psFind(q) || [];
+    if (!hits.length){ res.append(el('div', {class:'empty'}, el('b', {text:'No one by that name tonight'}), 'Only players in tonight\'s games are listed (' + S.latest.games.map(function(g){ return g.away.abbr + '-' + g.home.abbr; }).join(', ') + ').')); return; }
+    hits.slice(0, 30).forEach(function(p){ res.append(psRow(p)); });
+  }
+  var tmr = null;
+  inp.oninput = function(){ clearTimeout(tmr); tmr = setTimeout(draw, 70); };
+  inp.onkeydown = function(e){ if (e.key === 'Enter'){ var f = res.querySelector('.ps-row'); if (f) f.click(); } };
+  draw();
+  return el('div', {class:'sh-in stack'}, el('label', {class:'ps-box'}, el('span', {class:'sr', text:'Search'}), inp), res);
+}
+
 function playerBody(g, pid, stat){
   var pl = g.plogs && g.plogs[pid] || null;
   var rows = (g.prop_rows || []).filter(function(r){ return r.pid === pid; });
@@ -2536,6 +2722,23 @@ function playerBody(g, pid, stat){
     inj ? el('span', {class:'pill warn', text:inj}) : null), gbtn));
   var nwp = rows.filter(function(r){ return r.news; })[0];
   if (nwp) kids.push(el('div', {class:'note warn small'}, el('b', {text:'Off the court: '}), nwp.news.summary, nwp.news.link ? [' ', el('a', {href:nwp.news.link, target:'_blank', rel:'noopener', text:'Source'})] : null));
+  /* every prop he has tonight, with the model's take; tap one to see it below */
+  if (rows.length){
+    var tr = rows.slice().sort(function(a, b){ return (LOGI[a.stat] ? 0 : 1) - (LOGI[b.stat] ? 0 : 1); }).map(function(r){
+      var tk = propTake(g, r), on = row && r.stat === row.stat;
+      var b_ = el('button', {type:'button', class:'pt-row' + (on ? ' on' : ''), 'aria-pressed':String(!!on), onclick:function(){ SH.stat = r.stat; renderSheet(false); }},
+        el('span', {class:'pt-st'}, el('b', {text:(STAT[r.stat] || r.stat) + ' ' + r.line}), el('span', {class:'small mut', text:'o ' + (r.over != null ? fo(r.over) : '—') + ' / u ' + (r.under != null ? fo(r.under) : '—')})),
+        el('span', {class:'pt-proj small', text:r.model ? 'proj ' + r.model.mean : ''}),
+        el('span', {class:'ps-take ' + tk.cls, text:tk.k + (tk.edge != null && tk.cls !== 'bad' ? ' ' + fe(tk.edge) : '')}));
+      return b_;
+    });
+    kids.push(el('div', {class:'blk ptable'}, el('h3', {text:'His props tonight'}), el('div', {class:'pt-list'}, tr)));
+  }
+  if (row) kids.push(el('div', {class:'note read'}, el('b', {text:'The read: '}), propRead(g, row, pl)));
+  else if (pl){
+    var opp_ = team === g.home.abbr ? g.away.abbr : g.home.abbr, dls = ['points', 'rebounds', 'assists', 'threes'].map(function(k){ return defLines(opp_, pos, k)[0]; }).filter(Boolean);
+    kids.push(el('div', {class:'note read'}, el('b', {text:'No props posted for him tonight. '}), dls.length ? 'The matchup: ' + dls.map(function(x){ return x.text; }).join('; ') + '.' : ''));
+  }
   /* prop card */
   if (row){
     var b = bestSide(row), pk = (g.pick_objs || []).filter(function(p){ return p.pid === pid && p.stat === row.stat; })[0] || null;
@@ -2635,8 +2838,8 @@ function playerBody(g, pid, stat){
 })();
 
 /* ---- v8: storage, toasts, theme, number animation ---- */
-var TABS = ['slate', 'signals', 'picks', 'parlays', 'plan', 'players', 'props', 'track', 'method', 'status', 'more'];
-var NAV_OF = {signals:'more', players:'more', props:'more', method:'more', status:'more', picks:'slate'};
+var TABS = ['slate', 'signals', 'picks', 'parlays', 'plan', 'players', 'props', 'track', 'method', 'status', 'more', 'defense'];
+var NAV_OF = {signals:'more', players:'more', props:'more', method:'more', status:'more', defense:'more', picks:'slate'};
 var REDUCE = !!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
 function lsGet(k, d){ try { var v = localStorage.getItem(k); return v == null ? d : v; } catch(e){ return d; } }
 function lsSet(k, v){ try { if (v == null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch(e){} }
@@ -3003,7 +3206,7 @@ function findTeams(t, raw, ix){
     var ok = new RegExp('\\b' + tm.abbr + '\\b').test(raw) || (LOWER_OK.test(tm.abbr) && new RegExp('\\b' + tm.abbr.toLowerCase() + '\\b').test(t));
     var nicks = Object.keys(NICK).filter(function(k){ return NICK[k] === tm.abbr; });
     if (!ok) nicks.forEach(function(k){ if (new RegExp('\\b' + k + '\\b').test(t)) ok = true; });
-    if (!ok) nameKey(tm.name).split(' ').forEach(function(w){ if (w.length >= 5 && !CITY_STOP[w] && new RegExp('\\b' + w + 's?\\b').test(t)) ok = true; });
+    if (!ok) nameKey(tm.name).split(' ').forEach(function(w){ if (w.length >= 4 && !CITY_STOP[w] && new RegExp('\\b' + w + 's?\\b').test(t)) ok = true; });
     /* small typos in a nickname: "celitcs", "nugets" */
     if (!ok) nicks.concat(nameKey(tm.name).split(' ')).forEach(function(k){ if (k.length < 5 || CITY_STOP[k]) return; words.forEach(function(w){ if (w[0] === k[0] && lev(w, k) <= 1) ok = true; }); });
     if (ok && out.indexOf(tm) < 0) out.push(tm);
@@ -3573,6 +3776,8 @@ function aceLocal(q, o, ix){
   if (/^(why|explain|reason|how come|justify|break (it )?down)\b|\bwhy these\b|\bwhy (did|do) you\b/.test(low) && prev && !o.pids.length && !o.gids.length) return aceWhy(prev);
   if (/\b(what games|which games|tonight'?s? (games|slate)|the slate|who'?s playing|games (today|tonight)|schedule)\b/.test(low)) return aceSlate();
   if (/\b(injur\w*|who'?s out|questionable|doubtful|ruled out|is \w+ playing)\b/.test(low) && !o.parlay && o.num == null) return aceInjuries(o);
+  /* "who gives up the most threes", "best defense against guard assists", "how does Denver defend centers" */
+  if (/\b(defen[dcs]\w*|allows?|allowing|gives? up|giving up|worst (at|against|vs)|best (at|against|vs)|toughest|softest|rank(s|ed|ings)?)\b/.test(low) && !o.parlay && o.num == null && !o.pids.length) return aceDefense(o, low);
   /* "can Jokic get 12 rebounds" when Jokic is not playing tonight */
   var notHere = function(w){ return {text:'I don\'t see "' + w + '" in tonight\'s games. I can only price players who play tonight (' + S.latest.games.map(function(g){ return g.away.abbr + '-' + g.home.abbr; }).join(', ') + '). Check the spelling, or ask about someone on those teams.', chips:chipsFor('start')}; };
   var NOT_NAME = /^(he|it|this|that|there|the|they|we|you|i|anyone|anybody|someone|everyone|nobody|any|anything|something|best|top|good|safe|safest|which|what|who|some|more|other|another|late|early|home|road|star|stars|role|cheap|these|those|same|game|games|team|teams|his|their|my|your|all|every|each|one|two|three|four|five|first|last|next|over|under|plus|both|either|someone)$/;
@@ -3608,6 +3813,22 @@ function aceLocal(q, o, ix){
   if (o.n == null && !o.parlay && !o.multi && !o.target && o.style !== 'long') o.n = 1;
   if (o.parlay && o.n == null && !o.multi && !o.style && !o.target) o.n = 3;
   return aceBuild(o, ix, null);
+}
+function aceDefense(o, low){
+  var D = S.latest.defense; if (!D) return {text:'The defense rankings are built on the next daily run.', chips:chipsFor('start')};
+  var k = {points:'pts', rebounds:'reb', assists:'ast', threes:'tpm'}[o.stats[0]] || 'pts';
+  var pos = /\bguards?\b/.test(low) ? 'G' : /\bforwards?\b|\bwings?\b/.test(low) ? 'F' : /\bcent(er|re)s?\b|\bbigs?\b/.test(low) ? 'C' : 'all';
+  var what = DEF_N[k] + (pos === 'all' ? '' : ' to ' + POS_N[pos]);
+  if (o.teams.length){
+    var lines = o.teams.map(function(t){
+      return t + ': ' + ['pts', 'reb', 'ast', 'tpm'].map(function(x){ var c = defCell(t, pos, x); return c ? DEF_N[x] + ' ' + ord(c.rank) + ' (' + c.per_game + ' a game)' : null; }).filter(Boolean).join(', ') + (pos === 'all' ? '' : ' to ' + POS_N[pos]);
+    });
+    return {text:'Where they rank, 1st allowing the least of ' + D.n_teams + ':\n' + lines.join('\n'), chips:['Who allows the most threes?', 'Softest defense vs guards', 'Best 3-leg parlay']};
+  }
+  var tough = /\b(least|fewest|best|toughest|stingiest|hardest)\b/.test(low);
+  var rows = Object.keys(D.teams).map(function(t){ return {t:t, c:defCell(t, pos, k)}; }).filter(function(x){ return x.c && x.c.rank; }).sort(function(a, b){ return tough ? a.c.rank - b.c.rank : b.c.rank - a.c.rank; }).slice(0, 5);
+  var tonight = {}; S.latest.games.forEach(function(g){ tonight[g.home.abbr] = 'vs ' + g.away.abbr; tonight[g.away.abbr] = 'at ' + g.home.abbr; });
+  return {text:(tough ? 'Allow the fewest ' : 'Allow the most ') + what + ':\n' + rows.map(function(x){ var d = Math.round((x.c.ratio - 1) * 100); return '• ' + x.t + ' ' + ord(x.c.rank) + ', ' + x.c.per_game + ' a game (' + (d >= 0 ? '+' : '') + d + '% vs average)' + (tonight[x.t] ? ', plays ' + tonight[x.t] + ' tonight' : ''); }).join('\n') + '\nThe full table is under More, Defense ranks. Early in the season last year still carries most of the weight.', chips:['Who allows the most threes?', 'Softest defense vs guards', 'Best 3-leg parlay']};
 }
 function aceTop(o){
   var pool = acePool(), seen = {}, n = o.count || 4, oneGame = o.gids.length === 1 || o.pids.length;
@@ -4532,7 +4753,7 @@ function showTab(t){
     var b = $('.tabs [data-tab="' + x + '"]'); if (b) b.setAttribute('aria-selected', String(nav === x));
   });
   moveInd();
-  ({slate:renderSlate, more:renderMore, signals:renderSignals, picks:renderPicks, parlays:renderParlays, plan:renderPlan, players:renderPlayers, props:renderProps, track:renderTracker, method:renderMethod, status:renderStatus})[t]();
+  ({slate:renderSlate, more:renderMore, defense:renderDefense, signals:renderSignals, picks:renderPicks, parlays:renderParlays, plan:renderPlan, players:renderPlayers, props:renderProps, track:renderTracker, method:renderMethod, status:renderStatus})[t]();
   var sec = $('#' + t); sec.classList.remove('enter'); void sec.offsetWidth; sec.classList.add('enter');
   mergeHelps(sec);
   if (S.toCard){ S.toCard = false; var ca = $('#todayCard'); if (ca) setTimeout(function(){ ca.scrollIntoView({block:'start', behavior:'smooth'}); }, 60); }
@@ -4544,6 +4765,7 @@ function showTab(t){
 document.querySelectorAll('.tabs button').forEach(function(b){ b.onclick = function(){ showTab(b.getAttribute('data-tab')); }; });
 window.addEventListener('resize', moveInd);
 initTheme(); slipLoad(); slipUi(false);
+(function(){ var sb = $('#searchBtn'); if (sb) sb.onclick = function(){ go('search'); }; })();
 /* the opening moment plays once per visit */
 try { if (!REDUCE && !sessionStorage.getItem('eplocks_boot')){ document.documentElement.classList.add('boot'); sessionStorage.setItem('eplocks_boot', '1'); setTimeout(function(){ document.documentElement.classList.remove('boot'); }, 2400); } } catch(e){}
 /* a soft spotlight follows the pointer over cards (mouse and trackpad only) */
