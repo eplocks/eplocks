@@ -1131,6 +1131,31 @@ html.boot .hstats{animation:riseIn .6s cubic-bezier(.2,.8,.2,1) .45s both}
 @media (max-width:374px){.wm{font-size:24px;gap:5px}.brand .mark{width:22px;height:24px}#themeBtn{margin-left:6px}.ibtn{width:34px;height:34px}}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 /* ===== end v15 ===== */
+
+/* ===== v16 live tracker under each bet ===== */
+.plive{display:grid;gap:5px;margin:2px 0 0;padding:8px 10px;border-radius:var(--r1);border:1px solid var(--line);background:var(--surface2)}
+.plive.mini{padding:6px 8px;margin-top:4px;gap:4px}
+.pl-top{display:flex;align-items:center;gap:6px;font-size:14px}
+.pl-top b{font-variant-numeric:tabular-nums}
+.pl-st{margin-left:auto;font:700 11px var(--f-mono);letter-spacing:.06em;text-transform:uppercase;color:var(--mut)}
+.pl-dot{width:8px;height:8px;border-radius:50%;background:var(--mut);flex:none}
+.plive.on .pl-dot,.plive.behind .pl-dot{background:var(--bad);animation:liveBar 1.6s ease-in-out infinite}
+.pl-bar{position:relative;height:10px;border-radius:5px;background:color-mix(in srgb,var(--fg) 10%,transparent);overflow:visible}
+.pl-bar i{position:absolute;left:0;top:0;bottom:0;border-radius:5px;background:var(--mut);transition:width .6s cubic-bezier(.2,.7,.2,1)}
+.pl-bar s{position:absolute;top:-3px;bottom:-3px;width:2px;margin-left:-1px;background:var(--fg);opacity:.75;border-radius:1px}
+.plive.on .pl-bar i,.plive.hit .pl-bar i{background:var(--acc)}
+.plive.behind .pl-bar i{background:var(--warn)}
+.plive.miss .pl-bar i{background:var(--bad)}
+.plive.hit{border-color:color-mix(in srgb,var(--acc) 55%,var(--line))}
+.plive.miss{border-color:color-mix(in srgb,var(--bad) 45%,var(--line))}
+.plive.hit .pl-st{color:var(--acc)}
+.pl-sub{margin:0;font-size:12.5px;color:var(--mut)}
+.plive.hit .pl-sub{color:var(--acc);font-weight:700}
+.plive.miss .pl-sub{color:var(--bad)}
+.plive.mini .pl-top{font-size:12.5px}
+.plive.mini .pl-bar{height:7px}
+@media (prefers-reduced-motion:reduce){.plive .pl-dot{animation:none!important}.pl-bar i{transition:none}}
+/* ===== end v16 ===== */
 </style>
 </head>
 <body>
@@ -1339,6 +1364,7 @@ function betCard(p, idx, opts){
         el('p', {class:'bet-sub'}, el('span', {class:'bet-odds', text:fo(p.odds)}), ' ', p.away + ' @ ' + p.home + (g && g.tip ? ', ' + g.tip : ''), ' ', liveEl(p.away, p.home))),
       el('div', {class:'bet-edge' + (p.edge < 0 ? ' neg' : '')}, el('b', {text:fe(p.edge)}), el('span', {text:'edge'}))),
     meterEl(p),
+    liveBarEl(p),
     el('div', {class:'bet-foot'},
       el('span', {class:'bet-facts'}, el('span', {class:'conf ' + p.conf, text:p.conf}), ' ', betFacts(p)),
       p.sig && p.sig.tier ? tierEl(p.sig, true) : null),
@@ -1604,7 +1630,7 @@ function fetchLive(){
   if (!S.latest) return Promise.resolve();
   var d = String(S.latest.for_date || '').replace(/-/g, '');
   return fetch(LIVE_URL + (d ? '?dates=' + d : ''), {cache:'no-store'}).then(function(r){ if (!r.ok) throw new Error(r.status); return r.json(); }).then(function(js){
-    LV.map = parseLive(js); LV.fails = 0; LV.ok = true; applyLive();
+    LV.map = parseLive(js); LV.fails = 0; LV.ok = true; applyLive(); applyPropLive(); return fetchBoxes();
   }).catch(function(){ LV.fails++; LV.ok = false; applyLive(); });
 }
 function liveTick(){
@@ -1613,9 +1639,108 @@ function liveTick(){
   run.then(function(){
     var any = Object.keys(LV.map).some(function(k){ return LV.map[k].state === 'in'; });
     var left = Object.keys(LV.map).some(function(k){ return LV.map[k].state === 'pre'; });
-    var wait = LV.fails >= 3 ? 300000 : any ? 20000 : left ? 60000 : 300000;
+    var wait = LV.fails >= 3 ? 300000 : any ? (document.querySelector('.plive') ? 15000 : 20000) : left ? 60000 : 300000;
     LV.timer = setTimeout(liveTick, wait);
   });
+}
+/* ---- live tracker under each bet: box scores for live games with a bet on screen ---- */
+var BX = {map:{}, at:{}, busy:{}};
+function liveBarEl(p, mini){
+  if (!p || !p.game_id || !p.away || !p.home) return null;
+  if (p.type === 'prop' && (!p.pid || !p.stat || p.line == null)) return null;
+  var n = el('div', {class:'plive' + (mini ? ' mini' : ''), hidden:true, 'aria-live':'polite'});
+  n._p = p;
+  if (BX.map[p.game_id] || LV.map[p.away + '@' + p.home]) requestAnimationFrame(function(){ drawLiveBar(n); });
+  return n;
+}
+function boxFor(gid){ return (SH.box && SH.gid === gid) ? SH.box : BX.map[gid] || null; }
+function drawLiveBar(n){
+  var p = n._p, lv = LV.map[p.away + '@' + p.home], box = boxFor(p.game_id);
+  var state = (box && box.state) || (lv && lv.state) || 'pre';
+  if (state === 'pre'){ n.hidden = true; return; }
+  var done = state === 'post', clock = (lv && lv.detail) || (box && box.detail) || '';
+  n.textContent = ''; n.hidden = false;
+  var cls = '', fillPct = 0, mark = null, head = '', sub = '';
+  if (p.type === 'prop'){
+    var row = box && box.rows[String(p.pid)];
+    if (!box){ n.hidden = true; return; }
+    if (!row || !row.on){
+      head = row && row.dnp ? 'Not playing' + (row.reason ? ' (' + row.reason + ')' : '') : done ? 'Did not play' : 'Has not checked in yet';
+      sub = row && row.dnp || done ? 'Books usually void props on players who do not play.' : clock;
+      cls = row && row.dnp || done ? 'void' : 'wait';
+    } else {
+      var v = liveVal(row, p.stat), mins = nz(row.s.MIN), over = p.side === 'over', line = p.line, need = Math.floor(line) + 1 - v;
+      var r = typeof rowOf === 'function' ? rowOf(p) : null, exp = r && r.model ? r.model.min_avg : null;
+      var pace = !done && mins >= 4 && exp ? v + (v / mins) * Math.max(0, exp - mins) : null;
+      fillPct = line > 0 ? Math.min(100, 100 * v / (line * 1.25)) : 0;
+      mark = Math.min(100, 100 / 1.25);
+      var nm = SHORT[p.stat] || p.stat;
+      head = v + ' ' + nm + ' · ' + Math.round(mins) + ' min';
+      if (over){
+        if (v > line){ cls = 'hit'; sub = (done ? 'Cashed' : 'Over already hit') + ' (' + v + ' on ' + line + ')'; }
+        else if (done){ cls = 'miss'; sub = 'Missed by ' + (Math.floor(line) + 1 - v) + ' (' + v + ' on ' + line + ')'; }
+        else { cls = pace != null && pace > line ? 'on' : 'behind'; sub = 'Needs ' + need + ' more' + (pace != null ? ' · on pace for ' + f1(pace) : '') + (clock ? ' · ' + clock : ''); }
+      } else {
+        if (v > line){ cls = 'miss'; sub = (done ? 'Missed' : 'Under is dead') + ' (' + v + ' on ' + line + ')'; }
+        else if (done){ cls = 'hit'; sub = 'Cashed: finished at ' + v + ' under ' + line; }
+        else { var room = (line % 1 ? Math.floor(line) : line - 1) - v; cls = pace != null && pace >= line ? 'behind' : 'on'; sub = room + ' to spare' + (pace != null ? ' · on pace for ' + f1(pace) : '') + (clock ? ' · ' + clock : ''); }
+      }
+    }
+  } else {
+    if (!lv){ n.hidden = true; return; }
+    var hs = nz(lv.hs), as_ = nz(lv.as), home = p.side === 'home', tot = hs + as_;
+    if (p.type === 'total'){
+      var ov = p.side === 'over', L = p.line;
+      fillPct = Math.min(100, 100 * tot / (L * 1.15)); mark = 100 / 1.15;
+      head = tot + ' points · total ' + L;
+      var won = done ? (tot === L ? 'push' : (tot > L) === ov ? 'yes' : 'no') : null;
+      if (won === 'yes'){ cls = 'hit'; sub = 'Cashed'; } else if (won === 'no'){ cls = 'miss'; sub = 'Missed'; } else if (won === 'push'){ cls = 'void'; sub = 'Push'; }
+      else {
+        var gp = livePace(lv, tot);
+        if (!ov && tot > L){ cls = 'miss'; sub = 'Under is dead'; }
+        else if (ov && tot > L){ cls = 'hit'; sub = 'Over already hit'; }
+        else { cls = gp == null ? 'on' : ((gp > L) === ov ? 'on' : 'behind'); sub = (gp != null ? 'On pace for ' + Math.round(gp) : '') + (clock ? (gp != null ? ' · ' : '') + clock : ''); }
+      }
+    } else {
+      var my = home ? hs : as_, their = home ? as_ : hs, me = home ? p.home : p.away, diff = my - their;
+      var cover = p.type === 'spread' ? diff + p.line : diff;
+      head = me + ' ' + (diff > 0 ? 'up ' + diff : diff < 0 ? 'down ' + (-diff) : 'tied');
+      if (done){ cls = cover > 0 ? 'hit' : cover < 0 ? 'miss' : 'void'; sub = cover > 0 ? 'Cashed' : cover < 0 ? 'Missed' : 'Push'; }
+      else { cls = cover > 0 ? 'on' : 'behind'; sub = (p.type === 'spread' ? (cover > 0 ? 'Covering ' : 'Not covering ') + sg(p.line) : (diff > 0 ? 'Winning' : diff < 0 ? 'Trailing' : 'Tied')) + (clock ? ' · ' + clock : ''); }
+      fillPct = Math.max(0, Math.min(100, 50 + cover * 2.5)); mark = 50;
+    }
+  }
+  n.className = 'plive ' + cls + (n.classList.contains('mini') ? ' mini' : '');
+  var bar = el('div', {class:'pl-bar'}, el('i', {style:'width:' + fillPct.toFixed(1) + '%'}), mark != null ? el('s', {style:'left:' + mark.toFixed(1) + '%'}) : null);
+  n.append(el('div', {class:'pl-top'}, el('span', {class:'pl-dot', 'aria-hidden':'true'}), el('b', {text:head}), el('span', {class:'pl-st', text:done ? 'Final' : 'Live'})), bar, el('p', {class:'pl-sub', text:sub}));
+}
+/* points pace for a game total from ESPN's clock ("4:12 · 3rd", "45.3 · 4th", "Halftime", "End of 2nd") */
+function livePace(lv, tot){
+  var d = String(lv.detail || ''), q = null, left = null, m;
+  if (/half/i.test(d)){ q = 2; left = 0; }
+  else if ((m = /end of (\d)/i.exec(d))){ q = +m[1]; left = 0; }
+  else if ((m = /(\d{1,2}):(\d{2})\D+(\d)(?:st|nd|rd|th)/.exec(d))){ left = +m[1] + (+m[2]) / 60; q = +m[3]; }
+  else if ((m = /(\d{1,2}(?:\.\d+)?)\D+(\d)(?:st|nd|rd|th)/.exec(d))){ left = parseFloat(m[1]) / 60; q = +m[2]; }
+  if (!q || q > 4) return null;
+  var played = (q - 1) * 12 + (12 - left);
+  return played >= 4 ? tot * 48 / played : null;
+}
+function applyPropLive(){ document.querySelectorAll('.plive').forEach(function(n){ if (n._p) drawLiveBar(n); }); }
+function fetchBoxes(){
+  var want = {};
+  document.querySelectorAll('.plive').forEach(function(n){
+    var p = n._p; if (!p || p.type !== 'prop') return;
+    var lv = LV.map[p.away + '@' + p.home]; if (!lv || lv.state === 'pre') return;
+    var have = BX.map[p.game_id];
+    if (lv.state === 'post' && have && have.state === 'post') return;     /* final box already here */
+    want[p.game_id] = 1;
+  });
+  var ids = Object.keys(want).filter(function(id){ return !BX.busy[id] && (!BX.at[id] || Date.now() - BX.at[id] > 15000); });
+  return Promise.all(ids.map(function(id){
+    BX.busy[id] = 1;
+    return fetch(SUMMARY + encodeURIComponent(id), {cache:'no-store'}).then(function(r){ if (!r.ok) throw new Error(r.status); return r.json(); })
+      .then(function(js){ BX.map[id] = parseBox(js); BX.at[id] = Date.now(); }).catch(function(){ BX.at[id] = Date.now(); }).then(function(){ delete BX.busy[id]; });
+  })).then(applyPropLive);
 }
 function startLive(){ liveTick(); document.addEventListener('visibilitychange', function(){ if (!document.hidden) liveTick(); }); }
 
@@ -1896,7 +2021,7 @@ function mkTicket(legs){
 function legRow(p, core, showCore){
   var d = el('div', {class:'leg ' + p.conf}, pickAvatar(p, null), el('div', {class:'leg-body'},
     el('b', {}, p.label, ' ', el('span', {class:'mono mut', text:fo(p.odds)})),
-    el('span', {class:'small mut', text:p.away + ' @ ' + p.home + ' · model ' + pct(p.est) + ' · edge ' + fe(p.edge) + (showCore && !core ? ' · added leg' : '')})));
+    el('span', {class:'small mut', text:p.away + ' @ ' + p.home + ' · model ' + pct(p.est) + ' · edge ' + fe(p.edge) + (showCore && !core ? ' · added leg' : '')}), liveBarEl(p, true)));
   var gg = gameById(p.game_id);
   if (gg){ d.classList.add('clk'); d.onclick = function(){ openLegOf(p); }; }
   return d;
@@ -2150,7 +2275,7 @@ function loadBox(){
   var tok = SH.tok; SH.loading = true;
   fetch(SUMMARY + encodeURIComponent(g.id), {cache:'no-store'}).then(function(r){ if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); }).then(function(js){
     if (tok !== SH.tok) return;
-    SH.box = parseBox(js); SH.err = ''; SH.at = Date.now();
+    SH.box = parseBox(js); SH.err = ''; SH.at = Date.now(); BX.map[g.id] = SH.box; BX.at[g.id] = Date.now();
   }).catch(function(e){
     if (tok !== SH.tok) return;
     SH.err = 'The live box score could not be loaded from ESPN in this browser (' + ((e && e.message) || 'blocked') + '). The rest of this page still works.';
