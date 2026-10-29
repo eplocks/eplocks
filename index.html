@@ -1156,6 +1156,17 @@ html.boot .hstats{animation:riseIn .6s cubic-bezier(.2,.8,.2,1) .45s both}
 .plive.mini .pl-bar{height:7px}
 @media (prefers-reduced-motion:reduce){.plive .pl-dot{animation:none!important}.pl-bar i{transition:none}}
 /* ===== end v16 ===== */
+
+/* ===== v17 props and game lines apart ===== */
+.card-h{align-items:flex-end}
+.kind-sw{display:inline-flex;border:1px solid var(--line);border-radius:999px;padding:3px;background:var(--surface);gap:2px}
+.ksw{appearance:none;cursor:pointer;border:0;background:transparent;color:var(--mut);padding:8px 14px;border-radius:999px;display:inline-flex;align-items:center;gap:7px;font:700 14px var(--f-body);min-height:40px}
+.ksw[aria-selected="true"]{background:var(--acc);color:#04120c}
+.ksw-n{font:700 12px var(--f-mono);padding:1px 7px;border-radius:999px;background:color-mix(in srgb,currentColor 14%,transparent)}
+.chipf[disabled]{opacity:.45;cursor:default}
+.trkind{margin:var(--s2) 0 var(--s3)}
+@media (max-width:420px){.card-h{flex-direction:column;align-items:stretch}.kind-sw{display:flex}.ksw{flex:1 1 0;justify-content:center;padding:8px 6px}}
+/* ===== end v17 ===== */
 </style>
 </head>
 <body>
@@ -1755,21 +1766,35 @@ function heroStats(){
     it('record', dec ? st.w + '-' + st.l : '0-0', dec ? (st.net >= 0 ? '+' : '') + st.net.toFixed(1) + 'u' : 'starting'),
     it('beat the close', cl.length ? Math.round(100 * beat / cl.length) + '%' : 'n/a', cl.length ? beat + ' of ' + cl.length : 'needs picks'));
 }
+/* the card, split: player props and game lines (spreads, moneylines, totals) are two separate sections */
+function cardKind(){ var k = S.cardK || lsGet('eplocks_card_kind', ''); return k === 'games' ? 'games' : 'props'; }
 function renderCard(root){
   var L = S.latest, all = L.picks.slice().sort(function(a, b){ var x = rankKey(a), y = rankKey(b); return y[0] - x[0] || y[1] - x[1]; });
+  var props = all.filter(function(p){ return p.type === 'prop'; }), games = all.filter(function(p){ return p.type !== 'prop'; });
+  var kind = cardKind();
+  if (!S.cardK && !lsGet('eplocks_card_kind', '') && !props.length && games.length) kind = 'games';
   var early = all.some(function(p){ return p.early; });
-  var f = S.cardF || 'all';
-  var list = all.filter(function(p){ return f === 'all' || (f === 'props' && p.type === 'prop') || (f === 'games' && p.type !== 'prop') || (f === 'strong' && p.sig && (p.sig.tier === 'Strong' || p.sig.tier === 'Solid')); });
-  var head = el('div', {class:'card-h', id:'todayCard'}, el('h2', {class:'sec', text:early ? 'Early look' : 'Today\'s card'}),
-    el('div', {class:'chips', role:'group', 'aria-label':'Filter the card'}, [['all', 'All'], ['props', 'Props'], ['games', 'Games'], ['strong', 'Strong patterns']].map(function(o){
-      return el('button', {type:'button', class:'chipf', 'aria-pressed':String(f === o[0]), text:o[1], onclick:function(){ S.cardF = o[0]; renderSlate(); var c = $('#todayCard'); if (c) c.scrollIntoView({block:'start'}); }});
-    })));
-  root.append(head);
+  var sw = el('div', {class:'kind-sw', role:'tablist', 'aria-label':'Which bets'}, [['props', 'Player props', props.length], ['games', 'Game lines', games.length]].map(function(o){
+    return el('button', {type:'button', role:'tab', class:'ksw', 'aria-selected':String(kind === o[0]), onclick:function(){ S.cardK = o[0]; lsSet('eplocks_card_kind', o[0]); S.cardF = 'all'; renderSlate(); var c = $('#todayCard'); if (c) c.scrollIntoView({block:'start'}); }},
+      el('b', {text:o[1]}), el('span', {class:'ksw-n', text:String(o[2])}));
+  }));
+  var mine = kind === 'props' ? props : games, f = S.cardF || 'all';
+  var filters = kind === 'props' ? [['all', 'All'], ['over', 'Overs'], ['under', 'Unders'], ['strong', 'Strong patterns']] : [['all', 'All'], ['spread', 'Spreads'], ['moneyline', 'Moneylines'], ['total', 'Totals']];
+  var list = mine.filter(function(p){
+    if (f === 'all') return true;
+    if (kind === 'props') return f === 'strong' ? !!(p.sig && (p.sig.tier === 'Strong' || p.sig.tier === 'Solid')) : p.side === f;
+    return p.type === f;
+  });
+  root.append(el('div', {class:'card-h', id:'todayCard'}, el('h2', {class:'sec', text:(early ? 'Early look: ' : '') + (kind === 'props' ? 'Player props' : 'Game lines')}), sw));
+  root.append(el('div', {class:'chips', role:'group', 'aria-label':'Filter'}, filters.map(function(o){
+    var n = o[0] === 'all' ? mine.length : mine.filter(function(p){ return kind === 'props' ? (o[0] === 'strong' ? !!(p.sig && (p.sig.tier === 'Strong' || p.sig.tier === 'Solid')) : p.side === o[0]) : p.type === o[0]; }).length;
+    return el('button', {type:'button', class:'chipf', 'aria-pressed':String(f === o[0]), text:o[1] + (o[0] === 'all' ? '' : ' ' + n), disabled:o[0] !== 'all' && !n ? true : null, onclick:function(){ S.cardF = o[0]; renderSlate(); var c = $('#todayCard'); if (c) c.scrollIntoView({block:'start'}); }});
+  })));
   if (early) root.append(el('p', {class:'small mut card-note', text:'Picks are posted once a day from 3 PM Central, when lines and injury news have settled. Until then this is a look at where the numbers stand, and it can still change.'}));
-  else if (all.length) root.append(el('p', {class:'small mut card-note', text:'Posted picks stay on the card at the price they were posted. A pick only comes off if the player is ruled out, and it is then voided in the record, never deleted.'}));
-  if (!list.length) root.append(el('div', {class:'empty'}, el('b', {text:all.length ? 'Nothing matches' : 'No picks today'}), all.length ? 'Pick another filter.' : 'Nothing clears the bar today. Passing on a weak slate is part of winning.'));
+  else if (mine.length) root.append(el('p', {class:'small mut card-note', text:kind === 'props' ? 'Player props, best first. Posted picks stay at the price they were posted; one only comes off if the player is ruled out, and it is then voided in the record, never deleted.' : 'Spreads, moneylines and totals, best first. Game lines have their own record on the Tracker, kept apart from props.'}));
+  if (!list.length) root.append(el('div', {class:'empty'}, el('b', {text:mine.length ? 'Nothing matches' : kind === 'props' ? 'No props on the card today' : 'No game lines on the card today'}), mine.length ? 'Pick another filter.' : (kind === 'props' ? 'Props are priced from about 3 PM Central. ' : 'No spread, moneyline or total clears the bar today. ') + 'Passing on a weak spot is part of winning.'));
   else { var g = el('div', {class:'cards'}); list.forEach(function(p, i){ g.append(betCard(p, i, {rank:true})); }); root.append(g); }
-  var pulled = (S.history || []).filter(function(h){ return h.pulled && h.date === L.for_date; });
+  var pulled = (S.history || []).filter(function(h){ return h.pulled && h.date === L.for_date && ((h.type === 'prop') === (kind === 'props')); });
   if (pulled.length) root.append(el('details', {class:'help'}, el('summary', {text:pulled.length + ' pulled before tip'}), el('ul', {class:'fit-why'}, pulled.map(function(h){ return el('li', {text:h.label + ': ' + String(h.final || '').replace('Pulled before tip: ', '')}); }))));
 }
 function renderDefense(){
@@ -4598,6 +4623,10 @@ function renderTracker(){
   })));
   if (S.trTab === 'parlays') return renderParlayTrack(root);
   if (S.trTab === 'mine') return renderMyBets(root);
+  S.trKind = S.trKind || 'all';
+  root.append(el('div', {class:'chips trkind', role:'group', 'aria-label':'Which picks'}, [['all', 'All picks'], ['props', 'Player props'], ['games', 'Game lines']].map(function(o){
+    return el('button', {type:'button', class:'chipf', 'aria-pressed':String(S.trKind === o[0]), text:o[1], onclick:function(){ S.trKind = o[0]; renderTracker(); mergeHelps(root); }});
+  })));
   renderPickTrack(root);
 }
 /* ---- small inline charts for the Tracker ---- */
@@ -4718,7 +4747,7 @@ function shadowBlock(root){
     'Returns use the best price across books and every reading at 1 unit, which is kinder than betting at one book. Under about 500 readings a row is noise.'], 'How to read this'));
 }
 function renderPickTrack(root){
-  var H = S.history, st = stats(H), dec = st.w + st.l;
+  var k = S.trKind || 'all', H = (S.history || []).filter(function(p){ return k === 'all' || (k === 'props') === (p.type === 'prop'); }), st = stats(H), dec = st.w + st.l;
   function tile(k, v, tip){ return el('div', {class:'tile', 'data-tip':tip, tabindex:'0'}, el('span', {text:k}), el('b', {text:v})); }
   closeHeadline(root, H);
   root.append(el('div', {class:'tiles'},
@@ -4748,7 +4777,7 @@ function renderPickTrack(root){
     root.append(help('If "Model said" runs well above "Actually won" over a large sample, treat the model\'s probabilities as too high. Samples under about 30 picks per row mean very little.'));
   }
   if (!H.length){ root.append(el('div', {class:'empty'}, el('b', {text:'Nothing logged yet'}), 'Today\'s picks are logged when the daily run publishes them and graded after the games finish.')); return; }
-  shadowBlock(root);
+  if ((S.trKind || 'all') !== 'games') shadowBlock(root);
   root.append(el('h2', {text:'Pick history'}));
   root.append(help('Every pick is written to a public file on GitHub when it is posted, and GitHub keeps every version of that file with the time it was saved. Tap Receipt on any pick to pull up the version saved right after it was posted and check the price yourself. Nothing can be quietly changed after the fact.'));
   H.slice().reverse().slice(0, 80).forEach(function(p){
