@@ -4892,6 +4892,81 @@ def apply_backtest():
     return bt
 
 
+# ----------------------------------------------------------------------------- historical closing lines, for building and testing the game model
+# ESPN's scoreboard drops the odds once a game is over, so last season was never tested against real lines. ESPN's core odds service often
+# keeps each book's opening and closing numbers per game. This loads them for every replayed game (resumable), keeping a compact copy of
+# what came back so the numbers can be re-read later without fetching again.
+HIST_LINES_PATH = os.path.join(DATA, 'hist_lines.json')
+CORE_ODDS = 'https://sports.core.api.espn.com/v2/sports/basketball/leagues/nba/events/%s/competitions/%s/odds'
+HIST_KEEP = ('details', 'spread', 'overUnder', 'overOdds', 'underOdds')
+
+
+def _compact_side(t):
+    t = t or {}
+    out = {k: t.get(k) for k in ('favorite', 'moneyLine', 'spreadOdds') if t.get(k) is not None}
+    for ph in ('open', 'close', 'current'):
+        x = t.get(ph)
+        if isinstance(x, dict):
+            out[ph] = {k: (v.get('american') if isinstance(v, dict) else v) for k, v in x.items() if k in ('pointSpread', 'spread', 'moneyLine')}
+    return out
+
+
+def _compact_item(it):
+    out = {'p': ((it.get('provider') or {}).get('name')), 'pid': (it.get('provider') or {}).get('id')}
+    out.update({k: it.get(k) for k in HIST_KEEP if it.get(k) is not None})
+    out['h'] = _compact_side(it.get('homeTeamOdds'))
+    out['a'] = _compact_side(it.get('awayTeamOdds'))
+    for ph in ('open', 'close', 'current'):
+        x = it.get(ph)
+        if isinstance(x, dict):
+            out[ph] = {k: (v.get('american') if isinstance(v, dict) else v) for k, v in x.items() if k in ('over', 'under', 'total')}
+    return out
+
+
+def run_hist_lines():
+    """--lines: loads closing lines for every game in the replayed seasons, about 20 minutes per run, resuming where it stopped."""
+    t0 = time.time()
+    budget = float(os.environ.get('EPLOCKS_LINES_SECONDS') or 1500)
+    st = jload(HIST_LINES_PATH, {'v': 1, 'games': {}, 'empty': []})
+    gids = []
+    for rng in REPLAY_SEASONS:
+        box = jload(box_path(rng), {}) or {}
+        gids += sorted(((g.get('d') or ''), gid) for gid, g in (box.get('games') or {}).items())
+    todo = [gid for d, gid in sorted(gids) if gid not in st['games'] and gid not in set(st['empty'])]
+    print('Historical lines: %d games known, %d to load' % (len(st['games']), len(todo)), flush=True)
+    probe = []
+
+    def one(gid):
+        try:
+            js = http_json(CORE_ODDS % (gid, gid), tries=2, timeout=20)
+            items = [_compact_item(it) for it in (js.get('items') or []) if isinstance(it, dict)]
+            return gid, items, None
+        except Exception as e:  # noqa
+            return gid, None, str(e)[:120]
+    done = errs = 0
+    with ThreadPoolExecutor(max_workers=6) as ex:
+        for i in range(0, len(todo), 60):
+            if time.time() - t0 > budget:
+                break
+            for gid, items, err in ex.map(one, todo[i:i + 60]):
+                if items:
+                    st['games'][gid] = items
+                    done += 1
+                    if len(probe) < 3:
+                        probe.append({'gid': gid, 'items': items})
+                elif items is not None:
+                    st['empty'].append(gid)
+                else:
+                    errs += 1
+            if i % 600 == 0:
+                jsave(HIST_LINES_PATH, st)
+    jsave(HIST_LINES_PATH, st)
+    msg = 'Historical lines: %d loaded this run, %d with no odds, %d errors; %d of %d games now have lines' % (done, len(st['empty']), errs, len(st['games']), len(gids))
+    jsave(os.path.join(DATA, 'lines_probe.json'), {'checked': dt.datetime.now(dt.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'), 'msg': msg, 'sample': probe})
+    print(msg, flush=True)
+    return 0
+
+
 def maybe_backtest(prior_state):
     """Runs the replay once last season has fully loaded, then again about once a month."""
     if not prior_state or not prior_state.get('complete'):
@@ -4930,6 +5005,8 @@ def main(argv):
         NEWS['reason'] = reason
     if '--replay' in argv:
         return run_replay()
+    if '--lines' in argv:
+        return run_hist_lines()
     if '--backtest' in argv:
         bt = run_backtest(None)
         print(json.dumps({'backtest': bool(bt), 'status': STATUS['sources'].get('backtest'), 'notes': STATUS['notes'][-3:]}), flush=True)
