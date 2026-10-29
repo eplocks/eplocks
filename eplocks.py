@@ -1450,7 +1450,8 @@ def pm_changed(L):
 
 CAL_PRIOR = {'game': 1.0, 'prop': 0.5}   # starting belief about how much of the sample-adjusted edge is real (props are less proven than game bets)
 CAL_PICKS = 200                          # graded picks the starting belief is worth: it takes about this many before the record outweighs it
-CAL_ROWS = 2000                          # the same, counted in shadow readings: about two weeks of nights, because one night's readings rise and fall together
+CAL_NIGHTS = 21                          # the same, counted in nights of shadow readings: one night's 150-500 readings rise and fall together
+                                         # (one hot or cold night moves them all), so a night counts as one piece of evidence, not hundreds
 CAL = dict(CAL_PRIOR)
 CAL_INFO = {}
 
@@ -1492,12 +1493,13 @@ def build_calibration(history, shadow=None):
     (every priced prop, not only the picks) are used for props once there are enough, because they arrive ~150 a night."""
     rows = {'game': [], 'prop': []}
     shadow_from = None
-    sh_rows = []
+    sh_rows, nights = [], set()
     for r in shadow or []:
         if r.get('a') is None or r.get('fo') is None or r.get('p') is None or r['a'] == r['ln']:
             continue
         sh_rows.append((r.get('sh', 1.0) * (r['p'] - r['fo']), (1.0 if r['a'] > r['ln'] else 0.0) - r['fo']))
         shadow_from = min(shadow_from or r['d'], r['d'])
+        nights.add(r['d'])
     use_shadow = len(sh_rows) >= 300
     for h in history:
         if h.get('result') not in ('W', 'L') or h.get('odds') is None or h.get('kind', 'priced') != 'priced':
@@ -1522,9 +1524,10 @@ def build_calibration(history, shadow=None):
         n_pick = sum(1 for r in rs if r[2])
         n_sh = len(rs) - n_pick
         # the belief is worth CAL_PICKS picks (or CAL_ROWS readings) of the typical size seen here
-        strength = (sxx / len(rs)) * (CAL_ROWS if n_sh else CAL_PICKS)
+        # the belief is worth CAL_PICKS picks; with shadow readings, CAL_NIGHTS nights (the record's share is nights / (nights + CAL_NIGHTS))
+        strength = sxx * CAL_NIGHTS / max(len(nights), 1) if n_sh else (sxx / len(rs)) * CAL_PICKS
         res[k] = clamp((sxy + strength * CAL_PRIOR[k]) / (sxx + strength), 0.3, 1.0)
-        info[k] = {'n': len(rs), 'picks': n_pick, 'shadow': n_sh, 'data': r3(sxy / sxx) if sxx > 0 else None,
+        info[k] = {'n': len(rs), 'picks': n_pick, 'shadow': n_sh, 'nights': len(nights) if n_sh else None, 'data': r3(sxy / sxx) if sxx > 0 else None,
                    'weight': r3(sxx / (sxx + strength)), 'se': r3(math.sqrt(0.25 / sxx)) if sxx > 0 else None}
     return res, info
 
@@ -5203,7 +5206,7 @@ def main(argv):
             i = cal_n.get(k) or {}
             if not i.get('n'):
                 return 'starting belief, nothing graded yet'
-            return 'from %d graded%s, the record carries %d%% of the weight' % (i['n'], ' (%d shadow readings)' % i['shadow'] if i.get('shadow') else '', round(100 * (i.get('weight') or 0)))
+            return 'from %d graded%s, the record carries %d%% of the weight' % (i['n'], ' (%d shadow readings over %d nights)' % (i['shadow'], i.get('nights') or 0) if i.get('shadow') else '', round(100 * (i.get('weight') or 0)))
         src('calibration', True, 'game picks keep x%.2f of the sample-adjusted edge (%s); props x%.2f (%s)' % (CAL['game'], ci_('game'), CAL['prop'], ci_('prop')))
     except Exception as e:  # noqa
         src('calibration', False, 'self-calibration failed: %s' % str(e)[:120])
