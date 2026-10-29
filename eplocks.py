@@ -3853,7 +3853,7 @@ def send_alerts(prev, result):
     """First card of the day: a summary. Later runs: only picks that were not on the card before, with the news that caused them."""
     if not NTFY_TOPIC:
         return
-    picks = [p for p in result.get('picks') or [] if not p.get('early')]      # alert on posted picks only
+    picks = [p for p in result.get('picks') or [] if not p.get('early') and not p.get('glean')]      # alert on posted picks only
     reason = NEWS.get('reason')
     if prev.get('for_date') != result.get('for_date'):
         if not picks:
@@ -3861,7 +3861,7 @@ def send_alerts(prev, result):
         body = '\n'.join(alert_line(p) for p in picks[:5]) + ('\n+%d more on the site' % (len(picks) - 5) if len(picks) > 5 else '')
         ok = push_note("Today's EpLocks card: %d picks" % len(picks), body)
     else:
-        before = {(p.get('game_id'), p.get('label')) for p in prev.get('picks') or [] if not p.get('early')}
+        before = {(p.get('game_id'), p.get('label')) for p in prev.get('picks') or [] if not p.get('early') and not p.get('glean')}
         live = {g['id'] for g in result.get('games') or [] if g.get('state') == 'pre'}
         new = [p for p in picks if (p.get('game_id'), p.get('label')) not in before and p.get('game_id') in live]
         if new:
@@ -4436,6 +4436,10 @@ def shadow_report(shadow):
 #   * later runs keep every posted pick on the card, can add a new one (fresh injury news, a new edge), and only take one off when
 #     the player is ruled out or a serious off-court report lands. That pick is then voided as "pulled before tip", never deleted.
 POST_HOUR = int(os.environ.get('EPLOCKS_POST_HOUR') or 15)
+# Game lines (spreads, moneylines, totals) are shown as leans, not logged as picks, until the new game brain beats the closing line.
+# The current team-rating model tested at 49-50% against two seasons of real closing spreads (data/hist_lines.json), no better than the
+# market. Decided with the owner on 2026-10-28; set EPLOCKS_GAME_PICKS=on only once the new brain has earned it.
+GAME_PICKS_LIVE = (os.environ.get('EPLOCKS_GAME_PICKS') or 'off').lower() == 'on'
 POST_LEAD_H = 3.0
 SNAP_KEYS = ('reason', 'book', 'mean', 'hit_l10', 'implied', 'flag', 'n_books', 'fair', 'jp', 'est_nj', 'player', 'stat', 'pid', 'sd')
 
@@ -4516,10 +4520,13 @@ def lock_card(card, out_games, history, today, started):
         if (gmap.get(p['game_id']) or {}).get('state') != 'pre':
             shown.append(p)                          # a started game: its locked picks, as they were
             continue
+        if p['type'] != 'prop' and not GAME_PICKS_LIVE:
+            shown.append(dict(p, glean=True, units=0))   # game lines are leans for now: shown, never logged (see GAME_PICKS_LIVE)
+            continue
         if p['game_id'] not in postable:
             shown.append(dict(p, early=True))       # early look: shown, not logged yet
             continue
-        if len(shown) >= MAX_DAILY_PICKS:
+        if sum(1 for x in shown if not x.get('glean')) >= MAX_DAILY_PICKS:
             break
         if p['type'] == 'prop':
             if per_game.get(p['game_id'], 0) >= MAX_PROPS_PER_GAME or per_player.get(p.get('pid'), 0) >= MAX_PER_PLAYER:
@@ -4532,13 +4539,15 @@ def lock_card(card, out_games, history, today, started):
         keys.add(k)
         history.append(history_row(p, started))
     early = sum(1 for p in shown if p.get('early'))
+    gl = sum(1 for p in shown if p.get('glean'))
     shown.sort(key=lambda p: rank_key(p), reverse=True)
     for g in out_games:
         if g.get('state') == 'pre':
             g['pick_objs'] = [p for p in shown if p['game_id'] == g['id']]
             g['picks'] = [p['id'] for p in g['pick_objs']]
     msg = '%d posted earlier and kept, %d new%s%s' % (n_kept, len(added), ', %d pulled before tip (player ruled out)' % n_pulled if n_pulled else '',
-                                                  ', %d early-look picks (posted from %d:00 Central)' % (early, POST_HOUR) if early else '')
+                                                  ', %d early-look picks (posted from %d:00 Central)' % (early, POST_HOUR) if early else '') + (
+        '; %d game-line leans shown but not logged until the game brain is proven' % gl if gl else '')
     src('card', True, msg)
     return shown, history
 
@@ -5527,7 +5536,7 @@ def main(argv):
     except Exception as e:  # noqa
         note('Shadow ledger failed: %s' % str(e)[:120])
     try:
-        update_parlays([p for p in all_picks if not p.get('early')], out_games, games, today, started.strftime('%Y-%m-%dT%H:%M:%SZ'))
+        update_parlays([p for p in all_picks if not p.get('early') and not p.get('glean')], out_games, games, today, started.strftime('%Y-%m-%dT%H:%M:%SZ'))
     except Exception as e:  # noqa
         src('parlays', False, 'parlay tracker failed: %s' % str(e)[:120])
     jsave(acache_path, acache)

@@ -1164,6 +1164,7 @@ html.boot .hstats{animation:riseIn .6s cubic-bezier(.2,.8,.2,1) .45s both}
 .ksw[aria-selected="true"]{background:var(--acc);color:#04120c}
 .ksw-n{font:700 12px var(--f-mono);padding:1px 7px;border-radius:999px;background:color-mix(in srgb,currentColor 14%,transparent)}
 .chipf[disabled]{opacity:.45;cursor:default}
+.bet-state.lean{border-left-color:var(--warn)}
 .trkind{margin:var(--s2) 0 var(--s3)}
 @media (max-width:420px){.card-h{flex-direction:column;align-items:stretch}.kind-sw{display:flex}.ksw{flex:1 1 0;justify-content:center;padding:8px 6px}}
 /* ===== end v17 ===== */
@@ -1382,6 +1383,7 @@ function betCard(p, idx, opts){
     opts.patterns && p.sig ? sigLines(p.sig, 2) : null,
     opts.reason && p.reason ? el('p', {class:'bet-reason', text:p.reason}) : null,
     p.early ? el('p', {class:'bet-state', text:'Early look, not posted yet'}) : null,
+    p.glean ? el('p', {class:'bet-state lean', text:'Lean only, not a logged pick. Game lines stay leans until the new game model proves it beats the closing line.'}) : null,
     p.now && p.now.gone ? el('p', {class:'bet-state', text:'Posted ' + postedAt(p) + '. At the current line the edge is gone; it stays on the card as posted.'}) : null,
     p.now && !p.now.gone && p.now.odds != null ? el('p', {class:'bet-state', text:'Posted ' + postedAt(p) + ' at ' + (p.line != null && p.type !== 'moneyline' ? p.line + ' ' : '') + fo(p.odds) + '. Now ' + (p.now.line != null && p.type !== 'moneyline' ? p.now.line + ' ' : '') + fo(p.now.odds) + (p.now.edge != null ? ', edge ' + fe(p.now.edge) : '') + '.'}) : null,
     p.flag ? el('p', {class:'bet-flag', text:p.flag.length > 140 ? p.flag.slice(0, 137) + '…' : p.flag}) : null,
@@ -1762,7 +1764,7 @@ function heroStats(){
   var cl = (S.history || []).filter(function(h){ return h.clv != null; }), beat = cl.filter(function(h){ return h.clv > 0; }).length;
   function it(k, v, sub){ return el('div', {class:'hs'}, el('b', {class:'cnt-up', text:v}), el('span', {text:k}), sub ? el('i', {text:sub}) : null); }
   return el('div', {class:'hstats'},
-    it('on today\'s card', String((S.latest.picks || []).length)),
+    it('on today\'s card', String((S.latest.picks || []).filter(function(p){ return !p.glean; }).length)),
     it('record', dec ? st.w + '-' + st.l : '0-0', dec ? (st.net >= 0 ? '+' : '') + st.net.toFixed(1) + 'u' : 'starting'),
     it('beat the close', cl.length ? Math.round(100 * beat / cl.length) + '%' : 'n/a', cl.length ? beat + ' of ' + cl.length : 'needs picks'));
 }
@@ -1774,7 +1776,7 @@ function renderCard(root){
   var kind = cardKind();
   if (!S.cardK && !lsGet('eplocks_card_kind', '') && !props.length && games.length) kind = 'games';
   var early = all.some(function(p){ return p.early; });
-  var sw = el('div', {class:'kind-sw', role:'tablist', 'aria-label':'Which bets'}, [['props', 'Player props', props.length], ['games', 'Game lines', games.length]].map(function(o){
+  var sw = el('div', {class:'kind-sw', role:'tablist', 'aria-label':'Which bets'}, [['props', 'Player props', props.length], ['games', games.length && games.every(function(p){ return p.glean; }) ? 'Game leans' : 'Game lines', games.length]].map(function(o){
     return el('button', {type:'button', role:'tab', class:'ksw', 'aria-selected':String(kind === o[0]), onclick:function(){ S.cardK = o[0]; lsSet('eplocks_card_kind', o[0]); S.cardF = 'all'; renderSlate(); var c = $('#todayCard'); if (c) c.scrollIntoView({block:'start'}); }},
       el('b', {text:o[1]}), el('span', {class:'ksw-n', text:String(o[2])}));
   }));
@@ -1785,13 +1787,13 @@ function renderCard(root){
     if (kind === 'props') return f === 'strong' ? !!(p.sig && (p.sig.tier === 'Strong' || p.sig.tier === 'Solid')) : p.side === f;
     return p.type === f;
   });
-  root.append(el('div', {class:'card-h', id:'todayCard'}, el('h2', {class:'sec', text:(early ? 'Early look: ' : '') + (kind === 'props' ? 'Player props' : 'Game lines')}), sw));
+  root.append(el('div', {class:'card-h', id:'todayCard'}, el('h2', {class:'sec', text:(early ? 'Early look: ' : '') + (kind === 'props' ? 'Player props' : games.length && games.every(function(p){ return p.glean; }) ? 'Game leans' : 'Game lines')}), sw));
   root.append(el('div', {class:'chips', role:'group', 'aria-label':'Filter'}, filters.map(function(o){
     var n = o[0] === 'all' ? mine.length : mine.filter(function(p){ return kind === 'props' ? (o[0] === 'strong' ? !!(p.sig && (p.sig.tier === 'Strong' || p.sig.tier === 'Solid')) : p.side === o[0]) : p.type === o[0]; }).length;
     return el('button', {type:'button', class:'chipf', 'aria-pressed':String(f === o[0]), text:o[1] + (o[0] === 'all' ? '' : ' ' + n), disabled:o[0] !== 'all' && !n ? true : null, onclick:function(){ S.cardF = o[0]; renderSlate(); var c = $('#todayCard'); if (c) c.scrollIntoView({block:'start'}); }});
   })));
   if (early) root.append(el('p', {class:'small mut card-note', text:'Picks are posted once a day from 3 PM Central, when lines and injury news have settled. Until then this is a look at where the numbers stand, and it can still change.'}));
-  else if (mine.length) root.append(el('p', {class:'small mut card-note', text:kind === 'props' ? 'Player props, best first. Posted picks stay at the price they were posted; one only comes off if the player is ruled out, and it is then voided in the record, never deleted.' : 'Spreads, moneylines and totals, best first. Game lines have their own record on the Tracker, kept apart from props.'}));
+  else if (mine.length) root.append(el('p', {class:'small mut card-note', text:kind === 'props' ? 'Player props, best first. Posted picks stay at the price they were posted; one only comes off if the player is ruled out, and it is then voided in the record, never deleted.' : (games.some(function(p){ return p.glean; }) ? 'Leans only for now: the current game model tested at no edge against two seasons of real closing lines, so these are shown for reference and not logged as picks until the new game model earns it. ' : '') + 'Spreads, moneylines and totals, best first, with their own record on the Tracker.'}));
   if (!list.length) root.append(el('div', {class:'empty'}, el('b', {text:mine.length ? 'Nothing matches' : kind === 'props' ? 'No props on the card today' : 'No game lines on the card today'}), mine.length ? 'Pick another filter.' : (kind === 'props' ? 'Props are priced from about 3 PM Central. ' : 'No spread, moneyline or total clears the bar today. ') + 'Passing on a weak spot is part of winning.'));
   else { var g = el('div', {class:'cards'}); list.forEach(function(p, i){ g.append(betCard(p, i, {rank:true})); }); root.append(g); }
   var pulled = (S.history || []).filter(function(h){ return h.pulled && h.date === L.for_date && ((h.type === 'prop') === (kind === 'props')); });
@@ -1884,7 +1886,7 @@ function started(p){
 function legPool(){
   var minC = {any:0, med:2, high:3}[S.pConf] || 0, rk = {Low:1, Medium:2, High:3};
   return S.latest.picks.filter(function(p){
-    return p.edge > 0 && p.odds != null && p.est != null && p.game_id && !started(p) && (S.pAssumed || p.kind === 'priced') && (S.pProps || p.type !== 'prop') && (rk[p.conf] || 1) >= minC;
+    return !p.glean && p.edge > 0 && p.odds != null && p.est != null && p.game_id && !started(p) && (S.pAssumed || p.kind === 'priced') && (S.pProps || p.type !== 'prop') && (rk[p.conf] || 1) >= minC;
   }).sort(function(a, b){ return legScore(b) - legScore(a); });
 }
 function orderLegs(pool){
@@ -3048,11 +3050,13 @@ function leanPick(g, r, side){
     reason:'', sig:r.sig && r.sig.side === side ? r.sig : null, game_id:g.id, away:g.away.abbr, home:g.home.abbr, lean:true, date:S.latest.for_date};
 }
 var POOL = null;
+function dict_(a, b){ var o = {}; for (var k in a) o[k] = a[k]; for (var j in b) o[j] = b[j]; return o; }
 function acePool(){
   var L = S.latest; if (!L) return [];
   if (POOL && POOL.at === L.generated_at) return POOL.list;
   var out = [], seen = {}, cardType = {};
-  (L.picks || []).forEach(function(p){ if (p.odds == null || p.est == null || !p.game_id) return; seen[legKey(p)] = 1; cardType[p.game_id + '|' + p.type] = 1; out.push(p); });
+  (L.picks || []).forEach(function(p){ if (p.odds == null || p.est == null || !p.game_id) return; seen[legKey(p)] = 1; cardType[p.game_id + '|' + p.type] = 1;
+    out.push(p.glean ? dict_(p, {lean:true, flag:'Lean: game lines are not logged as picks until the new game model proves it beats the closing line.'}) : p); });
   L.games.forEach(function(g){
     (g.prop_rows || []).forEach(function(r){
       if (r.skipped || !r.model || r.pid == null) return;
@@ -4570,7 +4574,7 @@ function renderPlan(){
     tileEl('Since start', (bk.net >= 0 ? '+' : '') + money(bk.net), 'Profit or loss from the bets you marked "I bet this" since ' + dayLabel(pl.start) + '.')));
   /* today's singles: full size in rank order until the day's limit is used; the rest are skipped, not shrunk */
   var rk = {Low:1, Medium:2, High:3}, minR = rk[pl.minConf] || 1;
-  var singles = L.picks.filter(function(p){ return !started(p) && p.kind === 'priced' && (rk[p.conf] || 1) >= minR; })
+  var singles = L.picks.filter(function(p){ return !p.glean && !started(p) && p.kind === 'priced' && (rk[p.conf] || 1) >= minR; })
     .sort(function(a, b){ var x = rankKey(a), y = rankKey(b); return y[0] - x[0] || y[1] - x[1]; });
   var rows = [], skipped = [], used = 0;
   singles.forEach(function(p){ var st = stakeRound(p.units * unit); if (used + st <= sBudget + .005){ rows.push({p:p, st:st}); used += st; } else skipped.push(p); });
@@ -4886,7 +4890,7 @@ function renderStatus(){
 
 function renderCounts(){
   var L = S.latest; if (!L) return;
-  var n = L.picks.filter(function(p){ return !S.hideLow || p.conf !== 'Low'; }).length;
+  var n = L.picks.filter(function(p){ return !p.glean && (!S.hideLow || p.conf !== 'Low'); }).length;
   var cp = $('#cnt-picks'); if (cp) cp.textContent = n ? String(n) : '';
   var pc = 0; L.games.forEach(function(g){ pc += (g.prop_rows || []).length; });
   var cr = $('#cnt-props'); if (cr) cr.textContent = pc ? String(pc) : '';
