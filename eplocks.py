@@ -48,7 +48,9 @@ JUDG_CAP = 0.04        # and never by more than this much probability, whatever 
 JUDG_TRUST_N = 200     # graded picks at which Claude's measured skill counts at half strength
 JUDG = {'w': W_JUDG, 'n': 0, 'brier_j': None, 'brier_m': None}
 BLEND_MAX = 0.5        # most weight the model's own number gets against the market's (last season's replay can lower it)
-CLOSE_WINDOW_MIN = int(os.environ.get('EPLOCKS_CLOSE_MINUTES') or 25)    # closing mode records a pick's closing line this many minutes before tip-off
+CLOSE_WINDOW_MIN = int(os.environ.get('EPLOCKS_CLOSE_MINUTES') or 55)    # closing mode records a pick's line from this many minutes before tip-off; later checks
+                                                                          # overwrite earlier ones, so the saved number is the last one seen before tip (runs can start late)
+CLOSE_REFRESH_MIN = 12   # a close saved this recently is not bought again
 PROPS_FROM_HOUR = int(os.environ.get('EPLOCKS_PROPS_FROM_HOUR') or 15)   # props are bought only from this hour (Central) on: one fresh pull before tip-off, when lines and injuries have settled
 PROPS_LEAD_H = float(os.environ.get('EPLOCKS_PROPS_LEAD_HOURS') or 4.5)  # or once the day's first game is this close, so the afternoon run (3 PM, or 2 PM after the clocks change) always buys them
 PROPS_CLOSE_MIN_CREDITS = int(os.environ.get('EPLOCKS_PROPS_CLOSE_MIN_CREDITS') or 150)   # prop closing lines are only bought while this many credits remain
@@ -4659,6 +4661,9 @@ def run_closing():
             continue
         t = parse_utc(h.get('utc') or (gmap.get(h.get('game_id')) or {}).get('utc'))
         if t and 0.5 <= (t - now).total_seconds() / 60.0 <= CLOSE_WINDOW_MIN:
+            ct = parse_utc((h.get('close') or {}).get('t'))
+            if ct and (now - ct).total_seconds() / 60.0 < CLOSE_REFRESH_MIN:
+                continue
             due.append(h)
     if not due:
         print('Closing mode: no logged pick tips off within %d minutes. Nothing to do.' % CLOSE_WINDOW_MIN, flush=True)

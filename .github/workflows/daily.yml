@@ -8,9 +8,9 @@ on:
     - cron: "0 15 * * *"
     - cron: "0 20 * * *"
     - cron: "30 22 * * *"
-    # every 20 minutes from 4 PM to midnight Central: saves each pick's closing line just before tip-off and checks the injury report;
+    # every 20 minutes from late morning to midnight Central (weekend afternoon games too): saves each pick's closing line just before tip-off and checks the injury report;
     # when a rotation player is newly ruled out (or back) it reruns the card and sends new picks to your phone
-    - cron: "*/20 22-23,0-5 * * *"
+    - cron: "*/20 16-23,0-5 * * *"
   workflow_dispatch:
     inputs:
       mode:
@@ -54,7 +54,7 @@ jobs:
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
         run: |
           MODE="${{ inputs.mode }}"
-          if [ "${{ github.event.schedule }}" = "*/20 22-23,0-5 * * *" ]; then MODE=closing; fi
+          if [ "${{ github.event.schedule }}" = "*/20 16-23,0-5 * * *" ]; then MODE=closing; fi
           case "$MODE" in
             closing) python eplocks.py --closing ;;
             backtest) python eplocks.py --backtest ;;
@@ -63,7 +63,7 @@ jobs:
             *) python eplocks.py ;;
           esac
       - name: Replay past seasons (runs until it has finished once, or when replay.txt changes)
-        if: ${{ github.event.schedule != '*/20 22-23,0-5 * * *' && inputs.mode != 'closing' }}
+        if: ${{ github.event.schedule != '*/20 16-23,0-5 * * *' && inputs.mode != 'closing' }}
         continue-on-error: true
         timeout-minutes: 50
         env:
